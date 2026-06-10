@@ -1,10 +1,23 @@
 version: '3'
+
+x-common: &common-settings
+  image: nginx
+  restart: unless-stopped
+
 services:
-  web:
-    image: nginx
+  webcam:
+    <<: *common-settings
     container_name: webcam
     volumes:
       - /mnt/models/Webcam21:/usr/share/nginx/html:ro
     ports:
       - "8180:80"
-    restart: unless-stopped
+
+  dogcam:
+    <<: *common-settings
+    container_name: dogcam
+    volumes:
+      - /mnt/models/Webcam22:/usr/share/nginx/html:ro
+    ports:
+      - "8280:80"
+
