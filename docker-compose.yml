@@ -1,0 +1,10 @@
+version: '3'
+services:
+  web:
+    image: nginx
+    container_name: webcam
+    volumes:
+      - /mnt/models/Webcam21:/usr/share/nginx/html:ro
+    ports:
+      - "8180:80"
+    restart: unless-stopped
