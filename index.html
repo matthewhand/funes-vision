@@ -564,6 +564,90 @@
       line-height: 1.5;
     }
 
+    /* Time Slider Styles */
+    .time-slider-wrapper {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      padding: 8px 16px;
+      min-width: 280px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .slider-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .slider-label {
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .time-reset-btn {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border-color);
+      color: var(--text-secondary);
+      font-size: 0.65rem;
+      padding: 2px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .time-reset-btn:hover {
+      background: var(--bg-tertiary);
+      color: var(--text-primary);
+    }
+
+    .dual-range-container {
+      position: relative;
+      height: 20px;
+      display: flex;
+      align-items: center;
+    }
+
+    .time-slider {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100%;
+      height: 4px;
+      background: var(--bg-tertiary);
+      border-radius: 2px;
+      outline: none;
+      position: absolute;
+      pointer-events: none;
+    }
+
+    .time-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 16px;
+      height: 16px;
+      background: var(--accent-color);
+      border-radius: 50%;
+      cursor: pointer;
+      pointer-events: auto;
+      border: 2px solid var(--bg-primary);
+      box-shadow: 0 0 5px rgba(0,0,0,0.5);
+    }
+
+    /* Lazy Loading placeholder */
+    .card-img.unloaded {
+      opacity: 0;
+    }
+    
+    .card-img.loaded {
+      opacity: 1;
+    }
+
     .view-btn i {
       width: 15px;
       height: 15px;
@@ -1154,13 +1238,16 @@
         <div class="tab-group" id="object-filters" style="display: none;">
           <!-- Buttons injected by JS -->
         </div>
-          <!-- Time-of-day Quick filter pills -->
-          <div class="time-pills" id="time-pills">
-            <span class="time-pill active" data-time="all">All Day</span>
-            <span class="time-pill" data-time="morning" title="6:00 AM - 12:00 PM">Morning</span>
-            <span class="time-pill" data-time="afternoon" title="12:00 PM - 6:00 PM">Afternoon</span>
-            <span class="time-pill" data-time="evening" title="6:00 PM - 12:00 AM">Evening</span>
-            <span class="time-pill" data-time="night" title="12:00 AM - 6:00 AM">Night</span>
+          <!-- Time-of-day Range Slider -->
+          <div class="time-slider-wrapper">
+            <div class="slider-header">
+              <span class="slider-label"><i data-lucide="clock" style="width:14px;height:14px;"></i> Time Range: <span id="time-range-display">00:00 - 23:59</span></span>
+              <button class="time-reset-btn" id="btn-reset-time">Reset</button>
+            </div>
+            <div class="dual-range-container">
+              <input type="range" id="time-start" min="0" max="23" value="0" class="time-slider">
+              <input type="range" id="time-end" min="0" max="23" value="23" class="time-slider">
+            </div>
           </div>
 
           <div style="display: flex; align-items: center; gap: 12px; margin-left: auto;">
@@ -1265,7 +1352,8 @@
       activeFilter: 'all',  // tab filter: all, motdec, generic
       activeObjectFilter: null, // dynamic: 'person', 'dog', etc
       activeDateFilter: 'all', // timeline filter: all, YYYY-MM-DD
-      activeTimeFilter: 'all', // time filter: all, morning, afternoon, evening, night
+      timeStart: 0,
+      timeEnd: 23,
       activeHourChartFilter: null, // specific hour filter: null, 0-23
       activeView: 'medium', // small, medium, large, list
       searchQuery: '',      // search query
@@ -1561,19 +1649,14 @@
         // 3. Date Timeline filter
         if (state.activeDateFilter !== 'all' && meta.dateStr !== state.activeDateFilter) return false;
 
-        // 3. Time-of-day Quick filter
-        if (state.activeTimeFilter !== 'all') {
-          const hr = meta.hour;
-          if (state.activeTimeFilter === 'morning' && (hr < 6 || hr >= 12)) return false;
-          if (state.activeTimeFilter === 'afternoon' && (hr < 12 || hr >= 18)) return false;
-          if (state.activeTimeFilter === 'evening' && (hr < 18 || hr >= 24)) return false;
-          if (state.activeTimeFilter === 'night' && (hr < 0 || hr >= 6)) return false;
-        }
+        // 4. Time-of-day Range filter
+        const hr = meta.hour;
+        if (hr < state.timeStart || hr > state.timeEnd) return false;
 
-        // 4. Specific Hourly Chart filter
+        // 5. Specific Hourly Chart filter
         if (state.activeHourChartFilter !== null && meta.hour !== state.activeHourChartFilter) return false;
 
-        // 5. Text Search query
+        // 6. Text Search query
         if (state.searchQuery) {
           const q = state.searchQuery.toLowerCase();
           const matchesFilename = filename.toLowerCase().includes(q);
@@ -1637,7 +1720,7 @@
 
       card.innerHTML = `
         <div class="card-img-wrapper">
-          <img class="card-img" src="${filename}" alt="${filename}" loading="lazy">
+          <img class="card-img unloaded" data-src="${filename}" alt="${filename}">
         </div>
         <div class="card-overlay">
           <div class="meta-info">
@@ -1656,6 +1739,30 @@
       return card;
     }
 
+    // Bandwidth-saving Image Observer
+    const imageObserver = new IntersectionObserver((entries, observer) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          const img = entry.target;
+          img.src = img.dataset.src;
+          img.onload = () => img.classList.add('loaded');
+          observer.unobserve(img);
+        }
+      });
+    }, { rootMargin: '100px' });
+
+    // Helper to format time display
+    function formatHour(h) {
+      const isPm = h >= 12;
+      const displayHr = h % 12 === 0 ? 12 : h % 12;
+      return `${displayHr}${isPm ? 'PM' : 'AM'}`;
+    }
+
+    function updateSliderLabel() {
+      const label = document.getElementById('time-range-display');
+      label.textContent = `${formatHour(state.timeStart)} - ${formatHour(state.timeEnd)}`;
+    }
+
     // Render chunks for infinite scroll
     function renderNextPage() {
       const grid = document.getElementById('image-grid');
@@ -1672,6 +1779,9 @@
       for (let i = start; i < end; i++) {
         const card = createImageCard(state.filteredImages[i], i);
         grid.appendChild(card);
+        // Observe the image for lazy loading
+        const img = card.querySelector('.card-img');
+        imageObserver.observe(img);
       }
 
       state.renderedCount = end;
@@ -1962,14 +2072,38 @@
         }
       });
 
-      // Time of day Filter Pills
-      document.getElementById('time-pills').addEventListener('click', (e) => {
-        if (e.target.classList.contains('time-pill')) {
-          document.querySelectorAll('.time-pill').forEach(btn => btn.classList.remove('active'));
-          e.target.classList.add('active');
-          state.activeTimeFilter = e.target.dataset.time;
-          applyFiltersAndSearch();
+      // Time Slider Listeners
+      const sliderStart = document.getElementById('time-start');
+      const sliderEnd = document.getElementById('time-end');
+      const btnResetTime = document.getElementById('btn-reset-time');
+
+      sliderStart.addEventListener('input', (e) => {
+        state.timeStart = parseInt(e.target.value);
+        if (state.timeStart > state.timeEnd) {
+          state.timeEnd = state.timeStart;
+          sliderEnd.value = state.timeEnd;
         }
+        updateSliderLabel();
+        applyFiltersAndSearch();
+      });
+
+      sliderEnd.addEventListener('input', (e) => {
+        state.timeEnd = parseInt(e.target.value);
+        if (state.timeEnd < state.timeStart) {
+          state.timeStart = state.timeEnd;
+          sliderStart.value = state.timeStart;
+        }
+        updateSliderLabel();
+        applyFiltersAndSearch();
+      });
+
+      btnResetTime.addEventListener('click', () => {
+        state.timeStart = 0;
+        state.timeEnd = 23;
+        sliderStart.value = 0;
+        sliderEnd.value = 23;
+        updateSliderLabel();
+        applyFiltersAndSearch();
       });
 
       // Grid Layout Buttons

@@ -10,9 +10,9 @@ from datetime import datetime
 
 # CONFIGURATION
 MODEL_CLOUD = "google/gemma-4-31b-it"
-MODEL_LOCAL = "gemma-3-12b-it" # Adjust to what's available
-USE_LOCAL = False # Toggle via env or auto-detect
+MODEL_LOCAL = "gemma-4:12b" # User belief: we can run this slowly
 BURST_THRESHOLD_SECONDS = 120 # Group images within 2 mins
+MIN_MEM_FOR_LOCAL_GB = 16.0
 
 # Initialize Haar Cascades
 face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
@@ -59,7 +59,7 @@ def analyze_image_openrouter(image_path, api_key):
                 "content": [
                     {
                         "type": "text",
-                        "text": "Detect objects in this webcam image. Look for: person, dog, cat, car, face, body, etc. Return ONLY a valid JSON object with boolean keys for detected items. Example: {\"person\": true, \"dog\": false, \"car\": true}"
+                        "text": "Detect objects in this webcam image. Look for: person, dog, cat, car, face, body, etc. If you see something unusual (e.g. alien_ufo), add a descriptive key for it. Return ONLY a valid JSON object with boolean keys for detected items. Example: {\"person\": true, \"dog\": false, \"car\": true}"
                     },
                     {
                         "type": "image_url",
@@ -72,12 +72,21 @@ def analyze_image_openrouter(image_path, api_key):
     }
     
     try:
-        response = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, data=json.dumps(payload))
+        response = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, data=json.dumps(payload), timeout=60)
         if response.status_code != 200: return None
         content = response.json()['choices'][0]['message']['content'].strip()
         return json.loads(content)
     except:
         return None
+
+def analyze_image_local(image_path):
+    """Placeholder for Ollama local inference if memory allows."""
+    # Since we can't confirm Ollama's exact API without testing, 
+    # we'll assume a standard Ollama-like local endpoint or a mock for now.
+    # In a real setup, this would call `http://localhost:11434/api/generate`
+    print(f"DEBUG: Attempting local inference with {MODEL_LOCAL} (Memory > 16GB)")
+    # For now, we return None to fall back to OpenRouter unless user specifically sets up Ollama
+    return None
 
 def analyze_burst_openrouter(image_paths, api_key):
     """Analyze a sequence of images for a textual description."""
@@ -97,7 +106,7 @@ def analyze_burst_openrouter(image_paths, api_key):
     
     try:
         headers = { "Authorization": f"Bearer {api_key}", "Content-Type": "application/json" }
-        response = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, data=json.dumps(payload))
+        response = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, data=json.dumps(payload), timeout=90)
         return response.json()['choices'][0]['message']['content'].strip()
     except:
         return "Failed to analyze sequence."
@@ -121,6 +130,10 @@ def main():
     analysis_data = json.load(open(analysis_file)) if os.path.exists(analysis_file) else {}
     burst_data = json.load(open(burst_file)) if os.path.exists(burst_file) else {}
 
+    free_mem = get_free_mem_gb()
+    can_run_local = free_mem >= MIN_MEM_FOR_LOCAL_GB
+    print(f"System Check: Free Memory = {free_mem:.1f}GB. Local LLM Enabled: {can_run_local}")
+
     for image_dir in watch_dirs:
         if not os.path.exists(image_dir): continue
         print(f"Scanning {image_dir}...")
@@ -130,7 +143,38 @@ def main():
 
         new_analysis = False
         
-        # 1. Image Bursts Detection
+        # 1. Individual Image Analysis
+        deep_pass_count = 0
+        for img in reversed(images):
+            if img in analysis_data: continue
+            
+            image_path = os.path.join(image_dir, img)
+            fp_results = fast_pass(image_path)
+            
+            if fp_results:
+                print(f"Trigger detected in {img}: {fp_results}")
+                result = None
+                
+                # Attempt local if memory allowed, otherwise cloud
+                if can_run_local:
+                    result = analyze_image_local(image_path)
+                
+                if not result and api_key and deep_pass_count < 15:
+                    result = analyze_image_openrouter(image_path, api_key)
+                
+                if result:
+                    analysis_data[img] = result
+                    new_analysis = True
+                    deep_pass_count += 1
+                else:
+                    # Save fast pass results as placeholder
+                    analysis_data[img] = {**fp_results, "fast_pass": "partial"}
+                    new_analysis = True
+            else:
+                analysis_data[img] = { "fast_pass": "negative" }
+                new_analysis = True
+
+        # 2. Image Bursts Detection
         bursts = []
         if images:
             current_burst = [images[0]]
@@ -143,30 +187,6 @@ def main():
                     if len(current_burst) >= 2: bursts.append(current_burst)
                     current_burst = [images[i]]
             if len(current_burst) >= 2: bursts.append(current_burst)
-
-        # 2. Individual Image Analysis
-        deep_pass_count = 0
-        for img in reversed(images): # Process newest first for UI freshness
-            if img in analysis_data: continue
-            
-            image_path = os.path.join(image_dir, img)
-            fp_results = fast_pass(image_path)
-            
-            if fp_results:
-                print(f"Trigger detected in {img}: {fp_results}")
-                if api_key and deep_pass_count < 10:
-                    result = analyze_image_openrouter(image_path, api_key)
-                    if result:
-                        analysis_data[img] = result
-                        new_analysis = True
-                        deep_pass_count += 1
-                else:
-                    # Save fast pass results as placeholder
-                    analysis_data[img] = {**fp_results, "fast_pass": "partial"}
-                    new_analysis = True
-            else:
-                analysis_data[img] = { "fast_pass": "negative" }
-                new_analysis = True
 
         # 3. Burst Analysis
         for burst in bursts:
