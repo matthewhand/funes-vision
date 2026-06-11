@@ -10,13 +10,14 @@ from datetime import datetime
 
 # CONFIGURATION (defaults; override in settings.json next to this script)
 MODEL_CLOUD = "google/gemma-4-31b-it"
-MODEL_LOCAL = "gemma-4:12b" # User belief: we can run this slowly
+MODEL_LOCAL = "gemma4:12b"  # Ollama tag (verified; "gemma-4:12b" does not exist)
 BURST_THRESHOLD_SECONDS = 300  # Group images within 5 mins
 MIN_MEM_FOR_LOCAL_GB = 16.0
 MAX_AGE_DAYS = 30   # retention: no-detection images older than this are removed
 MAX_DIR_GB = 4.0    # retention: per-camera disk budget
 ALLOW_CLOUD = True  # permit OpenRouter calls when local inference is unavailable
 OLLAMA_URL = "http://localhost:11434"
+MAX_DEEP_PASSES = 15  # LLM calls (local or cloud) per camera per sweep
 
 _settings_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "settings.json")
 if os.path.exists(_settings_path):
@@ -28,6 +29,8 @@ if os.path.exists(_settings_path):
         MIN_MEM_FOR_LOCAL_GB = _s.get("min_mem_for_local_gb", MIN_MEM_FOR_LOCAL_GB)
         ALLOW_CLOUD = _s.get("allow_cloud", ALLOW_CLOUD)
         OLLAMA_URL = _s.get("ollama_url", OLLAMA_URL)
+        MAX_DEEP_PASSES = _s.get("max_deep_passes", MAX_DEEP_PASSES)
+        MODEL_LOCAL = _s.get("model_local", MODEL_LOCAL)
     except (ValueError, OSError) as e:
         print(f"Warning: could not read settings.json ({e}); using defaults")
 
@@ -99,6 +102,13 @@ def analyze_image_openrouter(image_path, api_key):
     except:
         return None
 
+def ollama_available():
+    """True if a local Ollama server is reachable."""
+    try:
+        return requests.get(f"{OLLAMA_URL}/api/version", timeout=3).ok
+    except requests.exceptions.RequestException:
+        return False
+
 def analyze_image_local(image_path):
     """Vision inference via a local Ollama server (if one is running)."""
     try:
@@ -122,9 +132,30 @@ def analyze_image_local(image_path):
         print(f"Local inference failed: {e}")
         return None
 
+BURST_PROMPT = "These images were taken in a sequence. Describe what is happening across this time period. Who is there? What are they doing?"
+
+def analyze_burst_local(image_paths):
+    """Burst summary via local Ollama (multi-image message)."""
+    try:
+        payload = {
+            "model": MODEL_LOCAL,
+            "messages": [{
+                "role": "user",
+                "content": BURST_PROMPT,
+                "images": [encode_image(p) for p in image_paths],
+            }],
+            "stream": False,
+        }
+        response = requests.post(f"{OLLAMA_URL}/api/chat", json=payload, timeout=900)
+        response.raise_for_status()
+        return response.json()["message"]["content"].strip()
+    except Exception as e:
+        print(f"Local burst analysis failed: {e}")
+        return None
+
 def analyze_burst_openrouter(image_paths, api_key):
     """Analyze a sequence of images for a textual description."""
-    content_list = [{ "type": "text", "text": "These images were taken in a sequence. Describe what is happening across this time period. Who is there? What are they doing?" }]
+    content_list = [{ "type": "text", "text": BURST_PROMPT }]
     
     for path in image_paths:
         base64_img = encode_image(path)
@@ -257,8 +288,8 @@ def main():
     pins = set(json.load(open(pins_file))) if os.path.exists(pins_file) else set()
 
     free_mem = get_free_mem_gb()
-    can_run_local = free_mem >= MIN_MEM_FOR_LOCAL_GB
-    print(f"System Check: Free Memory = {free_mem:.1f}GB. Local LLM Enabled: {can_run_local}")
+    can_run_local = free_mem >= MIN_MEM_FOR_LOCAL_GB and ollama_available()
+    print(f"System Check: Free Memory = {free_mem:.1f}GB. Local LLM Enabled: {can_run_local}. Cloud Enabled: {ALLOW_CLOUD}")
 
     for image_dir in watch_dirs:
         if not os.path.exists(image_dir): continue
@@ -290,25 +321,26 @@ def main():
 
         new_analysis = False
         deep_pass_count = 0
-        max_deep_passes = 15 # Batch size
-        
+        max_deep_passes = MAX_DEEP_PASSES # Batch size (local AND cloud count)
+
         for img in queue:
             image_path = os.path.join(image_dir, img)
-            
+
             # If it's a partial, we already have fp_results
             if img in analysis_data and analysis_data[img].get("fast_pass") == "partial":
                 fp_results = {k:v for k,v in analysis_data[img].items() if k != "fast_pass"}
             else:
                 fp_results = fast_pass(image_path)
-            
+
             if fp_results:
                 # If we haven't done deep analysis yet
                 if img not in analysis_data or analysis_data[img].get("fast_pass") == "partial":
                     print(f"Deep Pass Required for {img}: {fp_results}")
                     result = None
-                    if can_run_local:
+                    if can_run_local and deep_pass_count < max_deep_passes:
                         result = analyze_image_local(image_path)
-                    
+                        deep_pass_count += 1
+
                     if not result and ALLOW_CLOUD and api_key and deep_pass_count < max_deep_passes:
                         result = analyze_image_openrouter(image_path, api_key)
                         deep_pass_count += 1
@@ -351,12 +383,17 @@ def main():
             # Only analyze burst if at least one image has a detection
             has_detection = any(img in analysis_data and any(v is True for k, v in analysis_data[img].items() if k != 'fast_pass') for img in burst)
             
-            if has_detection and ALLOW_CLOUD and api_key:
+            if has_detection and (can_run_local or (ALLOW_CLOUD and api_key)):
                 print(f"Analyzing burst ending at {burst_id}...")
                 full_paths = [os.path.join(image_dir, f) for f in burst[-3:]] # Take last 3 max
-                summary = analyze_burst_openrouter(full_paths, api_key)
-                burst_data[burst_id] = { "summary": summary, "images": burst }
-                new_analysis = True
+                summary = None
+                if can_run_local:
+                    summary = analyze_burst_local(full_paths)
+                if not summary and ALLOW_CLOUD and api_key:
+                    summary = analyze_burst_openrouter(full_paths, api_key)
+                if summary:
+                    burst_data[burst_id] = { "summary": summary, "images": burst }
+                    new_analysis = True
 
         if new_analysis:
             with open(analysis_file, 'w') as f: json.dump(analysis_data, f, indent=2)

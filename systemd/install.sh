@@ -5,6 +5,7 @@ set -e
 
 cp /home/user/webcam/systemd/webcam-pipeline@.service /etc/systemd/system/
 cp /home/user/webcam/systemd/webcam-api.service /etc/systemd/system/
+cp /home/user/webcam/systemd/ollama.service /etc/systemd/system/
 systemctl daemon-reload
 
 # Stop any ad-hoc watchers so systemd owns the processes
@@ -12,10 +13,11 @@ pkill -f "create-inde[x].sh" || true
 pkill -x inotifywait || true
 sleep 1
 
-# Stop any ad-hoc API instance so systemd owns it
+# Stop any ad-hoc API/ollama instances so systemd owns them
 pkill -f "api_serve[r].py" || true
+pkill -f "ollama-bin/bin/ollam[a]" || true
 
-systemctl enable --now webcam-pipeline@Webcam21 webcam-pipeline@Webcam22 webcam-api
+systemctl enable --now webcam-pipeline@Webcam21 webcam-pipeline@Webcam22 webcam-api ollama
 
 # The @reboot cron entries are superseded by systemd
 crontab -u user -l 2>/dev/null | grep -v create-index.sh | crontab -u user - || true
