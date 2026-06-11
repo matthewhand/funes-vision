@@ -554,6 +554,62 @@
     .tag-face { background: #ec4899; color: white; }
     .tag-body { background: #10b981; color: white; }
 
+    /* Blacklist Management Styles */
+    .blacklist-menu {
+      position: relative;
+    }
+
+    .blacklist-dropdown {
+      position: absolute;
+      top: 100%;
+      right: 0;
+      width: 220px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+      z-index: 100;
+      padding: 12px;
+      display: none;
+      margin-top: 8px;
+    }
+
+    .blacklist-dropdown.active {
+      display: block;
+    }
+
+    .blacklist-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+    }
+
+    .blacklist-item:hover {
+      background: rgba(255,255,255,0.05);
+      color: var(--text-primary);
+    }
+
+    .blacklist-item.hidden-label {
+      text-decoration: line-through;
+      opacity: 0.6;
+    }
+
+    .blacklist-status {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--success-color);
+    }
+
+    .hidden-label .blacklist-status {
+      background: #ef4444;
+    }
+
     .burst-summary {
       background: rgba(255, 255, 255, 0.05);
       border-left: 3px solid var(--accent-color);
@@ -1235,8 +1291,25 @@
         </div>
 
         <!-- Dynamic Object Filters Container -->
-        <div class="tab-group" id="object-filters" style="display: none;">
-          <!-- Buttons injected by JS -->
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <div class="tab-group" id="object-filters" style="display: none;">
+            <!-- Buttons injected by JS -->
+          </div>
+          
+          <div class="blacklist-menu">
+            <button class="btn" id="btn-manage-blacklist" title="Manage Hidden Labels">
+              <i data-lucide="eye-off"></i>
+              <span>Hidden</span>
+            </button>
+            <div class="blacklist-dropdown" id="blacklist-dropdown">
+              <div style="font-size: 0.7rem; font-weight: 700; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 8px; border-bottom: 1px solid var(--border-color); padding-bottom: 4px;">
+                Toggle Hidden Labels
+              </div>
+              <div id="blacklist-list">
+                <!-- Items injected by JS -->
+              </div>
+            </div>
+          </div>
         </div>
           <!-- Time-of-day Range Slider -->
           <div class="time-slider-wrapper">
@@ -1357,6 +1430,7 @@
       activeHourChartFilter: null, // specific hour filter: null, 0-23
       activeView: 'medium', // small, medium, large, list
       searchQuery: '',      // search query
+      blacklist: JSON.parse(localStorage.getItem('webcam_ai_blacklist') || '[]'),
       isLive: true,         // auto-polling switch
       pollingInterval: null,
       lightboxIndex: -1,    // index in filteredImages
@@ -1590,8 +1664,14 @@
         });
       });
 
+      // Update the Blacklist Management Menu
+      renderBlacklistMenu(detectedSet);
+
       const container = document.getElementById('object-filters');
-      if (detectedSet.size === 0) {
+      // Only show filter buttons for labels NOT in blacklist
+      const whitelisted = Array.from(detectedSet).filter(obj => !state.blacklist.includes(obj)).sort();
+      
+      if (whitelisted.length === 0) {
         container.style.display = 'none';
         return;
       }
@@ -1610,13 +1690,11 @@
       };
       container.appendChild(allBtn);
 
-      const sorted = Array.from(detectedSet).sort();
-      sorted.forEach(obj => {
+      whitelisted.forEach(obj => {
         const btn = document.createElement('button');
         btn.className = `tab-btn ${state.activeObjectFilter === obj ? 'active' : ''}`;
         btn.style.textTransform = 'capitalize';
         
-        // Pick an icon if known
         let icon = 'eye';
         if (obj === 'person') icon = 'user';
         if (obj === 'dog') icon = 'dog';
@@ -1631,6 +1709,41 @@
         container.appendChild(btn);
       });
       lucide.createIcons();
+    }
+
+    function renderBlacklistMenu(detectedSet) {
+      const list = document.getElementById('blacklist-list');
+      list.innerHTML = '';
+      
+      const allLabels = Array.from(detectedSet).sort();
+      if (allLabels.length === 0) {
+        list.innerHTML = '<div style="font-size:0.75rem; color:var(--text-secondary); text-align:center; padding:8px;">No labels detected yet</div>';
+        return;
+      }
+
+      allLabels.forEach(label => {
+        const isHidden = state.blacklist.includes(label);
+        const item = document.createElement('div');
+        item.className = `blacklist-item ${isHidden ? 'hidden-label' : ''}`;
+        item.innerHTML = `
+          <span style="text-transform: capitalize;">${label}</span>
+          <div class="blacklist-status"></div>
+        `;
+        item.onclick = () => toggleBlacklist(label);
+        list.appendChild(item);
+      });
+    }
+
+    function toggleBlacklist(label) {
+      if (state.blacklist.includes(label)) {
+        state.blacklist = state.blacklist.filter(l => l !== label);
+      } else {
+        state.blacklist.push(label);
+        if (state.activeObjectFilter === label) state.activeObjectFilter = null;
+      }
+      localStorage.setItem('webcam_ai_blacklist', JSON.stringify(state.blacklist));
+      renderObjectFilters();
+      applyFiltersAndSearch();
     }
 
     // Apply Active Filters & Search Query
@@ -1699,7 +1812,8 @@
       let detectionsHtml = '';
       if (analysis) {
         Object.entries(analysis).forEach(([key, val]) => {
-          if (val === true && key !== 'fast_pass') {
+          // SKIP BLACKLISTED LABELS
+          if (val === true && key !== 'fast_pass' && !state.blacklist.includes(key)) {
             let icon = 'eye';
             if (key === 'person') icon = 'user';
             if (key === 'dog') icon = 'dog';
@@ -1874,7 +1988,7 @@
       let aiText = '';
       if (analysis) {
           const found = Object.entries(analysis)
-            .filter(([k, v]) => v === true && k !== 'fast_pass')
+            .filter(([k, v]) => v === true && k !== 'fast_pass' && !state.blacklist.includes(k))
             .map(([k]) => k.charAt(0).toUpperCase() + k.slice(1));
           
           if (found.length > 0) {
@@ -2104,6 +2218,20 @@
         sliderEnd.value = 23;
         updateSliderLabel();
         applyFiltersAndSearch();
+      });
+
+      // Blacklist Menu Toggle
+      const btnManageBlacklist = document.getElementById('btn-manage-blacklist');
+      const blacklistDropdown = document.getElementById('blacklist-dropdown');
+      btnManageBlacklist.addEventListener('click', (e) => {
+        e.stopPropagation();
+        blacklistDropdown.classList.toggle('active');
+      });
+
+      document.addEventListener('click', (e) => {
+        if (!blacklistDropdown.contains(e.target) && e.target !== btnManageBlacklist) {
+          blacklistDropdown.classList.remove('active');
+        }
       });
 
       // Grid Layout Buttons
