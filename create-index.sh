@@ -1,6 +1,8 @@
 #!/bin/bash
 
 IMAGE_DIR=$1
+# Global lock: analyze_images.py scans ALL camera dirs and writes shared
+# analysis.json, so concurrent instances must never run it in parallel.
 LOCKFILE="/tmp/webcam_analysis.lock"
 BASE_DIR="/home/user/webcam"
 
@@ -20,7 +22,6 @@ run_analysis() {
         fi
 
         # 2. Run Python analysis (Fast Pass + Deep Pass)
-        # We source env for credentials
         if [ -f "$HOME/.litellm/.env" ]; then
             set -a
             source "$HOME/.litellm/.env"
@@ -28,6 +29,7 @@ run_analysis() {
         fi
         export OPENROUTER_API_KEY
         
+        # We run the analysis script
         python3 "$BASE_DIR/analyze_images.py"
         
         # 3. Sync template and results to web root
@@ -36,11 +38,22 @@ run_analysis() {
         [ -f "$BASE_DIR/bursts.json" ] && cp "$BASE_DIR/bursts.json" "$IMAGE_DIR/bursts.json"
 
         echo "$(date): Analysis and sync complete."
-    else
-        echo "$(date): Timeout waiting for lock - another instance might be stuck."
     fi
   ) 200>$LOCKFILE
 }
+
+# Background loop for "Idle Catch-up"
+idle_sweep() {
+    while true; do
+        # Attempt a run. If lock is busy, run_analysis will wait.
+        run_analysis
+        # Sleep for a bit to allow other processes a chance at the lock
+        sleep 60
+    done
+}
+
+# Start the idle sweep in background
+idle_sweep &
 
 # Initial run on startup
 run_analysis &
@@ -48,11 +61,9 @@ run_analysis &
 # Watch for new image creations
 nice -n 10 inotifywait -m -e create --format '%w%f' "$IMAGE_DIR" | while read new_image
 do
-    # Check if the new file is an image
     if [[ $new_image =~ \.(jpg|jpeg|png|gif)$ ]]; then
         echo "New image detected: $new_image. Triggering analysis..."
         run_analysis &
-        # Add a small delay to debounce rapid creates
         sleep 5
     fi
 done

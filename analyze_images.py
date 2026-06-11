@@ -29,13 +29,14 @@ def fast_pass(image_path):
         gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
         
         results = {}
-        faces = face_cascade.detectMultiScale(gray, 1.1, 4, minSize=(30, 30))
+        # Increased sensitivity: lower minNeighbors, smaller minSize
+        faces = face_cascade.detectMultiScale(gray, 1.1, 3, minSize=(20, 20))
         if len(faces) > 0: results["face"] = True
             
-        bodies = body_cascade.detectMultiScale(gray, 1.1, 3, minSize=(50, 100))
+        bodies = body_cascade.detectMultiScale(gray, 1.1, 2, minSize=(40, 80))
         if len(bodies) > 0: results["body"] = True
             
-        cats = cat_cascade.detectMultiScale(gray, 1.1, 3, minSize=(30, 30))
+        cats = cat_cascade.detectMultiScale(gray, 1.1, 2, minSize=(20, 20))
         if len(cats) > 0: results["cat"] = True
             
         return results
@@ -59,7 +60,7 @@ def analyze_image_openrouter(image_path, api_key):
                 "content": [
                     {
                         "type": "text",
-                        "text": "Detect objects in this webcam image. Look for: person, dog, cat, car, face, body, etc. If you see something unusual (e.g. alien_ufo), add a descriptive key for it. Return ONLY a valid JSON object with boolean keys for detected items. Example: {\"person\": true, \"dog\": false, \"car\": true}"
+                        "text": "Analyze this webcam image. Specifically detect if any PERSON, FACE, BODY, DOG, or CAT is visible. If you see a human (even partial), use keys 'person', 'face', or 'body'. If you see something unusual (e.g. alien_ufo), add a descriptive key for it. Return ONLY a valid JSON object with boolean keys. Example: {\"person\": true, \"face\": true, \"dog\": false}"
                     },
                     {
                         "type": "image_url",
@@ -139,40 +140,60 @@ def main():
         print(f"Scanning {image_dir}...")
         
         images = [f for f in os.listdir(image_dir) if f.lower().endswith(('.jpg', '.jpeg', '.png', '.gif'))]
-        images.sort(key=lambda x: os.path.getmtime(os.path.join(image_dir, x))) # Oldest to newest for sequence detection
+        
+        # Catch-up prioritization:
+        # 1. Images not in analysis_data at all
+        # 2. Images marked as "partial" (OpenCV hit, but no LLM yet)
+        missing = [i for i in images if i not in analysis_data]
+        partials = [i for i in images if i in analysis_data and analysis_data[i].get("fast_pass") == "partial"]
+        
+        # Combine: newest missing first, then partials
+        queue = sorted(missing, key=lambda x: os.path.getmtime(os.path.join(image_dir, x)), reverse=True) + partials
+        
+        if not queue:
+            print(f"No pending analysis for {image_dir}")
+            continue
 
         new_analysis = False
-        
-        # 1. Individual Image Analysis
         deep_pass_count = 0
-        for img in reversed(images):
-            if img in analysis_data: continue
-            
+        max_deep_passes = 15 # Batch size
+        
+        for img in queue:
             image_path = os.path.join(image_dir, img)
-            fp_results = fast_pass(image_path)
+            
+            # If it's a partial, we already have fp_results
+            if img in analysis_data and analysis_data[img].get("fast_pass") == "partial":
+                fp_results = {k:v for k,v in analysis_data[img].items() if k != "fast_pass"}
+            else:
+                fp_results = fast_pass(image_path)
             
             if fp_results:
-                print(f"Trigger detected in {img}: {fp_results}")
-                result = None
-                
-                # Attempt local if memory allowed, otherwise cloud
-                if can_run_local:
-                    result = analyze_image_local(image_path)
-                
-                if not result and api_key and deep_pass_count < 15:
-                    result = analyze_image_openrouter(image_path, api_key)
-                
-                if result:
-                    analysis_data[img] = result
-                    new_analysis = True
-                    deep_pass_count += 1
-                else:
-                    # Save fast pass results as placeholder
-                    analysis_data[img] = {**fp_results, "fast_pass": "partial"}
-                    new_analysis = True
+                # If we haven't done deep analysis yet
+                if img not in analysis_data or analysis_data[img].get("fast_pass") == "partial":
+                    print(f"Deep Pass Required for {img}: {fp_results}")
+                    result = None
+                    if can_run_local:
+                        result = analyze_image_local(image_path)
+                    
+                    if not result and api_key and deep_pass_count < max_deep_passes:
+                        result = analyze_image_openrouter(image_path, api_key)
+                        deep_pass_count += 1
+                    
+                    if result:
+                        analysis_data[img] = result
+                        new_analysis = True
+                    else:
+                        # Still partial (limit reached or failed)
+                        analysis_data[img] = {**fp_results, "fast_pass": "partial"}
+                        new_analysis = True
             else:
+                # Negative fast pass
                 analysis_data[img] = { "fast_pass": "negative" }
                 new_analysis = True
+
+            if deep_pass_count >= max_deep_passes:
+                print(f"Batch limit ({max_deep_passes}) reached for {image_dir}")
+                break
 
         # 2. Image Bursts Detection
         bursts = []

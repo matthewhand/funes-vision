@@ -554,6 +554,24 @@
     .tag-face { background: #ec4899; color: white; }
     .tag-body { background: #10b981; color: white; }
 
+    .tag-potential {
+      background: rgba(245, 158, 11, 0.15);
+      color: #f59e0b;
+      border: 1px solid rgba(245, 158, 11, 0.3);
+      font-style: italic;
+    }
+
+    .btn-mode-toggle {
+      border-color: var(--accent-color);
+      color: var(--accent-color);
+      background: rgba(59, 130, 246, 0.05);
+    }
+
+    .btn-mode-toggle.active {
+      background: var(--accent-color);
+      color: white;
+    }
+
     /* Blacklist Management Styles */
     .blacklist-menu {
       position: relative;
@@ -1308,8 +1326,20 @@
               <div id="blacklist-list">
                 <!-- Items injected by JS -->
               </div>
+              <div style="font-size: 0.7rem; font-weight: 700; text-transform: uppercase; color: var(--text-secondary); margin: 8px 0; border-bottom: 1px solid var(--border-color); padding-bottom: 4px;">
+                Label Merging
+              </div>
+              <div class="blacklist-item" id="alias-toggle" title="Treat face and body detections as 'person' in filters and badges">
+                <span>Merge face/body &rarr; person</span>
+                <div class="blacklist-status"></div>
+              </div>
             </div>
           </div>
+
+          <button class="btn btn-mode-toggle" id="btn-precision-toggle" title="Toggle between Verified and Potential (OpenCV) hits">
+            <i data-lucide="zap"></i>
+            <span id="mode-toggle-label">Mode: Precise</span>
+          </button>
         </div>
           <!-- Time-of-day Range Slider -->
           <div class="time-slider-wrapper">
@@ -1431,6 +1461,9 @@
       activeView: 'medium', // small, medium, large, list
       searchQuery: '',      // search query
       blacklist: JSON.parse(localStorage.getItem('webcam_ai_blacklist') || '[]'),
+      // Map raw AI labels to a canonical UI label (e.g. face/body -> person)
+      labelAliases: JSON.parse(localStorage.getItem('webcam_ai_aliases') || '{"face":"person","body":"person"}'),
+      showPotentialHits: false, // Precision vs Accuracy toggle
       isLive: true,         // auto-polling switch
       pollingInterval: null,
       lightboxIndex: -1,    // index in filteredImages
@@ -1467,13 +1500,14 @@
       };
     };
 
-    // Parse filename details
+    // Parse filename details - Assuming AEST (UTC+10)
     const parseFilename = (filename) => {
       const match = filename.match(/(\d+\.\d+\.\d+\.\d+)_(\d+)_(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})(\d{3})_(MOTDEC|GENERIC|.*)\.(jpg|jpeg|png|gif)/i);
       
       if (match) {
         const [_, ip, channel, year, month, day, hour, min, sec, ms, eventType, ext] = match;
-        const dateObj = new Date(`${year}-${month}-${day}T${hour}:${min}:${sec}`);
+        // Construct ISO string forced to AEST (+10:00)
+        const dateObj = new Date(`${year}-${month}-${day}T${hour}:${min}:${sec}+10:00`);
         const intHour = parseInt(hour, 10);
         
         return {
@@ -1483,8 +1517,9 @@
           hour: intHour,
           dateStr: `${year}-${month}-${day}`,
           timeStr: `${hour}:${min}:${sec}`,
-          formattedDate: dateObj.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }),
-          formattedTime: dateObj.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+          // Display in AEST
+          formattedDate: dateObj.toLocaleDateString('en-AU', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'Australia/Sydney' }),
+          formattedTime: dateObj.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Australia/Sydney' }),
           eventType: eventType === 'MOTDEC' ? 'Motion Detected' : eventType,
           original: filename
         };
@@ -1656,12 +1691,22 @@
     }
 
     // Render dynamic object filter buttons based on what's in analysis.json
+    // Resolve a raw AI label to its canonical UI label
+    const canonicalLabel = (key) => state.labelAliases[key] || key;
+
+    // Set of canonical labels detected in an analysis entry
+    const effectiveLabels = (analysis) => {
+      const out = new Set();
+      Object.entries(analysis || {}).forEach(([key, val]) => {
+        if (val === true && key !== 'fast_pass') out.add(canonicalLabel(key));
+      });
+      return out;
+    };
+
     function renderObjectFilters() {
       const detectedSet = new Set();
       Object.values(state.analysis).forEach(res => {
-        Object.entries(res).forEach(([key, val]) => {
-          if (val === true && key !== 'fast_pass') detectedSet.add(key);
-        });
+        effectiveLabels(res).forEach(label => detectedSet.add(label));
       });
 
       // Update the Blacklist Management Menu
@@ -1692,7 +1737,8 @@
 
       whitelisted.forEach(obj => {
         const btn = document.createElement('button');
-        btn.className = `tab-btn ${state.activeObjectFilter === obj ? 'active' : ''}`;
+        const isActive = state.activeObjectFilter === obj;
+        btn.className = `tab-btn ${isActive ? 'active' : ''}`;
         btn.style.textTransform = 'capitalize';
         
         let icon = 'eye';
@@ -1702,7 +1748,8 @@
         
         btn.innerHTML = `<i data-lucide="${icon}" style="width:14px;height:14px;vertical-align:middle;margin-right:4px;"></i>${obj}`;
         btn.onclick = () => {
-          state.activeObjectFilter = obj;
+          state.activeObjectFilter = isActive ? null : obj;
+          window.scrollTo({ top: 0, behavior: 'smooth' });
           renderObjectFilters();
           applyFiltersAndSearch();
         };
@@ -1746,6 +1793,34 @@
       applyFiltersAndSearch();
     }
 
+    function renderAliasToggle() {
+      const enabled = Object.keys(state.labelAliases).length > 0;
+      document.getElementById('alias-toggle').classList.toggle('hidden-label', !enabled);
+    }
+
+    function toggleAliases() {
+      const enabled = Object.keys(state.labelAliases).length > 0;
+      state.labelAliases = enabled ? {} : { face: 'person', body: 'person' };
+      localStorage.setItem('webcam_ai_aliases', JSON.stringify(state.labelAliases));
+      // The active filter may not exist under the new mapping; reset it
+      state.activeObjectFilter = null;
+      renderAliasToggle();
+      renderObjectFilters();
+      applyFiltersAndSearch();
+    }
+    document.getElementById('alias-toggle').onclick = toggleAliases;
+    renderAliasToggle();
+
+    // Precise <-> Potential mode toggle (show unverified OpenCV-only hits)
+    const precisionBtn = document.getElementById('btn-precision-toggle');
+    precisionBtn.onclick = () => {
+      state.showPotentialHits = !state.showPotentialHits;
+      document.getElementById('mode-toggle-label').textContent =
+        state.showPotentialHits ? 'Mode: Potential' : 'Mode: Precise';
+      precisionBtn.classList.toggle('active', state.showPotentialHits);
+      applyFiltersAndSearch();
+    };
+
     // Apply Active Filters & Search Query
     function applyFiltersAndSearch() {
       state.filteredImages = state.allImages.filter(filename => {
@@ -1756,8 +1831,23 @@
         if (state.activeFilter === 'motdec' && !filename.includes('MOTDEC')) return false;
         if (state.activeFilter === 'generic' && filename.includes('MOTDEC')) return false;
         
-        // 2. Dynamic Object filter
-        if (state.activeObjectFilter && !analysis[state.activeObjectFilter]) return false;
+        // 2. Dynamic Object filter (raw labels resolved through alias map)
+        const labels = effectiveLabels(analysis);
+        const hasWhitelistedDetection = Array.from(labels).some(l => !state.blacklist.includes(l));
+        if (state.activeObjectFilter) {
+          if (!labels.has(state.activeObjectFilter)) return false;
+          // In PRECISE mode only LLM-verified hits count; POTENTIAL also
+          // matches unverified OpenCV-only (partial) detections.
+          if (!state.showPotentialHits && analysis.fast_pass === 'partial') return false;
+        } else if (!state.showPotentialHits) {
+          // If no specific object filter, and we are in PRECISE mode,
+          // only show whitelisted detections.
+          if (!hasWhitelistedDetection) return false;
+        } else {
+          // POTENTIAL mode: include fast_pass: "partial"
+          const isPartial = analysis.fast_pass === 'partial';
+          if (!isPartial && !hasWhitelistedDetection) return false;
+        }
 
         // 3. Date Timeline filter
         if (state.activeDateFilter !== 'all' && meta.dateStr !== state.activeDateFilter) return false;
@@ -1811,21 +1901,27 @@
       // Build Detections Badges (replacing the redundant Motion tag)
       let detectionsHtml = '';
       if (analysis) {
-        Object.entries(analysis).forEach(([key, val]) => {
+        const isPartial = analysis.fast_pass === 'partial';
+        // Aliased labels (e.g. face/body -> person) collapse into one badge
+        effectiveLabels(analysis).forEach(label => {
           // SKIP BLACKLISTED LABELS
-          if (val === true && key !== 'fast_pass' && !state.blacklist.includes(key)) {
+          if (!state.blacklist.includes(label)) {
             let icon = 'eye';
-            if (key === 'person') icon = 'user';
-            if (key === 'dog') icon = 'dog';
-            if (key === 'cat') icon = 'cat';
-            
+            if (label === 'person') icon = 'user';
+            if (label === 'dog') icon = 'dog';
+            if (label === 'cat') icon = 'cat';
+
             detectionsHtml += `
-              <span class="badge badge-ai tag-${key}">
+              <span class="badge badge-ai tag-${label} ${isPartial ? 'tag-potential' : ''}">
                 <i data-lucide="${icon}"></i>
-                <span style="text-transform: capitalize;">${key}</span>
+                <span style="text-transform: capitalize;">${label}${isPartial ? '?' : ''}</span>
               </span>`;
           }
         });
+        
+        if (analysis.fast_pass === 'partial' && detectionsHtml === '') {
+          detectionsHtml = '<span class="badge badge-ai tag-potential"><i data-lucide="help-circle"></i>Unverified</span>';
+        }
         
         if (detectionsHtml === '' && analysis.fast_pass !== 'negative') {
           detectionsHtml = '<span class="badge" style="background: rgba(255,255,255,0.05); color: var(--text-secondary);">Clear</span>';
@@ -1901,8 +1997,8 @@
       state.renderedCount = end;
       lucide.createIcons();
 
-      // Ensure the viewport is full
-      if (state.renderedCount < state.filteredImages.length && !isSentinelVisible()) {
+      // Ensure the viewport is full - trigger again if sentinel is still visible
+      if (state.renderedCount < state.filteredImages.length && isSentinelVisible()) {
         setTimeout(renderNextPage, 50);
       }
     }
