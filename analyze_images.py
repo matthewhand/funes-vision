@@ -8,11 +8,24 @@ import numpy as np
 import time
 from datetime import datetime
 
-# CONFIGURATION
+# CONFIGURATION (defaults; override in settings.json next to this script)
 MODEL_CLOUD = "google/gemma-4-31b-it"
 MODEL_LOCAL = "gemma-4:12b" # User belief: we can run this slowly
-BURST_THRESHOLD_SECONDS = 120 # Group images within 2 mins
+BURST_THRESHOLD_SECONDS = 300  # Group images within 5 mins
 MIN_MEM_FOR_LOCAL_GB = 16.0
+MAX_AGE_DAYS = 30   # retention: no-detection images older than this are removed
+MAX_DIR_GB = 4.0    # retention: per-camera disk budget
+
+_settings_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "settings.json")
+if os.path.exists(_settings_path):
+    try:
+        _s = json.load(open(_settings_path))
+        BURST_THRESHOLD_SECONDS = _s.get("burst_threshold_seconds", BURST_THRESHOLD_SECONDS)
+        MAX_AGE_DAYS = _s.get("max_age_days", MAX_AGE_DAYS)
+        MAX_DIR_GB = _s.get("max_dir_gb", MAX_DIR_GB)
+        MIN_MEM_FOR_LOCAL_GB = _s.get("min_mem_for_local_gb", MIN_MEM_FOR_LOCAL_GB)
+    except (ValueError, OSError) as e:
+        print(f"Warning: could not read settings.json ({e}); using defaults")
 
 # Initialize Haar Cascades
 face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
@@ -122,10 +135,6 @@ def get_free_mem_gb():
         return 0
 
 THUMB_WIDTH = 320
-
-# Retention policy (applied once per gated pipeline run)
-MAX_AGE_DAYS = 30   # no-detection images older than this are removed
-MAX_DIR_GB = 4.0    # per-camera disk budget
 
 def has_detection(entry):
     return any(v is True for k, v in entry.items() if k != 'fast_pass')
