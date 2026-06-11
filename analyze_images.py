@@ -15,6 +15,8 @@ BURST_THRESHOLD_SECONDS = 300  # Group images within 5 mins
 MIN_MEM_FOR_LOCAL_GB = 16.0
 MAX_AGE_DAYS = 30   # retention: no-detection images older than this are removed
 MAX_DIR_GB = 4.0    # retention: per-camera disk budget
+ALLOW_CLOUD = True  # permit OpenRouter calls when local inference is unavailable
+OLLAMA_URL = "http://localhost:11434"
 
 _settings_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "settings.json")
 if os.path.exists(_settings_path):
@@ -24,6 +26,8 @@ if os.path.exists(_settings_path):
         MAX_AGE_DAYS = _s.get("max_age_days", MAX_AGE_DAYS)
         MAX_DIR_GB = _s.get("max_dir_gb", MAX_DIR_GB)
         MIN_MEM_FOR_LOCAL_GB = _s.get("min_mem_for_local_gb", MIN_MEM_FOR_LOCAL_GB)
+        ALLOW_CLOUD = _s.get("allow_cloud", ALLOW_CLOUD)
+        OLLAMA_URL = _s.get("ollama_url", OLLAMA_URL)
     except (ValueError, OSError) as e:
         print(f"Warning: could not read settings.json ({e}); using defaults")
 
@@ -61,10 +65,12 @@ def encode_image(image_path):
     with open(image_path, "rb") as image_file:
         return base64.b64encode(image_file.read()).decode('utf-8')
 
+DETECT_PROMPT = "Analyze this webcam image. Specifically detect if any PERSON, FACE, BODY, DOG, or CAT is visible. If you see a human (even partial), use keys 'person', 'face', or 'body'. If you see something unusual (e.g. alien_ufo), add a descriptive key for it. Return ONLY a valid JSON object with boolean keys. Example: {\"person\": true, \"face\": true, \"dog\": false}"
+
 def analyze_image_openrouter(image_path, api_key):
     base64_image = encode_image(image_path)
     headers = { "Authorization": f"Bearer {api_key}", "Content-Type": "application/json" }
-    
+
     payload = {
         "model": MODEL_CLOUD,
         "messages": [
@@ -73,7 +79,7 @@ def analyze_image_openrouter(image_path, api_key):
                 "content": [
                     {
                         "type": "text",
-                        "text": "Analyze this webcam image. Specifically detect if any PERSON, FACE, BODY, DOG, or CAT is visible. If you see a human (even partial), use keys 'person', 'face', or 'body'. If you see something unusual (e.g. alien_ufo), add a descriptive key for it. Return ONLY a valid JSON object with boolean keys. Example: {\"person\": true, \"face\": true, \"dog\": false}"
+                        "text": DETECT_PROMPT
                     },
                     {
                         "type": "image_url",
@@ -94,13 +100,27 @@ def analyze_image_openrouter(image_path, api_key):
         return None
 
 def analyze_image_local(image_path):
-    """Placeholder for Ollama local inference if memory allows."""
-    # Since we can't confirm Ollama's exact API without testing, 
-    # we'll assume a standard Ollama-like local endpoint or a mock for now.
-    # In a real setup, this would call `http://localhost:11434/api/generate`
-    print(f"DEBUG: Attempting local inference with {MODEL_LOCAL} (Memory > 16GB)")
-    # For now, we return None to fall back to OpenRouter unless user specifically sets up Ollama
-    return None
+    """Vision inference via a local Ollama server (if one is running)."""
+    try:
+        payload = {
+            "model": MODEL_LOCAL,
+            "messages": [{
+                "role": "user",
+                "content": DETECT_PROMPT,
+                "images": [encode_image(image_path)],
+            }],
+            "stream": False,
+            "format": "json",
+        }
+        response = requests.post(f"{OLLAMA_URL}/api/chat", json=payload, timeout=600)
+        response.raise_for_status()
+        result = json.loads(response.json()["message"]["content"])
+        return result if isinstance(result, dict) else None
+    except requests.exceptions.ConnectionError:
+        return None  # No Ollama server; fall through to cloud
+    except Exception as e:
+        print(f"Local inference failed: {e}")
+        return None
 
 def analyze_burst_openrouter(image_paths, api_key):
     """Analyze a sequence of images for a textual description."""
@@ -289,7 +309,7 @@ def main():
                     if can_run_local:
                         result = analyze_image_local(image_path)
                     
-                    if not result and api_key and deep_pass_count < max_deep_passes:
+                    if not result and ALLOW_CLOUD and api_key and deep_pass_count < max_deep_passes:
                         result = analyze_image_openrouter(image_path, api_key)
                         deep_pass_count += 1
                     
@@ -331,7 +351,7 @@ def main():
             # Only analyze burst if at least one image has a detection
             has_detection = any(img in analysis_data and any(v is True for k, v in analysis_data[img].items() if k != 'fast_pass') for img in burst)
             
-            if has_detection and api_key:
+            if has_detection and ALLOW_CLOUD and api_key:
                 print(f"Analyzing burst ending at {burst_id}...")
                 full_paths = [os.path.join(image_dir, f) for f in burst[-3:]] # Take last 3 max
                 summary = analyze_burst_openrouter(full_paths, api_key)
