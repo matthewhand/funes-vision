@@ -390,6 +390,15 @@
       border-radius: 1px;
     }
 
+    .chart-viewport.chart-days {
+      height: 54px;
+    }
+
+    .chart-bar.day-bar.active {
+      outline: 1px solid var(--accent-color);
+      box-shadow: 0 0 6px rgba(59, 130, 246, 0.5);
+    }
+
     .chart-bar-wrapper:hover .chart-bar {
       background: var(--accent-color);
       box-shadow: 0 0 6px rgba(59, 130, 246, 0.5);
@@ -1317,10 +1326,16 @@
         <!-- Activity Chart section -->
         <div class="sidebar-section activity-chart-container">
           <h3><i data-lucide="activity"></i> Motion Activity</h3>
+          <!-- Day planner: one bar per day, red marks at time-of-day -->
+          <div class="chart-viewport chart-days" id="activity-chart-days">
+            <!-- Dynamic bars inserted here -->
+          </div>
+          <div class="chart-x-axis" id="chart-x-axis-days"></div>
+          <!-- Hour histogram over the selected date range -->
           <div class="chart-viewport" id="activity-chart">
             <!-- Dynamic bars inserted here -->
           </div>
-          <div class="chart-x-axis" id="chart-x-axis">
+          <div class="chart-x-axis">
             <span>12 AM</span>
             <span>6 AM</span>
             <span>12 PM</span>
@@ -1664,14 +1679,14 @@
       });
     }
 
-    // Render the sidebar activity chart.
-    // All dates: one bar per DAY. Each bar is a midnight(top) to
-    //   midnight(bottom) timeline; red segments mark WHEN matches
-    //   occurred that day, sized by how many images matched.
-    // Specific date: one bar per HOUR (red = matching share, clickable).
+    // Render the sidebar activity charts:
+    // 1) Day planner - one bar per DAY, a midnight(top) to midnight
+    //    (bottom) timeline; red segments mark WHEN matches occurred,
+    //    sized by volume. Click a day to drill in (again to clear).
+    // 2) Hour histogram - events per hour over the selected date
+    //    range; red = matching share. Click an hour to filter it.
     function renderActivityChart() {
       const chartContainer = document.getElementById('activity-chart');
-      const xAxis = document.getElementById('chart-x-axis');
       chartContainer.innerHTML = '';
 
       // Does this image count as a "match" for red highlighting?
@@ -1691,68 +1706,68 @@
 
       const what = state.activeObjectFilter || 'detection';
 
-      if (state.activeDateFilter === 'all') {
-        // ---- DAY MODE ----
-        const days = {};
-        state.allImages.forEach(filename => {
-          if (!searchOk(filename)) return;
-          const meta = parseFilename(filename);
-          if (!meta || meta.hour === -1) return;
-          const d = days[meta.dateStr] || (days[meta.dateStr] =
-            { total: 0, matchTotal: 0, matchHours: Array(24).fill(0), label: meta.formattedDate });
-          d.total++;
-          if (isMatch(filename)) { d.matchHours[meta.hour]++; d.matchTotal++; }
+      // ---- 1. Day planner: one bar per day, top=12AM bottom=12PM ----
+      const daysContainer = document.getElementById('activity-chart-days');
+      daysContainer.innerHTML = '';
+      const days = {};
+      state.allImages.forEach(filename => {
+        if (!searchOk(filename)) return;
+        const meta = parseFilename(filename);
+        if (!meta || meta.hour === -1) return;
+        const d = days[meta.dateStr] || (days[meta.dateStr] =
+          { total: 0, matchTotal: 0, matchHours: Array(24).fill(0), label: meta.formattedDate });
+        d.total++;
+        if (isMatch(filename)) { d.matchHours[meta.hour]++; d.matchTotal++; }
+      });
+
+      const sortedDays = Object.keys(days).sort();
+      const maxTotal = Math.max(...sortedDays.map(k => days[k].total), 1);
+
+      sortedDays.forEach(dayStr => {
+        const d = days[dayStr];
+        const barWrapper = document.createElement('div');
+        barWrapper.className = 'chart-bar-wrapper';
+
+        // Red segments at the time-of-day they occurred, sized by
+        // that hour's share of the day's images
+        let segs = '';
+        d.matchHours.forEach((m, h) => {
+          if (m === 0) return;
+          const hgt = Math.max(6, (m / d.total) * 100);
+          segs += `<div class="chart-bar-match" style="top: ${(h / 24) * 100}%; height: ${hgt}%"></div>`;
         });
 
-        const sortedDays = Object.keys(days).sort();
-        const maxTotal = Math.max(...sortedDays.map(k => days[k].total), 1);
-
-        sortedDays.forEach(dayStr => {
-          const d = days[dayStr];
-          const barWrapper = document.createElement('div');
-          barWrapper.className = 'chart-bar-wrapper';
-
-          // Red segments at the time-of-day they occurred, sized by
-          // that hour's share of the day's images
-          let segs = '';
-          d.matchHours.forEach((m, h) => {
-            if (m === 0) return;
-            const hgt = Math.max(6, (m / d.total) * 100);
-            segs += `<div class="chart-bar-match" style="top: ${(h / 24) * 100}%; height: ${hgt}%"></div>`;
-          });
-
-          const intensity = 0.08 + 0.22 * (d.total / maxTotal);
-          const title = `${d.label}: ${d.total} events, ${d.matchTotal} ${what}${d.matchTotal !== 1 ? 's' : ''}`;
-          barWrapper.innerHTML = `
-            <div class="chart-bar day-bar" style="height: 100%; background: rgba(59, 130, 246, ${intensity.toFixed(2)})" title="${title}">${segs}</div>
-          `;
-          barWrapper.addEventListener('click', () => {
-            state.activeDateFilter = dayStr; // Drill into that day
-            renderDateSidebar();
-            applyFiltersAndSearch();
-          });
-          chartContainer.appendChild(barWrapper);
+        const intensity = 0.08 + 0.22 * (d.total / maxTotal);
+        const activeDay = state.activeDateFilter === dayStr ? 'active' : '';
+        const title = `${d.label}: ${d.total} events, ${d.matchTotal} ${what}${d.matchTotal !== 1 ? 's' : ''}`;
+        barWrapper.innerHTML = `
+          <div class="chart-bar day-bar ${activeDay}" style="height: 100%; background: rgba(59, 130, 246, ${intensity.toFixed(2)})" title="${title}">${segs}</div>
+        `;
+        barWrapper.addEventListener('click', () => {
+          // Drill into that day; clicking the active day clears it
+          state.activeDateFilter = state.activeDateFilter === dayStr ? 'all' : dayStr;
+          renderDateSidebar();
+          applyFiltersAndSearch();
         });
+        daysContainer.appendChild(barWrapper);
+      });
 
-        if (xAxis) {
-          const fmt = s => `${parseInt(s.slice(5, 7), 10)}/${parseInt(s.slice(8, 10), 10)}`;
-          xAxis.innerHTML = sortedDays.length
-            ? `<span>${fmt(sortedDays[0])}</span><span>days &middot; top=12AM</span><span>${fmt(sortedDays[sortedDays.length - 1])}</span>`
-            : '';
-        }
-        return;
+      const dayAxis = document.getElementById('chart-x-axis-days');
+      if (dayAxis) {
+        const fmt = s => `${parseInt(s.slice(5, 7), 10)}/${parseInt(s.slice(8, 10), 10)}`;
+        dayAxis.innerHTML = sortedDays.length
+          ? `<span>${fmt(sortedDays[0])}</span><span>days &middot; top=12AM</span><span>${fmt(sortedDays[sortedDays.length - 1])}</span>`
+          : '';
       }
 
-      // ---- HOUR MODE (a specific day is selected) ----
-      if (xAxis) xAxis.innerHTML = '<span>12 AM</span><span>6 AM</span><span>12 PM</span><span>6 PM</span><span>11 PM</span>';
-
+      // ---- 2. Hour histogram over the selected date range ----
       const hours = Array(24).fill(0);
       const matchHours = Array(24).fill(0);
       state.allImages.forEach(filename => {
         if (!searchOk(filename)) return;
         const meta = parseFilename(filename);
         if (!meta || meta.hour === -1) return;
-        if (meta.dateStr !== state.activeDateFilter) return;
+        if (state.activeDateFilter !== 'all' && meta.dateStr !== state.activeDateFilter) return;
         hours[meta.hour]++;
         if (isMatch(filename)) matchHours[meta.hour]++;
       });
