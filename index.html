@@ -1930,7 +1930,7 @@
 
       card.innerHTML = `
         <div class="card-img-wrapper">
-          <img class="card-img unloaded" data-src="${filename}" alt="${filename}">
+          <img class="card-img unloaded" data-src="thumbs/${filename}" data-full="${filename}" alt="${filename}">
         </div>
         <div class="card-overlay">
           <div class="meta-info">
@@ -1954,6 +1954,8 @@
       entries.forEach(entry => {
         if (entry.isIntersecting) {
           const img = entry.target;
+          // Thumbnail first; fall back to the full image if no thumb exists yet
+          img.onerror = () => { img.onerror = null; img.src = img.dataset.full; };
           img.src = img.dataset.src;
           img.onload = () => img.classList.add('loaded');
           observer.unobserve(img);

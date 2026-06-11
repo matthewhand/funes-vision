@@ -121,6 +121,32 @@ def get_free_mem_gb():
     except:
         return 0
 
+THUMB_WIDTH = 320
+
+def generate_thumbnails(image_dir, images):
+    """Create missing thumbnails under <image_dir>/thumbs/ for grid view."""
+    thumb_dir = os.path.join(image_dir, "thumbs")
+    os.makedirs(thumb_dir, exist_ok=True)
+    made = 0
+    for img in images:
+        thumb_path = os.path.join(thumb_dir, img)
+        if os.path.exists(thumb_path):
+            continue
+        try:
+            im = cv2.imread(os.path.join(image_dir, img))
+            if im is None:
+                continue
+            h, w = im.shape[:2]
+            if w > THUMB_WIDTH:
+                im = cv2.resize(im, (THUMB_WIDTH, max(1, round(h * THUMB_WIDTH / w))),
+                                interpolation=cv2.INTER_AREA)
+            cv2.imwrite(thumb_path, im, [cv2.IMWRITE_JPEG_QUALITY, 70])
+            made += 1
+        except Exception as e:
+            print(f"Thumbnail failed for {img}: {e}")
+    if made:
+        print(f"Generated {made} thumbnails in {thumb_dir}")
+
 def main():
     api_key = os.getenv("OPENROUTER_API_KEY")
     watch_dirs = ["/mnt/models/Webcam21", "/mnt/models/Webcam22"]
@@ -140,7 +166,9 @@ def main():
         print(f"Scanning {image_dir}...")
         
         images = [f for f in os.listdir(image_dir) if f.lower().endswith(('.jpg', '.jpeg', '.png', '.gif'))]
-        
+
+        generate_thumbnails(image_dir, images)
+
         # Catch-up prioritization:
         # 1. Images not in analysis_data at all
         # 2. Images marked as "partial" (OpenCV hit, but no LLM yet)

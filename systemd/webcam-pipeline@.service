@@ -1,0 +1,16 @@
+[Unit]
+Description=Webcam analysis pipeline for /mnt/models/%i
+After=network.target remote-fs.target
+
+[Service]
+Type=simple
+User=user
+Group=user
+Environment=HOME=/home/user
+ExecStart=/home/user/webcam/create-index.sh /mnt/models/%i
+Restart=always
+RestartSec=10
+Nice=10
+
+[Install]
+WantedBy=multi-user.target
