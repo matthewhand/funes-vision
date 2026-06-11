@@ -13,16 +13,16 @@
   
   <style>
     :root {
-      --bg-primary: #0b0f19;
-      --bg-secondary: #161b26;
-      --bg-tertiary: #1f2638;
-      --text-primary: #f3f4f6;
-      --text-secondary: #9ca3af;
+      --bg-primary: #080c14;
+      --bg-secondary: #0f172a;
+      --bg-tertiary: #1e293b;
+      --text-primary: #f8fafc;
+      --text-secondary: #94a3b8;
       --accent-color: #3b82f6;
-      --accent-hover: #2563eb;
+      --accent-hover: #1d4ed8;
       --success-color: #10b981;
-      --border-color: rgba(255, 255, 255, 0.08);
-      --transition-speed: 0.3s;
+      --border-color: rgba(255, 255, 255, 0.06);
+      --transition-speed: 0.25s;
       
       /* Grid variables */
       --grid-gap: 16px;
@@ -43,47 +43,47 @@
       min-height: 100vh;
     }
 
-    h1, h2, h3 {
+    h1, h2, h3, h4 {
       font-family: 'Outfit', sans-serif;
     }
 
-    /* Scrollbar */
+    /* Scrollbar styling */
     ::-webkit-scrollbar {
-      width: 8px;
-      height: 8px;
+      width: 6px;
+      height: 6px;
     }
     ::-webkit-scrollbar-track {
       background: var(--bg-primary);
     }
     ::-webkit-scrollbar-thumb {
       background: var(--bg-tertiary);
-      border-radius: 4px;
+      border-radius: 3px;
     }
     ::-webkit-scrollbar-thumb:hover {
       background: var(--text-secondary);
     }
 
-    /* Layout */
+    /* Layout structure */
     .app-container {
       display: flex;
       flex-direction: column;
       min-height: 100vh;
     }
 
-    /* Header */
+    /* Header styling */
     header {
       position: sticky;
       top: 0;
       z-index: 50;
-      background: rgba(11, 15, 25, 0.8);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
+      background: rgba(8, 12, 20, 0.85);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
       border-bottom: 1px solid var(--border-color);
-      padding: 16px 24px;
+      padding: 14px 24px;
     }
 
     .header-content {
-      max-width: 1400px;
+      max-width: 1600px;
       margin: 0 auto;
       display: flex;
       justify-content: space-between;
@@ -99,22 +99,22 @@
     }
 
     .logo-icon {
-      background: linear-gradient(135deg, #3b82f6, #8b5cf6);
-      width: 40px;
-      height: 40px;
-      border-radius: 10px;
+      background: linear-gradient(135deg, #3b82f6, #6366f1);
+      width: 42px;
+      height: 42px;
+      border-radius: 12px;
       display: flex;
       align-items: center;
       justify-content: center;
       color: white;
-      box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+      box-shadow: 0 4px 14px rgba(59, 130, 246, 0.35);
     }
 
     .logo-text h1 {
       font-size: 1.25rem;
       font-weight: 700;
-      letter-spacing: -0.025em;
-      background: linear-gradient(to right, #3b82f6, #a78bfa);
+      letter-spacing: -0.02em;
+      background: linear-gradient(to right, #60a5fa, #a5b4fc);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
     }
@@ -122,19 +122,20 @@
     .logo-text p {
       font-size: 0.75rem;
       color: var(--text-secondary);
+      margin-top: 1px;
     }
 
-    /* Actions Bar */
+    /* Top Action controls */
     .controls-wrapper {
       display: flex;
       align-items: center;
-      gap: 16px;
+      gap: 12px;
       flex-wrap: wrap;
     }
 
     .search-box {
       position: relative;
-      min-width: 260px;
+      min-width: 240px;
     }
 
     .search-box i {
@@ -143,80 +144,86 @@
       top: 50%;
       transform: translateY(-50%);
       color: var(--text-secondary);
-      width: 16px;
-      height: 16px;
+      width: 15px;
+      height: 15px;
     }
 
     .search-input {
       width: 100%;
-      background: var(--bg-secondary);
+      background: rgba(255, 255, 255, 0.04);
       border: 1px solid var(--border-color);
       border-radius: 8px;
-      padding: 10px 12px 10px 38px;
+      padding: 9px 12px 9px 36px;
       color: var(--text-primary);
-      font-size: 0.875rem;
+      font-size: 0.85rem;
       transition: all var(--transition-speed);
     }
 
     .search-input:focus {
       outline: none;
       border-color: var(--accent-color);
+      background: rgba(255, 255, 255, 0.07);
       box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
     }
 
     .btn {
-      background: var(--bg-secondary);
+      background: rgba(255, 255, 255, 0.04);
       color: var(--text-primary);
       border: 1px solid var(--border-color);
       border-radius: 8px;
-      padding: 10px 16px;
-      font-size: 0.875rem;
+      padding: 9px 14px;
+      font-size: 0.85rem;
       cursor: pointer;
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
       font-weight: 500;
       transition: all var(--transition-speed);
       user-select: none;
     }
 
     .btn:hover {
-      background: var(--bg-tertiary);
+      background: rgba(255, 255, 255, 0.08);
       border-color: var(--text-secondary);
     }
 
-    .btn.active {
-      background: var(--accent-color);
-      border-color: var(--accent-color);
-      color: white;
+    .btn-switch {
+      background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(59, 130, 246, 0.1));
+      color: #60a5fa;
+      border: 1px solid rgba(59, 130, 246, 0.2);
     }
 
-    /* Live Toggle */
+    .btn-switch:hover {
+      background: linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(59, 130, 246, 0.2));
+      border-color: #60a5fa;
+    }
+
+    /* Live pulse badge */
     .live-badge {
       display: flex;
       align-items: center;
       gap: 6px;
-      background: rgba(16, 185, 129, 0.1);
+      background: rgba(16, 185, 129, 0.08);
       color: var(--success-color);
       padding: 6px 12px;
       border-radius: 20px;
       font-size: 0.75rem;
       font-weight: 600;
-      border: 1px solid rgba(16, 185, 129, 0.2);
+      border: 1px solid rgba(16, 185, 129, 0.15);
       cursor: pointer;
       user-select: none;
       transition: all var(--transition-speed);
     }
 
     .live-badge.paused {
-      background: rgba(255, 255, 255, 0.05);
+      background: rgba(255, 255, 255, 0.03);
       color: var(--text-secondary);
       border-color: var(--border-color);
     }
 
     .live-dot {
-      width: 8px;
-      height: 8px;
+      width: 7px;
+      height: 7px;
       background-color: var(--success-color);
       border-radius: 50%;
     }
@@ -229,12 +236,12 @@
       0% {
         transform: scale(0.9);
         opacity: 1;
-        box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+        box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.6);
       }
       70% {
         transform: scale(1.1);
-        opacity: 0.5;
-        box-shadow: 0 0 0 6px rgba(16, 185, 129, 0);
+        opacity: 0.4;
+        box-shadow: 0 0 0 5px rgba(16, 185, 129, 0);
       }
       100% {
         transform: scale(0.9);
@@ -243,20 +250,155 @@
       }
     }
 
-    /* Main Content */
-    main {
+    /* Main Workspace Layout */
+    .workspace {
+      display: flex;
       flex: 1;
-      max-width: 1400px;
+      max-width: 1600px;
       width: 100%;
       margin: 0 auto;
       padding: 24px;
+      gap: 24px;
+    }
+
+    /* Sidebar Panel (Collapsible/Drawer on mobile) */
+    aside {
+      width: 280px;
       display: flex;
       flex-direction: column;
       gap: 20px;
+      flex-shrink: 0;
+    }
+
+    .sidebar-section {
+      background: var(--bg-secondary);
+      border-radius: 12px;
+      border: 1px solid var(--border-color);
+      padding: 16px;
+    }
+
+    .sidebar-section h3 {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* Date Timeline List */
+    .date-list {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      max-height: 280px;
+      overflow-y: auto;
+      padding-right: 4px;
+    }
+
+    .sidebar-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 9px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+      font-weight: 500;
+      transition: all var(--transition-speed);
+    }
+
+    .sidebar-item:hover {
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--text-primary);
+    }
+
+    .sidebar-item.active {
+      background: var(--bg-tertiary);
+      color: var(--accent-color);
+      font-weight: 600;
+    }
+
+    .count-badge {
+      background: rgba(255, 255, 255, 0.05);
+      font-size: 0.75rem;
+      padding: 2px 7px;
+      border-radius: 10px;
+      color: var(--text-secondary);
+    }
+
+    .sidebar-item.active .count-badge {
+      background: rgba(59, 130, 246, 0.15);
+      color: var(--accent-color);
+    }
+
+    /* Hourly Activity Chart */
+    .activity-chart-container {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .chart-viewport {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      height: 70px;
+      padding: 0 4px;
+      gap: 3px;
+    }
+
+    .chart-bar-wrapper {
+      flex: 1;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      align-items: center;
+      cursor: pointer;
+    }
+
+    .chart-bar {
+      width: 100%;
+      background: rgba(59, 130, 246, 0.2);
+      border-radius: 2px 2px 0 0;
+      transition: all 0.3s ease;
+      min-height: 1px;
+    }
+
+    .chart-bar-wrapper:hover .chart-bar {
+      background: var(--accent-color);
+      box-shadow: 0 0 6px rgba(59, 130, 246, 0.5);
+    }
+
+    .chart-bar.active {
+      background: linear-gradient(to top, #3b82f6, #6366f1);
+      box-shadow: 0 0 6px rgba(59, 130, 246, 0.4);
+    }
+
+    .chart-x-axis {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.65rem;
+      color: var(--text-secondary);
+      border-top: 1px solid var(--border-color);
+      padding-top: 4px;
+    }
+
+    /* Content Area */
+    .content-area {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
     }
 
     /* Filter Stats Panel */
-    .filter-bar {
+    .toolbar-bar {
       display: flex;
       justify-content: space-between;
       align-items: center;
@@ -268,18 +410,19 @@
       display: flex;
       background: var(--bg-secondary);
       padding: 4px;
-      border-radius: 10px;
+      border-radius: 8px;
       border: 1px solid var(--border-color);
+      gap: 2px;
     }
 
     .tab-btn {
       background: transparent;
       border: none;
       color: var(--text-secondary);
-      padding: 8px 16px;
-      border-radius: 8px;
+      padding: 7px 12px;
+      border-radius: 6px;
       cursor: pointer;
-      font-size: 0.875rem;
+      font-size: 0.8rem;
       font-weight: 500;
       transition: all var(--transition-speed);
     }
@@ -291,12 +434,38 @@
     .tab-btn.active {
       background: var(--bg-tertiary);
       color: var(--text-primary);
-      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
     }
 
-    .stats-info {
-      font-size: 0.875rem;
+    /* Quick Hour Range Pills */
+    .time-pills {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .time-pill {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border-color);
       color: var(--text-secondary);
+      padding: 4px 10px;
+      border-radius: 15px;
+      font-size: 0.75rem;
+      cursor: pointer;
+      font-weight: 500;
+      transition: all var(--transition-speed);
+      user-select: none;
+    }
+
+    .time-pill:hover {
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--text-primary);
+    }
+
+    .time-pill.active {
+      background: rgba(59, 130, 246, 0.1);
+      color: var(--accent-color);
+      border-color: rgba(59, 130, 246, 0.3);
     }
 
     /* Grid Layout Toggle */
@@ -304,7 +473,7 @@
       display: flex;
       background: var(--bg-secondary);
       padding: 4px;
-      border-radius: 10px;
+      border-radius: 8px;
       border: 1px solid var(--border-color);
     }
 
@@ -312,9 +481,9 @@
       background: transparent;
       border: none;
       color: var(--text-secondary);
-      width: 36px;
-      height: 36px;
-      border-radius: 8px;
+      width: 32px;
+      height: 32px;
+      border-radius: 6px;
       cursor: pointer;
       display: flex;
       align-items: center;
@@ -331,6 +500,64 @@
       color: var(--accent-color);
     }
 
+    /* AI Label Styles */
+    .ai-labels-overlay {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      z-index: 10;
+    }
+
+    .ai-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+
+    .ai-tag i {
+      width: 12px;
+      height: 12px;
+    }
+
+    .tag-person {
+      background: rgba(59, 130, 246, 0.85); /* blue */
+      color: white;
+    }
+
+    .tag-dog {
+      background: rgba(245, 158, 11, 0.85); /* amber */
+      color: white;
+    }
+
+    .tag-cat {
+      background: rgba(168, 85, 247, 0.85); /* purple */
+      color: white;
+    }
+    
+    .tag-empty {
+      background: rgba(100, 116, 139, 0.6); /* slate */
+      color: white;
+      font-weight: 500;
+      text-transform: none;
+    }
+
+    .view-btn i {
+      width: 15px;
+      height: 15px;
+    }
+
     /* Grid layout sizes */
     .image-grid {
       display: grid;
@@ -340,47 +567,47 @@
     }
 
     .image-grid.large {
-      --card-min-width: 380px;
+      --card-min-width: 360px;
     }
 
     .image-grid.medium {
-      --card-min-width: 280px;
+      --card-min-width: 250px;
     }
 
     .image-grid.small {
-      --card-min-width: 180px;
+      --card-min-width: 170px;
     }
 
     .image-grid.list {
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: 8px;
     }
 
-    /* Card Item */
+    /* Card Item design */
     .image-card {
       background: var(--bg-secondary);
-      border-radius: 12px;
+      border-radius: 10px;
       border: 1px solid var(--border-color);
       overflow: hidden;
       display: flex;
       flex-direction: column;
-      transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+      transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.22s ease, border-color 0.22s ease;
       position: relative;
-      aspect-ratio: 16 / 11;
+      aspect-ratio: 16 / 10;
       cursor: pointer;
     }
 
     .image-grid.list .image-card {
       flex-direction: row;
       aspect-ratio: auto;
-      height: 90px;
+      height: 74px;
     }
 
     .image-card:hover {
-      transform: translateY(-4px);
-      box-shadow: 0 12px 24px rgba(0, 0, 0, 0.35);
-      border-color: rgba(59, 130, 246, 0.3);
+      transform: translateY(-3px);
+      box-shadow: 0 10px 20px rgba(0, 0, 0, 0.4);
+      border-color: rgba(59, 130, 246, 0.25);
     }
 
     .card-img-wrapper {
@@ -393,7 +620,7 @@
     }
 
     .image-grid.list .card-img-wrapper {
-      width: 130px;
+      width: 110px;
       height: 100%;
       flex: none;
     }
@@ -402,11 +629,11 @@
       width: 100%;
       height: 100%;
       object-fit: cover;
-      transition: transform 0.5s ease;
+      transition: transform 0.4s ease;
     }
 
     .image-card:hover .card-img {
-      transform: scale(1.04);
+      transform: scale(1.03);
     }
 
     .card-overlay {
@@ -415,7 +642,7 @@
       left: 0;
       right: 0;
       background: linear-gradient(transparent, rgba(0, 0, 0, 0.85));
-      padding: 12px;
+      padding: 10px 12px;
       display: flex;
       justify-content: space-between;
       align-items: flex-end;
@@ -429,17 +656,17 @@
       flex: 1;
       flex-direction: row;
       align-items: center;
-      padding: 16px;
+      padding: 12px 16px;
     }
 
     .meta-info {
       display: flex;
       flex-direction: column;
-      gap: 4px;
+      gap: 2px;
     }
 
     .time-stamp {
-      font-size: 0.85rem;
+      font-size: 0.8rem;
       font-weight: 600;
       color: white;
       text-shadow: 0 1px 3px rgba(0,0,0,0.5);
@@ -447,34 +674,35 @@
 
     .image-grid.list .time-stamp {
       color: var(--text-primary);
-      font-size: 1rem;
+      font-size: 0.95rem;
       text-shadow: none;
     }
 
     .date-stamp {
-      font-size: 0.725rem;
-      color: rgba(255, 255, 255, 0.7);
+      font-size: 0.7rem;
+      color: rgba(255, 255, 255, 0.75);
       text-shadow: 0 1px 2px rgba(0,0,0,0.5);
     }
 
     .image-grid.list .date-stamp {
       color: var(--text-secondary);
-      font-size: 0.825rem;
+      font-size: 0.8rem;
       text-shadow: none;
     }
 
     .badge {
-      font-size: 0.65rem;
+      font-size: 0.6rem;
       text-transform: uppercase;
-      letter-spacing: 0.05em;
-      padding: 2px 6px;
-      border-radius: 4px;
+      letter-spacing: 0.04em;
+      padding: 1px 5px;
+      border-radius: 3px;
       font-weight: 700;
       width: fit-content;
+      margin-top: 2px;
     }
 
     .badge-motdec {
-      background: #d97706;
+      background: #c2410c;
       color: white;
     }
 
@@ -489,8 +717,8 @@
     }
 
     .action-icon-btn {
-      background: rgba(255, 255, 255, 0.15);
-      border: 1px solid rgba(255, 255, 255, 0.1);
+      background: rgba(255, 255, 255, 0.12);
+      border: 1px solid rgba(255, 255, 255, 0.08);
       border-radius: 6px;
       width: 28px;
       height: 28px;
@@ -506,8 +734,8 @@
       background: var(--bg-tertiary);
       border-color: var(--border-color);
       color: var(--text-primary);
-      width: 36px;
-      height: 36px;
+      width: 32px;
+      height: 32px;
     }
 
     .action-icon-btn:hover {
@@ -517,20 +745,20 @@
     }
 
     .action-icon-btn i {
-      width: 14px;
-      height: 14px;
+      width: 13px;
+      height: 13px;
     }
 
     .image-grid.list .action-icon-btn i {
-      width: 18px;
-      height: 18px;
+      width: 15px;
+      height: 15px;
     }
 
-    /* Skeleton Loading State */
+    /* Skeleton placeholders */
     .skeleton-card {
       background: var(--bg-secondary);
-      border-radius: 12px;
-      aspect-ratio: 16 / 11;
+      border-radius: 10px;
+      aspect-ratio: 16 / 10;
       border: 1px solid var(--border-color);
       position: relative;
       overflow: hidden;
@@ -549,47 +777,47 @@
       100% { transform: translateX(100%); }
     }
 
-    /* Infinite Scroll Sentinel */
+    /* Sentinel loader */
     .scroll-sentinel {
-      height: 100px;
+      height: 90px;
       display: flex;
       justify-content: center;
       align-items: center;
       grid-column: 1 / -1;
       color: var(--text-secondary);
-      font-size: 0.875rem;
+      font-size: 0.8rem;
     }
 
-    /* Empty State */
+    /* Empty state info */
     .empty-state {
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      padding: 60px 20px;
+      padding: 80px 20px;
       text-align: center;
       grid-column: 1 / -1;
       background: var(--bg-secondary);
-      border-radius: 16px;
+      border-radius: 12px;
       border: 1px dashed var(--border-color);
-      gap: 16px;
+      gap: 12px;
     }
 
     .empty-state i {
       color: var(--text-secondary);
-      width: 48px;
-      height: 48px;
+      width: 44px;
+      height: 44px;
     }
 
     .empty-state h3 {
-      font-size: 1.25rem;
+      font-size: 1.15rem;
       font-weight: 600;
     }
 
     .empty-state p {
       color: var(--text-secondary);
-      font-size: 0.875rem;
-      max-width: 400px;
+      font-size: 0.8rem;
+      max-width: 380px;
     }
 
     /* Lightbox Modal */
@@ -597,11 +825,11 @@
       position: fixed;
       top: 0; left: 0; right: 0; bottom: 0;
       z-index: 100;
-      background-color: rgba(6, 9, 15, 0.98);
+      background-color: rgba(4, 6, 10, 0.98);
       display: none;
       flex-direction: column;
       opacity: 0;
-      transition: opacity 0.25s ease;
+      transition: opacity 0.22s ease;
     }
 
     .lightbox.active {
@@ -613,27 +841,28 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding: 16px 24px;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      padding: 14px 20px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
     }
 
     .lightbox-title {
-      font-weight: 600;
-      font-size: 1rem;
+      font-weight: 500;
+      font-size: 0.9rem;
+      color: var(--text-primary);
     }
 
     .lightbox-controls {
       display: flex;
-      gap: 12px;
+      gap: 8px;
     }
 
     .lightbox-btn {
-      background: rgba(255, 255, 255, 0.08);
-      border: 1px solid rgba(255, 255, 255, 0.05);
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.04);
       color: white;
-      border-radius: 8px;
-      width: 40px;
-      height: 40px;
+      border-radius: 6px;
+      width: 36px;
+      height: 36px;
       cursor: pointer;
       display: flex;
       align-items: center;
@@ -642,7 +871,7 @@
     }
 
     .lightbox-btn:hover {
-      background: rgba(255, 255, 255, 0.2);
+      background: rgba(255, 255, 255, 0.15);
     }
 
     .lightbox-btn.btn-close:hover {
@@ -651,8 +880,8 @@
     }
 
     .lightbox-btn i {
-      width: 18px;
-      height: 18px;
+      width: 16px;
+      height: 16px;
     }
 
     .lightbox-body {
@@ -660,7 +889,7 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 24px;
+      padding: 16px;
       position: relative;
       overflow: hidden;
     }
@@ -672,10 +901,15 @@
       align-items: center;
       justify-content: center;
       position: relative;
-      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+      box-shadow: 0 24px 50px rgba(0, 0, 0, 0.7);
       border-radius: 8px;
       overflow: hidden;
-      border: 1px solid rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.04);
+      cursor: grab;
+    }
+
+    .lightbox-image-wrapper:active {
+      cursor: grabbing;
     }
 
     .lightbox-image {
@@ -683,14 +917,18 @@
       max-height: 80vh;
       object-fit: contain;
       display: block;
+      user-select: none;
+      pointer-events: none;
+      transition: transform 0.05s linear;
+      transform-origin: center center;
     }
 
     .nav-arrow {
-      background: rgba(255, 255, 255, 0.08);
-      border: 1px solid rgba(255, 255, 255, 0.05);
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.04);
       color: white;
-      width: 56px;
-      height: 56px;
+      width: 48px;
+      height: 48px;
       border-radius: 50%;
       display: flex;
       align-items: center;
@@ -704,23 +942,23 @@
     .nav-arrow:hover {
       background: var(--accent-color);
       border-color: var(--accent-color);
-      transform: scale(1.05);
+      transform: scale(1.04);
     }
 
     .nav-arrow i {
-      width: 24px;
-      height: 24px;
+      width: 20px;
+      height: 20px;
     }
 
     .lightbox-footer {
-      padding: 20px 24px;
-      border-top: 1px solid rgba(255, 255, 255, 0.05);
+      padding: 16px 20px;
+      border-top: 1px solid rgba(255, 255, 255, 0.04);
       text-align: center;
       color: var(--text-secondary);
-      font-size: 0.875rem;
+      font-size: 0.8rem;
     }
 
-    /* Slideshow overlay info */
+    /* Slideshow details */
     .slideshow-progress {
       position: absolute;
       top: 0;
@@ -731,26 +969,43 @@
       transition: width 0.1s linear;
     }
 
-    /* Toast Notification */
+    /* Zoom Overlay Badge */
+    .zoom-badge {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      background: rgba(0, 0, 0, 0.7);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      padding: 4px 8px;
+      border-radius: 4px;
+      color: white;
+      font-size: 0.75rem;
+      font-weight: 600;
+      pointer-events: none;
+      display: none;
+      z-index: 50;
+    }
+
+    /* Toast Notification Alert */
     .toast {
       position: fixed;
       bottom: 24px;
       right: 24px;
       background: var(--accent-color);
       color: white;
-      padding: 14px 20px;
-      border-radius: 10px;
-      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+      padding: 12px 18px;
+      border-radius: 8px;
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
       z-index: 1000;
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: 10px;
       transform: translateY(150px);
       opacity: 0;
-      transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+      transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
       cursor: pointer;
       font-weight: 500;
-      font-size: 0.9rem;
+      font-size: 0.85rem;
     }
 
     .toast.active {
@@ -759,11 +1014,29 @@
     }
 
     .toast i {
-      width: 18px;
-      height: 18px;
+      width: 16px;
+      height: 16px;
     }
 
-    /* Responsive */
+    /* Responsive Viewports */
+    @media (max-width: 992px) {
+      .workspace {
+        flex-direction: column;
+      }
+      aside {
+        width: 100%;
+      }
+      .date-list {
+        flex-direction: row;
+        max-height: none;
+        overflow-x: auto;
+        padding-bottom: 8px;
+      }
+      .sidebar-item {
+        flex-shrink: 0;
+      }
+    }
+
     @media (max-width: 768px) {
       .header-content {
         flex-direction: column;
@@ -777,17 +1050,13 @@
         flex: 1;
         min-width: 100%;
       }
-      .filter-bar {
-        flex-direction: column;
-        align-items: flex-start;
-      }
       .nav-arrow {
-        width: 44px;
-        height: 44px;
+        width: 40px;
+        height: 40px;
         position: absolute;
       }
-      .nav-arrow.arrow-left { left: 16px; }
-      .nav-arrow.arrow-right { right: 16px; }
+      .nav-arrow.arrow-left { left: 12px; }
+      .nav-arrow.arrow-right { right: 12px; }
       .lightbox-image-wrapper {
         max-width: 95%;
       }
@@ -804,15 +1073,21 @@
             <i data-lucide="camera"></i>
           </div>
           <div class="logo-text">
-            <h1 id="camera-title">Camera Stream</h1>
-            <p id="camera-subtitle">Loading feed status...</p>
+            <h1 id="camera-title">Camera Feed</h1>
+            <p id="camera-subtitle">Loading camera status...</p>
           </div>
         </div>
 
         <div class="controls-wrapper">
+          <!-- Switch endpoint button -->
+          <button id="btn-switch-feed" class="btn btn-switch" title="Switch Feeds">
+            <i data-lucide="arrow-left-right"></i>
+            <span id="switch-feed-label">Switch Feed</span>
+          </button>
+
           <div class="search-box">
             <i data-lucide="search"></i>
-            <input type="text" id="search-input" class="search-input" placeholder="Search by name or date...">
+            <input type="text" id="search-input" class="search-input" placeholder="Filter by timestamp or event...">
           </div>
           
           <button id="btn-refresh" class="btn" title="Force Reload">
@@ -828,51 +1103,92 @@
       </div>
     </header>
 
-    <main>
-      <div class="filter-bar">
-        <div class="tab-group" id="filter-tabs">
-          <button class="tab-btn active" data-filter="all">All Logs</button>
-          <button class="tab-btn" data-filter="today">Today</button>
-          <button class="tab-btn" data-filter="yesterday">Yesterday</button>
-          <button class="tab-btn" data-filter="motdec">Motion Detected</button>
-        </div>
-
-        <div style="display: flex; align-items: center; gap: 12px;">
-          <span class="stats-info" id="stats-label">Loading image logs...</span>
-          
-          <div class="view-toggles">
-            <button class="view-btn" data-view="small" title="Small Cards">
-              <i data-lucide="layout-grid" style="width: 14px; height: 14px;"></i>
-            </button>
-            <button class="view-btn active" data-view="medium" title="Medium Grid">
-              <i data-lucide="grid"></i>
-            </button>
-            <button class="view-btn" data-view="large" title="Large Grid">
-              <i data-lucide="layout-template"></i>
-            </button>
-            <button class="view-btn" data-view="list" title="List View">
-              <i data-lucide="list"></i>
-            </button>
+    <div class="workspace">
+      <!-- Sidebar navigation panel -->
+      <aside>
+        <!-- Date Timeline section -->
+        <div class="sidebar-section">
+          <h3><i data-lucide="calendar"></i> Date Timeline</h3>
+          <div class="date-list" id="date-list">
+            <div class="sidebar-item active"><span>Loading...</span></div>
           </div>
         </div>
-      </div>
 
-      <!-- Image Grid -->
-      <div class="image-grid medium" id="image-grid">
-        <!-- Skeleton cards shown during initial load -->
-        <div class="skeleton-card"></div>
-        <div class="skeleton-card"></div>
-        <div class="skeleton-card"></div>
-        <div class="skeleton-card"></div>
-        <div class="skeleton-card"></div>
-        <div class="skeleton-card"></div>
-      </div>
+        <!-- Activity Chart section -->
+        <div class="sidebar-section activity-chart-container">
+          <h3><i data-lucide="activity"></i> Motion Activity</h3>
+          <div class="chart-viewport" id="activity-chart">
+            <!-- Dynamic bars inserted here -->
+          </div>
+          <div class="chart-x-axis">
+            <span>12 AM</span>
+            <span>6 AM</span>
+            <span>12 PM</span>
+            <span>6 PM</span>
+            <span>11 PM</span>
+          </div>
+        </div>
+      </aside>
 
-      <!-- Infinite Scroll Sentinel -->
-      <div id="scroll-sentinel" class="scroll-sentinel">
-        <span id="sentinel-text">Loading more logs...</span>
+      <!-- Main feeds area -->
+      <div class="content-area">
+        <div class="toolbar-bar">
+          <div class="tab-group" id="filter-tabs">
+            <button class="tab-btn active" data-filter="all">All Events</button>
+            <button class="tab-btn" data-filter="motdec">Motion Logs</button>
+            <button class="tab-btn" data-filter="generic">Snapshots</button>
+            <div style="width: 1px; background: var(--border-color); margin: 4px 6px;"></div>
+            <button class="tab-btn" data-filter="person" title="Filter to Persons"><i data-lucide="user" style="width:14px;height:14px;vertical-align:middle;margin-right:4px;"></i>Person</button>
+            <button class="tab-btn" data-filter="dog" title="Filter to Dogs"><i data-lucide="dog" style="width:14px;height:14px;vertical-align:middle;margin-right:4px;"></i>Dog</button>
+            <button class="tab-btn" data-filter="cat" title="Filter to Cats"><i data-lucide="cat" style="width:14px;height:14px;vertical-align:middle;margin-right:4px;"></i>Cat</button>
+          </div>
+
+          <!-- Time-of-day Quick filter pills -->
+          <div class="time-pills" id="time-pills">
+            <span class="time-pill active" data-time="all">All Day</span>
+            <span class="time-pill" data-time="morning" title="6:00 AM - 12:00 PM">Morning</span>
+            <span class="time-pill" data-time="afternoon" title="12:00 PM - 6:00 PM">Afternoon</span>
+            <span class="time-pill" data-time="evening" title="6:00 PM - 12:00 AM">Evening</span>
+            <span class="time-pill" data-time="night" title="12:00 AM - 6:00 AM">Night</span>
+          </div>
+
+          <div style="display: flex; align-items: center; gap: 12px; margin-left: auto;">
+            <span class="stats-info" id="stats-label">Loading image logs...</span>
+            
+            <div class="view-toggles">
+              <button class="view-btn" data-view="small" title="Small Cards">
+                <i data-lucide="layout-grid"></i>
+              </button>
+              <button class="view-btn active" data-view="medium" title="Medium Grid">
+                <i data-lucide="grid"></i>
+              </button>
+              <button class="view-btn" data-view="large" title="Large Grid">
+                <i data-lucide="layout-template"></i>
+              </button>
+              <button class="view-btn" data-view="list" title="List View">
+                <i data-lucide="list"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Image Grid -->
+        <div class="image-grid medium" id="image-grid">
+          <!-- Initial loading skeletons -->
+          <div class="skeleton-card"></div>
+          <div class="skeleton-card"></div>
+          <div class="skeleton-card"></div>
+          <div class="skeleton-card"></div>
+          <div class="skeleton-card"></div>
+          <div class="skeleton-card"></div>
+        </div>
+
+        <!-- Scroll Sentinel -->
+        <div id="scroll-sentinel" class="scroll-sentinel">
+          <span id="sentinel-text">Loading more logs...</span>
+        </div>
       </div>
-    </main>
+    </div>
   </div>
 
   <!-- Lightbox Modal -->
@@ -881,10 +1197,16 @@
     <div class="lightbox-header">
       <div class="lightbox-title" id="lightbox-title">Image Details</div>
       <div class="lightbox-controls">
-        <button class="lightbox-btn" id="lightbox-play" title="Start Slideshow">
+        <button class="lightbox-btn" id="lightbox-play" title="Play Slideshow">
           <i data-lucide="play" id="play-icon"></i>
         </button>
-        <button class="lightbox-btn" id="lightbox-download" title="Download Image">
+        <button class="lightbox-btn" id="lightbox-zoom-in" title="Zoom In (+)">
+          <i data-lucide="zoom-in"></i>
+        </button>
+        <button class="lightbox-btn" id="lightbox-zoom-out" title="Zoom Out (-)">
+          <i data-lucide="zoom-out"></i>
+        </button>
+        <button class="lightbox-btn" id="lightbox-download" title="Download Snapshot">
           <i data-lucide="download"></i>
         </button>
         <button class="lightbox-btn btn-close" id="lightbox-close" title="Close (Esc)">
@@ -894,21 +1216,23 @@
     </div>
     
     <div class="lightbox-body">
-      <button class="nav-arrow arrow-left" id="lightbox-prev" title="Previous Image (←)">
+      <span class="zoom-badge" id="zoom-badge">100% Zoom</span>
+      
+      <button class="nav-arrow arrow-left" id="lightbox-prev" title="Previous (←)">
         <i data-lucide="chevron-left"></i>
       </button>
       
-      <div class="lightbox-image-wrapper">
+      <div class="lightbox-image-wrapper" id="image-zoom-container">
         <img src="" alt="Fullscreen view" class="lightbox-image" id="lightbox-image">
       </div>
       
-      <button class="nav-arrow arrow-right" id="lightbox-next" title="Next Image (→)">
+      <button class="nav-arrow arrow-right" id="lightbox-next" title="Next (→)">
         <i data-lucide="chevron-right"></i>
       </button>
     </div>
     
     <div class="lightbox-footer" id="lightbox-footer">
-      Image info will appear here
+      Metadata info...
     </div>
   </div>
 
@@ -919,56 +1243,69 @@
   </div>
 
   <script>
-    // State management
+    // System-wide states
     const state = {
-      allImages: [],        // Full raw list of image filenames from json
-      filteredImages: [],   // Filtered list of filenames based on tabs/search
-      renderedCount: 0,     // How many images are currently loaded in the DOM
-      pageSize: 40,         // Images to load at a time in infinite scroll
-      activeFilter: 'all',  // current tab
+      allImages: [],        // Full raw filenames from json
+      analysis: {},         // Image analysis results from analysis.json
+      filteredImages: [],   // Tabbed, searched, and date/time filtered filenames
+      renderedCount: 0,     // Total cards currently drawn
+      pageSize: 40,         // Batch load count for infinite scroll
+      activeFilter: 'all',  // tab filter: all, motdec, generic, person, dog, cat
+      activeDateFilter: 'all', // timeline filter: all, YYYY-MM-DD
+      activeTimeFilter: 'all', // time filter: all, morning, afternoon, evening, night
+      activeHourChartFilter: null, // specific hour filter: null, 0-23
       activeView: 'medium', // small, medium, large, list
-      searchQuery: '',      // search query string
-      isLive: true,         // auto polling toggle
+      searchQuery: '',      // search query
+      isLive: true,         // auto-polling switch
       pollingInterval: null,
-      lightboxIndex: -1,    // active image index in filteredImages
+      lightboxIndex: -1,    // index in filteredImages
       slideshowInterval: null,
       isSlideshowPlaying: false,
-      slideshowSpeed: 4000, // ms
-      lastImageCount: 0     // tracker for new images
+      slideshowSpeed: 4000, 
+      
+      // Lightbox Pan & Zoom states
+      zoomScale: 1,
+      zoomMax: 4,
+      zoomMin: 1,
+      isPanning: false,
+      panStartX: 0,
+      panStartY: 0,
+      translateX: 0,
+      translateY: 0
     };
 
-    // Determine camera profile from path
-    const getCameraProfile = () => {
+    // Determine current feed name and target switcher profile
+    const getFeedProfile = () => {
       const path = window.location.pathname;
       const host = window.location.hostname;
       
-      // Attempt to identify whether this is Webcam21 (Webcam) or Webcam22 (Dogcam)
-      if (path.includes('Webcam22') || host.includes('dogcam')) {
-        return {
-          title: 'Dogcam Live Feed',
-          subtitle: 'Monitoring backyard and dog area',
-          ip: '10.0.0.22'
-        };
-      }
+      const isDog = path.includes('Webcam22') || host.includes('dogcam');
       return {
-        title: 'Webcam Live Feed',
-        subtitle: 'Monitoring front gate area',
-        ip: '10.0.0.21'
+        isDog,
+        title: isDog ? 'Dogcam Live Feed' : 'Webcam Live Feed',
+        subtitle: isDog ? 'Monitoring backyard and dog area' : 'Monitoring front gate area',
+        ip: isDog ? '10.0.0.22' : '10.0.0.21',
+        switchLabel: isDog ? 'Switch to Webcam Feed' : 'Switch to Dogcam Feed',
+        switchUrl: isDog 
+          ? (host.includes('dogcam') ? 'https://webcam.example.duckdns.org' : '/Webcam21/') 
+          : (host.includes('webcam') ? 'https://dogcam.example.duckdns.org' : '/Webcam22/')
       };
     };
 
-    // Parse filename details: e.g. "10.0.0.21_01_20260531110014625_MOTDEC.jpg"
+    // Parse filename details
     const parseFilename = (filename) => {
       const match = filename.match(/(\d+\.\d+\.\d+\.\d+)_(\d+)_(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})(\d{3})_(MOTDEC|GENERIC|.*)\.(jpg|jpeg|png|gif)/i);
       
       if (match) {
         const [_, ip, channel, year, month, day, hour, min, sec, ms, eventType, ext] = match;
         const dateObj = new Date(`${year}-${month}-${day}T${hour}:${min}:${sec}`);
+        const intHour = parseInt(hour, 10);
         
         return {
           ip,
           channel,
           dateObj,
+          hour: intHour,
           dateStr: `${year}-${month}-${day}`,
           timeStr: `${hour}:${min}:${sec}`,
           formattedDate: dateObj.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }),
@@ -978,11 +1315,11 @@
         };
       }
       
-      // Fallback
       return {
         ip: 'Unknown',
         channel: '--',
-        dateObj: new Date(0),
+        dateObj: null,
+        hour: -1,
         dateStr: 'Unknown',
         timeStr: 'Unknown',
         formattedDate: 'Unknown Date',
@@ -992,39 +1329,46 @@
       };
     };
 
-    // Fetch and load data
+    // Load data from images.json and analysis.json
     async function loadData(silent = false) {
       if (!silent) {
         document.getElementById('refresh-icon').classList.add('lucide-animate-spin');
       }
       
       try {
-        const response = await fetch('images.json?t=' + Date.now());
-        if (!response.ok) throw new Error('Failed to fetch images list');
+        // Fetch images.json
+        const imgResponse = await fetch('images.json?t=' + Date.now());
+        if (!imgResponse.ok) throw new Error('Network error loading images catalog');
+        const imagesList = await imgResponse.json();
         
-        const imagesList = await response.json();
+        // Fetch analysis.json (might not exist yet or be empty)
+        try {
+          const analysisResp = await fetch('analysis.json?t=' + Date.now());
+          if (analysisResp.ok) {
+            state.analysis = await analysisResp.json();
+          }
+        } catch (e) {
+          console.warn('Could not load analysis.json', e);
+        }
         
         if (!imagesList || !Array.isArray(imagesList)) {
-          showEmptyState('Invalid images.json file format.');
+          showEmptyState('Invalid file format. Scaffold images.json output is corrupted.');
           return;
         }
 
-        // Compare counts for the live toast alert
         if (state.allImages.length > 0 && imagesList.length > state.allImages.length) {
           const diffCount = imagesList.length - state.allImages.length;
-          showToast(`Detected ${diffCount} new camera snapshot(s)!`);
+          showToast(`Captured ${diffCount} new camera snapshot(s)!`);
         }
 
         state.allImages = imagesList;
+        renderDateSidebar();
         applyFiltersAndSearch();
         
-        // Update stats
-        document.getElementById('stats-label').textContent = `Showing ${state.filteredImages.length} of ${state.allImages.length} snapshots`;
-        
       } catch (err) {
-        console.error('Error fetching images.json:', err);
+        console.error('Error fetching data:', err);
         if (state.allImages.length === 0) {
-          showEmptyState('Could not load image catalog. Please ensure the backend scraper is running.');
+          showEmptyState('Could not find image listings. Run index scraper and check directory permissions.');
         }
       } finally {
         document.getElementById('refresh-icon').classList.remove('lucide-animate-spin');
@@ -1032,23 +1376,139 @@
       }
     }
 
-    // Apply Active Filters & Search Query
-    function applyFiltersAndSearch() {
-      const todayStr = new Date().toISOString().split('T')[0];
+    // Render left Date Navigation
+    function renderDateSidebar() {
+      const dateCounts = {};
+      state.allImages.forEach(filename => {
+        const meta = parseFilename(filename);
+        if (meta.dateStr !== 'Unknown') {
+          dateCounts[meta.dateStr] = dateCounts[meta.dateStr] || { label: meta.formattedDate, count: 0 };
+          dateCounts[meta.dateStr].count++;
+        }
+      });
       
-      const yesterday = new Date();
-      yesterday.setDate(yesterday.getDate() - 1);
-      const yesterdayStr = yesterday.toISOString().split('T')[0];
+      const sidebarList = document.getElementById('date-list');
+      sidebarList.innerHTML = '';
+      
+      // All Dates option
+      const allItem = document.createElement('div');
+      allItem.className = `sidebar-item ${state.activeDateFilter === 'all' ? 'active' : ''}`;
+      allItem.innerHTML = `<span>All Dates</span><span class="count-badge">${state.allImages.length}</span>`;
+      allItem.addEventListener('click', () => {
+        state.activeDateFilter = 'all';
+        document.querySelectorAll('.sidebar-item').forEach(el => el.classList.remove('active'));
+        allItem.classList.add('active');
+        applyFiltersAndSearch();
+      });
+      sidebarList.appendChild(allItem);
+      
+      // Sort and list dates
+      const sortedDates = Object.keys(dateCounts).sort().reverse();
+      sortedDates.forEach(dateStr => {
+        const item = document.createElement('div');
+        item.className = `sidebar-item ${state.activeDateFilter === dateStr ? 'active' : ''}`;
+        item.innerHTML = `<span>${dateCounts[dateStr].label}</span><span class="count-badge">${dateCounts[dateStr].count}</span>`;
+        item.addEventListener('click', () => {
+          state.activeDateFilter = dateStr;
+          document.querySelectorAll('.sidebar-item').forEach(el => el.classList.remove('active'));
+          item.classList.add('active');
+          applyFiltersAndSearch();
+        });
+        sidebarList.appendChild(item);
+      });
+    }
 
-      state.filteredImages = state.allImages.filter(filename => {
+    // Render Hourly bar-chart counts
+    function renderActivityChart() {
+      const hours = Array(24).fill(0);
+      
+      // Compute counts over current base filters (date filter + tab filter + search, but ignoring time-of-day/specific-hour selection so chart represents the whole day's overview)
+      const baseFilteredList = state.allImages.filter(filename => {
         const meta = parseFilename(filename);
         
-        // Apply Tabs
-        if (state.activeFilter === 'today' && meta.dateStr !== todayStr) return false;
-        if (state.activeFilter === 'yesterday' && meta.dateStr !== yesterdayStr) return false;
+        // Match Date filter
+        if (state.activeDateFilter !== 'all' && meta.dateStr !== state.activeDateFilter) return false;
+        // Match Tab filter
         if (state.activeFilter === 'motdec' && !filename.includes('MOTDEC')) return false;
+        if (state.activeFilter === 'generic' && filename.includes('MOTDEC')) return false;
+        // Match Search Query
+        if (state.searchQuery) {
+          const q = state.searchQuery.toLowerCase();
+          if (!filename.toLowerCase().includes(q)) return false;
+        }
+        return true;
+      });
 
-        // Apply Search
+      baseFilteredList.forEach(filename => {
+        const meta = parseFilename(filename);
+        if (meta.hour !== -1) {
+          hours[meta.hour]++;
+        }
+      });
+      
+      const maxCount = Math.max(...hours, 1);
+      const chartContainer = document.getElementById('activity-chart');
+      chartContainer.innerHTML = '';
+      
+      hours.forEach((count, h) => {
+        const barWrapper = document.createElement('div');
+        barWrapper.className = 'chart-bar-wrapper';
+        const pct = (count / maxCount) * 100;
+        
+        const isPm = h >= 12;
+        const displayHr = h % 12 === 0 ? 12 : h % 12;
+        const labelStr = `${displayHr} ${isPm ? 'PM' : 'AM'}: ${count} event${count !== 1 ? 's' : ''}`;
+        
+        const activeClass = state.activeHourChartFilter === h ? 'active' : '';
+
+        barWrapper.innerHTML = `
+          <div class="chart-bar ${activeClass}" style="height: ${pct}%" title="${labelStr}"></div>
+        `;
+        
+        barWrapper.addEventListener('click', () => {
+          if (state.activeHourChartFilter === h) {
+            state.activeHourChartFilter = null; // Toggle off
+          } else {
+            state.activeHourChartFilter = h; // Toggle on
+          }
+          applyFiltersAndSearch();
+        });
+
+        chartContainer.appendChild(barWrapper);
+      });
+    }
+
+    // Apply Active Filters & Search Query
+    function applyFiltersAndSearch() {
+      state.filteredImages = state.allImages.filter(filename => {
+        const meta = parseFilename(filename);
+        const analysis = state.analysis[filename] || {};
+        
+        // 1. Tab filter
+        if (state.activeFilter === 'motdec' && !filename.includes('MOTDEC')) return false;
+        if (state.activeFilter === 'generic' && filename.includes('MOTDEC')) return false;
+        
+        // AI Filters
+        if (state.activeFilter === 'person' && !analysis.person) return false;
+        if (state.activeFilter === 'dog' && !analysis.dog) return false;
+        if (state.activeFilter === 'cat' && !analysis.cat) return false;
+
+        // 2. Date Timeline filter
+        if (state.activeDateFilter !== 'all' && meta.dateStr !== state.activeDateFilter) return false;
+
+        // 3. Time-of-day Quick filter
+        if (state.activeTimeFilter !== 'all') {
+          const hr = meta.hour;
+          if (state.activeTimeFilter === 'morning' && (hr < 6 || hr >= 12)) return false;
+          if (state.activeTimeFilter === 'afternoon' && (hr < 12 || hr >= 18)) return false;
+          if (state.activeTimeFilter === 'evening' && (hr < 18 || hr >= 24)) return false;
+          if (state.activeTimeFilter === 'night' && (hr < 0 || hr >= 6)) return false;
+        }
+
+        // 4. Specific Hourly Chart filter
+        if (state.activeHourChartFilter !== null && meta.hour !== state.activeHourChartFilter) return false;
+
+        // 5. Text Search query
         if (state.searchQuery) {
           const q = state.searchQuery.toLowerCase();
           const matchesFilename = filename.toLowerCase().includes(q);
@@ -1062,32 +1522,52 @@
         return true;
       });
 
-      // Reset scroll position and render first page
+      // Render chart to reflect current counts
+      renderActivityChart();
+
+      // Reset scroll position and draw grid
       state.renderedCount = 0;
       document.getElementById('image-grid').innerHTML = '';
       
+      // Update statistics
+      document.getElementById('stats-label').textContent = `Showing ${state.filteredImages.length} of ${state.allImages.length} logs`;
+
       if (state.filteredImages.length === 0) {
-        showEmptyState('No snapshots match your filters.');
+        showEmptyState('No snapshots found matching the current timeline filter or search criteria.');
       } else {
         renderNextPage();
       }
     }
 
-    // Create a single image card element
+    // Create single card
     function createImageCard(filename, index) {
       const meta = parseFilename(filename);
+      const analysis = state.analysis[filename];
       const card = document.createElement('div');
       card.className = `image-card`;
       card.dataset.index = index;
       
-      // Determine Badge
       const isMotion = filename.includes('MOTDEC');
       const badgeClass = isMotion ? 'badge-motdec' : 'badge-generic';
       const badgeText = isMotion ? 'Motion' : 'Snapshot';
+      
+      // AI Labels
+      let aiLabels = '';
+      if (analysis) {
+        if (analysis.person) aiLabels += '<span class="ai-tag tag-person"><i data-lucide="user"></i>Person</span>';
+        if (analysis.dog) aiLabels += '<span class="ai-tag tag-dog"><i data-lucide="dog"></i>Dog</span>';
+        if (analysis.cat) aiLabels += '<span class="ai-tag tag-cat"><i data-lucide="cat"></i>Cat</span>';
+        
+        // If scanned but nothing found
+        if (aiLabels === '' && analysis.fast_pass !== 'negative') {
+          aiLabels = '<span class="ai-tag tag-empty">Clear</span>';
+        }
+      }
 
       card.innerHTML = `
         <div class="card-img-wrapper">
           <img class="card-img" src="${filename}" alt="${filename}" loading="lazy">
+          <div class="ai-labels-overlay">${aiLabels}</div>
         </div>
         <div class="card-overlay">
           <div class="meta-info">
@@ -1103,20 +1583,18 @@
         </div>
       `;
 
-      // Event listener to trigger lightbox
       card.addEventListener('click', () => openLightbox(index));
-      
       return card;
     }
 
-    // Render more cards for infinite scroll
+    // Render chunks for infinite scroll
     function renderNextPage() {
       const grid = document.getElementById('image-grid');
       const start = state.renderedCount;
       const end = Math.min(start + state.pageSize, state.filteredImages.length);
 
       if (start >= state.filteredImages.length) {
-        document.getElementById('sentinel-text').textContent = 'All logs loaded';
+        document.getElementById('sentinel-text').textContent = 'All snapshots loaded';
         return;
       }
 
@@ -1130,20 +1608,19 @@
       state.renderedCount = end;
       lucide.createIcons();
 
-      // Check if we already filled the viewport
+      // Ensure the viewport is full
       if (state.renderedCount < state.filteredImages.length && !isSentinelVisible()) {
-        // Render more if scroll bar hasn't appeared yet
         setTimeout(renderNextPage, 50);
       }
     }
 
-    // Utility to verify empty state
+    // Empty state UI helper
     function showEmptyState(message) {
       const grid = document.getElementById('image-grid');
       grid.innerHTML = `
         <div class="empty-state">
           <i data-lucide="image-off"></i>
-          <h3>No Images Found</h3>
+          <h3>No Snapshots Found</h3>
           <p>${message}</p>
         </div>
       `;
@@ -1154,6 +1631,7 @@
     // Check if sentinel is in viewport
     function isSentinelVisible() {
       const sentinel = document.getElementById('scroll-sentinel');
+      if (!sentinel) return false;
       const rect = sentinel.getBoundingClientRect();
       return (
         rect.top >= 0 &&
@@ -1161,7 +1639,40 @@
       );
     }
 
-    // Lightbox modal logic
+    // Zoom and pan logic inside lightbox
+    function updateZoomTransform() {
+      const img = document.getElementById('lightbox-image');
+      img.style.transform = `scale(${state.zoomScale}) translate(${state.translateX / state.zoomScale}px, ${state.translateY / state.zoomScale}px)`;
+      
+      const badge = document.getElementById('zoom-badge');
+      if (state.zoomScale > 1) {
+        badge.style.display = 'block';
+        badge.textContent = `${Math.round(state.zoomScale * 100)}% Zoom`;
+      } else {
+        badge.style.display = 'none';
+      }
+    }
+
+    function zoomLightbox(factor) {
+      const nextScale = state.zoomScale * factor;
+      if (nextScale >= state.zoomMin && nextScale <= state.zoomMax) {
+        state.zoomScale = nextScale;
+        if (state.zoomScale === 1) {
+          state.translateX = 0;
+          state.translateY = 0;
+        }
+        updateZoomTransform();
+      }
+    }
+
+    function resetZoom() {
+      state.zoomScale = 1;
+      state.translateX = 0;
+      state.translateY = 0;
+      updateZoomTransform();
+    }
+
+    // Lightbox triggers
     function openLightbox(index) {
       state.lightboxIndex = index;
       const filename = state.filteredImages[index];
@@ -1172,9 +1683,30 @@
       const title = document.getElementById('lightbox-title');
       const footer = document.getElementById('lightbox-footer');
       
+      // Reset zoom
+      resetZoom();
+      
       img.src = filename;
-      title.textContent = `Snapshot Detail: ${meta.original}`;
-      footer.textContent = `Logged at: ${meta.formattedDate} at ${meta.formattedTime} | Mode: ${meta.eventType} | Source IP: ${meta.ip}`;
+      title.textContent = `File Name: ${meta.original}`;
+      
+      const analysis = state.analysis[filename];
+      let aiText = '';
+      if (analysis) {
+          const found = [];
+          if (analysis.person) found.push('Person');
+          if (analysis.dog) found.push('Dog');
+          if (analysis.cat) found.push('Cat');
+          
+          if (found.length > 0) {
+              aiText = ` | AI DETECTED: ${found.join(', ')}`;
+          } else if (analysis.fast_pass === 'negative') {
+              aiText = ` | AI: No candidates detected by fast-pass`;
+          } else {
+              aiText = ` | AI: Scanned (Clear)`;
+          }
+      }
+      
+      footer.textContent = `Created: ${meta.formattedDate} at ${meta.formattedTime} | Channel: ${meta.channel} | Event Type: ${meta.eventType} | Camera IP: ${meta.ip}${aiText}`;
       
       document.getElementById('lightbox-download').onclick = () => {
         const a = document.createElement('a');
@@ -1186,7 +1718,6 @@
       lightbox.classList.add('active');
       document.body.style.overflow = 'hidden';
       
-      // Reset play status
       if (state.isSlideshowPlaying) {
         pauseSlideshow();
       }
@@ -1197,27 +1728,24 @@
       lightbox.classList.remove('active');
       document.body.style.overflow = 'auto';
       pauseSlideshow();
+      resetZoom();
     }
 
-    // Navigation for Lightbox
     function navigateLightbox(direction) {
       let nextIndex = state.lightboxIndex + direction;
-      
       if (nextIndex < 0) {
-        nextIndex = state.filteredImages.length - 1; // loop to end
+        nextIndex = state.filteredImages.length - 1;
       } else if (nextIndex >= state.filteredImages.length) {
-        nextIndex = 0; // loop to start
+        nextIndex = 0;
       }
       
       openLightbox(nextIndex);
-      
-      // If slideshow was playing, reset the timer
       if (state.isSlideshowPlaying) {
         resetSlideshowTimer();
       }
     }
 
-    // Slideshow control
+    // Lightbox Slideshow controls
     function toggleSlideshow() {
       if (state.isSlideshowPlaying) {
         pauseSlideshow();
@@ -1243,23 +1771,19 @@
       }
       const playIcon = document.getElementById('play-icon');
       playIcon.setAttribute('data-lucide', 'play');
-      document.getElementById('lightbox-play').title = 'Start Slideshow';
+      document.getElementById('lightbox-play').title = 'Play Slideshow';
       document.getElementById('slideshow-progress').style.width = '0%';
       lucide.createIcons();
     }
 
     function resetSlideshowTimer() {
-      if (state.slideshowInterval) {
-        clearInterval(state.slideshowInterval);
-      }
-      
+      if (state.slideshowInterval) clearInterval(state.slideshowInterval);
       const progressBar = document.getElementById('slideshow-progress');
       progressBar.style.width = '0%';
       
       let start = Date.now();
       const speed = state.slideshowSpeed;
       
-      // Sync visual progress bar
       state.slideshowInterval = setInterval(() => {
         const elapsed = Date.now() - start;
         const pct = Math.min((elapsed / speed) * 100, 100);
@@ -1271,7 +1795,7 @@
       }, 50);
     }
 
-    // Polling control
+    // Polling triggers
     function toggleLiveMode() {
       state.isLive = !state.isLive;
       const badge = document.getElementById('live-toggle');
@@ -1302,7 +1826,7 @@
       }
     }
 
-    // Toast logic
+    // Notification toast alert
     function showToast(message) {
       const toast = document.getElementById('toast-alert');
       const text = document.getElementById('toast-text');
@@ -1314,25 +1838,29 @@
       }, 6000);
     }
 
-    // Initial setup & Event Listeners
+    // Load initial triggers on DOM Loaded
     document.addEventListener('DOMContentLoaded', () => {
-      // Setup Title
-      const profile = getCameraProfile();
+      const profile = getFeedProfile();
       document.getElementById('camera-title').textContent = profile.title;
       document.getElementById('camera-subtitle').textContent = `${profile.subtitle} (${profile.ip})`;
       document.title = `${profile.title} - CamLog`;
+
+      // Set switch feed details
+      const btnSwitch = document.getElementById('btn-switch-feed');
+      document.getElementById('switch-feed-label').textContent = profile.switchLabel;
+      btnSwitch.addEventListener('click', () => {
+        window.location.href = profile.switchUrl;
+      });
 
       // Load initial data
       loadData();
       startPolling();
 
-      // Refresh Button
+      // Top control listeners
       document.getElementById('btn-refresh').addEventListener('click', () => loadData(false));
-
-      // Live Toggle
       document.getElementById('live-toggle').addEventListener('click', toggleLiveMode);
 
-      // Search Event Listener (debounced)
+      // Search Query box (debounced)
       let searchTimeout;
       document.getElementById('search-input').addEventListener('input', (e) => {
         clearTimeout(searchTimeout);
@@ -1342,7 +1870,7 @@
         }, 300);
       });
 
-      // Filter Tabs
+      // Category Event Tabs
       document.getElementById('filter-tabs').addEventListener('click', (e) => {
         if (e.target.classList.contains('tab-btn')) {
           document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
@@ -1352,7 +1880,17 @@
         }
       });
 
-      // View Toggles
+      // Time of day Filter Pills
+      document.getElementById('time-pills').addEventListener('click', (e) => {
+        if (e.target.classList.contains('time-pill')) {
+          document.querySelectorAll('.time-pill').forEach(btn => btn.classList.remove('active'));
+          e.target.classList.add('active');
+          state.activeTimeFilter = e.target.dataset.time;
+          applyFiltersAndSearch();
+        }
+      });
+
+      // Grid Layout Buttons
       document.querySelectorAll('.view-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
           const btnElem = e.currentTarget;
@@ -1366,7 +1904,7 @@
         });
       });
 
-      // Infinite Scroll IntersectionObserver
+      // Infinite scroll listener
       const observer = new IntersectionObserver((entries) => {
         if (entries[0].isIntersecting && state.renderedCount < state.filteredImages.length) {
           renderNextPage();
@@ -1376,27 +1914,73 @@
       });
       observer.observe(document.getElementById('scroll-sentinel'));
 
-      // Lightbox listeners
+      // Lightbox Control Buttons
       document.getElementById('lightbox-close').addEventListener('click', closeLightbox);
       document.getElementById('lightbox-prev').addEventListener('click', () => navigateLightbox(-1));
       document.getElementById('lightbox-next').addEventListener('click', () => navigateLightbox(1));
       document.getElementById('lightbox-play').addEventListener('click', toggleSlideshow);
+      document.getElementById('lightbox-zoom-in').addEventListener('click', () => zoomLightbox(1.2));
+      document.getElementById('lightbox-zoom-out').addEventListener('click', () => zoomLightbox(1 / 1.2));
+
+      // Lightbox Pan & Zoom Mouse Drag Event Handlers
+      const zoomContainer = document.getElementById('image-zoom-container');
       
-      // Toast click to jump to top and refresh
+      zoomContainer.addEventListener('mousedown', (e) => {
+        if (state.zoomScale <= 1) return;
+        state.isPanning = true;
+        state.panStartX = e.clientX - state.translateX;
+        state.panStartY = e.clientY - state.translateY;
+        zoomContainer.style.cursor = 'grabbing';
+      });
+
+      window.addEventListener('mousemove', (e) => {
+        if (!state.isPanning) return;
+        state.translateX = e.clientX - state.panStartX;
+        state.translateY = e.clientY - state.panStartY;
+        updateZoomTransform();
+      });
+
+      window.addEventListener('mouseup', () => {
+        if (state.isPanning) {
+          state.isPanning = false;
+          zoomContainer.style.cursor = 'grab';
+        }
+      });
+
+      // Lightbox Mouse Scroll Wheel Zoom
+      zoomContainer.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        if (e.deltaY < 0) {
+          zoomLightbox(1.1); // zoom in
+        } else {
+          zoomLightbox(1 / 1.1); // zoom out
+        }
+      });
+
+      // Double-click to zoom reset
+      zoomContainer.addEventListener('dblclick', () => {
+        if (state.zoomScale > 1) {
+          resetZoom();
+        } else {
+          zoomLightbox(2);
+        }
+      });
+
+      // Click toast to scroll up
       document.getElementById('toast-alert').addEventListener('click', () => {
         window.scrollTo({ top: 0, behavior: 'smooth' });
         document.getElementById('toast-alert').classList.remove('active');
         loadData(false);
       });
 
-      // Close lightbox on click outside the image
+      // Close lightbox on click outside the image frame
       document.getElementById('lightbox').addEventListener('click', (e) => {
-        if (e.target.id === 'lightbox' || e.target.classList.contains('lightbox-body') || e.target.classList.contains('lightbox-image-wrapper')) {
+        if (e.target.id === 'lightbox' || e.target.classList.contains('lightbox-body')) {
           closeLightbox();
         }
       });
 
-      // Key bindings for Lightbox
+      // Global Key listener for lightbox controls
       document.addEventListener('keydown', (e) => {
         const lightbox = document.getElementById('lightbox');
         if (!lightbox.classList.contains('active')) return;
@@ -1408,6 +1992,8 @@
           e.preventDefault();
           toggleSlideshow();
         }
+        if (e.key === '+' || e.key === '=') zoomLightbox(1.2);
+        if (e.key === '-') zoomLightbox(1 / 1.2);
       });
     });
   </script>

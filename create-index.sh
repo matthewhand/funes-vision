@@ -36,6 +36,11 @@ do
         printf '%s\n' "${images[@]}" | jq -R . | jq -s . > "$IMAGE_DIR/images.json"
     fi
 
-    echo "images.json and index.html have been updated"
+    # Sync analysis results if available
+    if [ -f "/home/user/webcam/analysis.json" ]; then
+        cp /home/user/webcam/analysis.json "$IMAGE_DIR/analysis.json"
+    fi
+
+    echo "images.json, index.html, and analysis.json have been updated"
     sleep 60 # MH 20240402 buffer the cpu?
 done
