@@ -531,26 +531,37 @@
       height: 12px;
     }
 
-    .tag-person {
-      background: rgba(59, 130, 246, 0.85); /* blue */
-      color: white;
+    .detection-badges {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
     }
 
-    .tag-dog {
-      background: rgba(245, 158, 11, 0.85); /* amber */
-      color: white;
+    .badge-ai {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 0.7rem;
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-weight: 600;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
     }
 
-    .tag-cat {
-      background: rgba(168, 85, 247, 0.85); /* purple */
-      color: white;
-    }
-    
-    .tag-empty {
-      background: rgba(100, 116, 139, 0.6); /* slate */
-      color: white;
-      font-weight: 500;
-      text-transform: none;
+    .tag-person { background: #3b82f6; color: white; }
+    .tag-dog { background: #f59e0b; color: white; }
+    .tag-cat { background: #a855f7; color: white; }
+    .tag-face { background: #ec4899; color: white; }
+    .tag-body { background: #10b981; color: white; }
+
+    .burst-summary {
+      background: rgba(255, 255, 255, 0.05);
+      border-left: 3px solid var(--accent-color);
+      padding: 10px 14px;
+      border-radius: 4px;
+      font-size: 0.9rem;
+      color: var(--text-primary);
+      line-height: 1.5;
     }
 
     .view-btn i {
@@ -1132,17 +1143,17 @@
 
       <!-- Main feeds area -->
       <div class="content-area">
-        <div class="toolbar-bar">
-          <div class="tab-group" id="filter-tabs">
-            <button class="tab-btn active" data-filter="all">All Events</button>
-            <button class="tab-btn" data-filter="motdec">Motion Logs</button>
-            <button class="tab-btn" data-filter="generic">Snapshots</button>
-            <div style="width: 1px; background: var(--border-color); margin: 4px 6px;"></div>
-            <button class="tab-btn" data-filter="person" title="Filter to Persons"><i data-lucide="user" style="width:14px;height:14px;vertical-align:middle;margin-right:4px;"></i>Person</button>
-            <button class="tab-btn" data-filter="dog" title="Filter to Dogs"><i data-lucide="dog" style="width:14px;height:14px;vertical-align:middle;margin-right:4px;"></i>Dog</button>
-            <button class="tab-btn" data-filter="cat" title="Filter to Cats"><i data-lucide="cat" style="width:14px;height:14px;vertical-align:middle;margin-right:4px;"></i>Cat</button>
-          </div>
+      <div class="toolbar-bar">
+        <div class="tab-group" id="filter-tabs">
+          <button class="tab-btn active" data-filter="all">All Logs</button>
+          <button class="tab-btn" data-filter="motdec">Motion</button>
+          <button class="tab-btn" data-filter="generic">Snapshots</button>
+        </div>
 
+        <!-- Dynamic Object Filters Container -->
+        <div class="tab-group" id="object-filters" style="display: none;">
+          <!-- Buttons injected by JS -->
+        </div>
           <!-- Time-of-day Quick filter pills -->
           <div class="time-pills" id="time-pills">
             <span class="time-pill active" data-time="all">All Day</span>
@@ -1247,10 +1258,12 @@
     const state = {
       allImages: [],        // Full raw filenames from json
       analysis: {},         // Image analysis results from analysis.json
+      bursts: {},           // Sequence descriptions from bursts.json
       filteredImages: [],   // Tabbed, searched, and date/time filtered filenames
       renderedCount: 0,     // Total cards currently drawn
       pageSize: 40,         // Batch load count for infinite scroll
-      activeFilter: 'all',  // tab filter: all, motdec, generic, person, dog, cat
+      activeFilter: 'all',  // tab filter: all, motdec, generic
+      activeObjectFilter: null, // dynamic: 'person', 'dog', etc
       activeDateFilter: 'all', // timeline filter: all, YYYY-MM-DD
       activeTimeFilter: 'all', // time filter: all, morning, afternoon, evening, night
       activeHourChartFilter: null, // specific hour filter: null, 0-23
@@ -1341,14 +1354,15 @@
         if (!imgResponse.ok) throw new Error('Network error loading images catalog');
         const imagesList = await imgResponse.json();
         
-        // Fetch analysis.json (might not exist yet or be empty)
+        // Fetch analysis.json
         try {
           const analysisResp = await fetch('analysis.json?t=' + Date.now());
-          if (analysisResp.ok) {
-            state.analysis = await analysisResp.json();
-          }
+          if (analysisResp.ok) state.analysis = await analysisResp.json();
+          
+          const burstResp = await fetch('bursts.json?t=' + Date.now());
+          if (burstResp.ok) state.bursts = await burstResp.json();
         } catch (e) {
-          console.warn('Could not load analysis.json', e);
+          console.warn('Could not load analysis files', e);
         }
         
         if (!imagesList || !Array.isArray(imagesList)) {
@@ -1363,6 +1377,7 @@
 
         state.allImages = imagesList;
         renderDateSidebar();
+        renderObjectFilters();
         applyFiltersAndSearch();
         
       } catch (err) {
@@ -1478,22 +1493,72 @@
       });
     }
 
+    // Render dynamic object filter buttons based on what's in analysis.json
+    function renderObjectFilters() {
+      const detectedSet = new Set();
+      Object.values(state.analysis).forEach(res => {
+        Object.entries(res).forEach(([key, val]) => {
+          if (val === true && key !== 'fast_pass') detectedSet.add(key);
+        });
+      });
+
+      const container = document.getElementById('object-filters');
+      if (detectedSet.size === 0) {
+        container.style.display = 'none';
+        return;
+      }
+
+      container.style.display = 'flex';
+      container.innerHTML = '';
+      
+      // Add "All Detections" toggle
+      const allBtn = document.createElement('button');
+      allBtn.className = `tab-btn ${state.activeObjectFilter === null ? 'active' : ''}`;
+      allBtn.textContent = 'All AI';
+      allBtn.onclick = () => {
+        state.activeObjectFilter = null;
+        renderObjectFilters();
+        applyFiltersAndSearch();
+      };
+      container.appendChild(allBtn);
+
+      const sorted = Array.from(detectedSet).sort();
+      sorted.forEach(obj => {
+        const btn = document.createElement('button');
+        btn.className = `tab-btn ${state.activeObjectFilter === obj ? 'active' : ''}`;
+        btn.style.textTransform = 'capitalize';
+        
+        // Pick an icon if known
+        let icon = 'eye';
+        if (obj === 'person') icon = 'user';
+        if (obj === 'dog') icon = 'dog';
+        if (obj === 'cat') icon = 'cat';
+        
+        btn.innerHTML = `<i data-lucide="${icon}" style="width:14px;height:14px;vertical-align:middle;margin-right:4px;"></i>${obj}`;
+        btn.onclick = () => {
+          state.activeObjectFilter = obj;
+          renderObjectFilters();
+          applyFiltersAndSearch();
+        };
+        container.appendChild(btn);
+      });
+      lucide.createIcons();
+    }
+
     // Apply Active Filters & Search Query
     function applyFiltersAndSearch() {
       state.filteredImages = state.allImages.filter(filename => {
         const meta = parseFilename(filename);
         const analysis = state.analysis[filename] || {};
         
-        // 1. Tab filter
+        // 1. Tab filter (Motion vs Snapshots)
         if (state.activeFilter === 'motdec' && !filename.includes('MOTDEC')) return false;
         if (state.activeFilter === 'generic' && filename.includes('MOTDEC')) return false;
         
-        // AI Filters
-        if (state.activeFilter === 'person' && !analysis.person) return false;
-        if (state.activeFilter === 'dog' && !analysis.dog) return false;
-        if (state.activeFilter === 'cat' && !analysis.cat) return false;
+        // 2. Dynamic Object filter
+        if (state.activeObjectFilter && !analysis[state.activeObjectFilter]) return false;
 
-        // 2. Date Timeline filter
+        // 3. Date Timeline filter
         if (state.activeDateFilter !== 'all' && meta.dateStr !== state.activeDateFilter) return false;
 
         // 3. Time-of-day Quick filter
@@ -1547,33 +1612,37 @@
       card.className = `image-card`;
       card.dataset.index = index;
       
-      const isMotion = filename.includes('MOTDEC');
-      const badgeClass = isMotion ? 'badge-motdec' : 'badge-generic';
-      const badgeText = isMotion ? 'Motion' : 'Snapshot';
-      
-      // AI Labels
-      let aiLabels = '';
+      // Build Detections Badges (replacing the redundant Motion tag)
+      let detectionsHtml = '';
       if (analysis) {
-        if (analysis.person) aiLabels += '<span class="ai-tag tag-person"><i data-lucide="user"></i>Person</span>';
-        if (analysis.dog) aiLabels += '<span class="ai-tag tag-dog"><i data-lucide="dog"></i>Dog</span>';
-        if (analysis.cat) aiLabels += '<span class="ai-tag tag-cat"><i data-lucide="cat"></i>Cat</span>';
+        Object.entries(analysis).forEach(([key, val]) => {
+          if (val === true && key !== 'fast_pass') {
+            let icon = 'eye';
+            if (key === 'person') icon = 'user';
+            if (key === 'dog') icon = 'dog';
+            if (key === 'cat') icon = 'cat';
+            
+            detectionsHtml += `
+              <span class="badge badge-ai tag-${key}">
+                <i data-lucide="${icon}"></i>
+                <span style="text-transform: capitalize;">${key}</span>
+              </span>`;
+          }
+        });
         
-        // If scanned but nothing found
-        if (aiLabels === '' && analysis.fast_pass !== 'negative') {
-          aiLabels = '<span class="ai-tag tag-empty">Clear</span>';
+        if (detectionsHtml === '' && analysis.fast_pass !== 'negative') {
+          detectionsHtml = '<span class="badge" style="background: rgba(255,255,255,0.05); color: var(--text-secondary);">Clear</span>';
         }
       }
 
       card.innerHTML = `
         <div class="card-img-wrapper">
           <img class="card-img" src="${filename}" alt="${filename}" loading="lazy">
-          <div class="ai-labels-overlay">${aiLabels}</div>
         </div>
         <div class="card-overlay">
           <div class="meta-info">
             <span class="time-stamp">${meta.formattedTime}</span>
-            <span class="date-stamp">${meta.formattedDate}</span>
-            <span class="badge ${badgeClass}">${badgeText}</span>
+            <div class="detection-badges">${detectionsHtml}</div>
           </div>
           <div class="card-actions" onclick="event.stopPropagation()">
             <a href="${filename}" download class="action-icon-btn" title="Download">
@@ -1690,23 +1759,36 @@
       title.textContent = `File Name: ${meta.original}`;
       
       const analysis = state.analysis[filename];
+      const burst = state.bursts[filename];
+      
       let aiText = '';
       if (analysis) {
-          const found = [];
-          if (analysis.person) found.push('Person');
-          if (analysis.dog) found.push('Dog');
-          if (analysis.cat) found.push('Cat');
+          const found = Object.entries(analysis)
+            .filter(([k, v]) => v === true && k !== 'fast_pass')
+            .map(([k]) => k.charAt(0).toUpperCase() + k.slice(1));
           
           if (found.length > 0) {
               aiText = ` | AI DETECTED: ${found.join(', ')}`;
           } else if (analysis.fast_pass === 'negative') {
-              aiText = ` | AI: No candidates detected by fast-pass`;
+              aiText = ` | AI: No candidates`;
           } else {
               aiText = ` | AI: Scanned (Clear)`;
           }
       }
       
-      footer.textContent = `Created: ${meta.formattedDate} at ${meta.formattedTime} | Channel: ${meta.channel} | Event Type: ${meta.eventType} | Camera IP: ${meta.ip}${aiText}`;
+      let burstHtml = '';
+      if (burst) {
+        burstHtml = `<div class="burst-summary">
+          <strong>Sequence Activity:</strong> ${burst.summary}
+        </div>`;
+      }
+      
+      footer.innerHTML = `
+        <div style="margin-bottom: 8px;">
+          Created: ${meta.formattedDate} at ${meta.formattedTime} | Channel: ${meta.channel} | Event Type: ${meta.eventType} | Camera IP: ${meta.ip}${aiText}
+        </div>
+        ${burstHtml}
+      `;
       
       document.getElementById('lightbox-download').onclick = () => {
         const a = document.createElement('a');

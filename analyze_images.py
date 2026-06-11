@@ -5,6 +5,14 @@ import base64
 import sys
 import cv2
 import numpy as np
+import time
+from datetime import datetime
+
+# CONFIGURATION
+MODEL_CLOUD = "google/gemma-4-31b-it"
+MODEL_LOCAL = "gemma-3-12b-it" # Adjust to what's available
+USE_LOCAL = False # Toggle via env or auto-detect
+BURST_THRESHOLD_SECONDS = 120 # Group images within 2 mins
 
 # Initialize Haar Cascades
 face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
@@ -12,160 +20,173 @@ body_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_fullbo
 cat_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalcatface.xml')
 
 def fast_pass(image_path):
-    """
-    Returns True if OpenCV detects a face, body, or cat face.
-    This is used to filter images before sending them to expensive LLM inference.
-    """
     try:
         img = cv2.imread(image_path)
-        if img is None:
-            return False
-            
-        # Downscale for speed
+        if img is None: return {}
         h, w = img.shape[:2]
         scale = 400.0 / w
         small = cv2.resize(img, (400, int(h * scale)), interpolation=cv2.INTER_AREA)
         gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
         
-        # Detect faces
+        results = {}
         faces = face_cascade.detectMultiScale(gray, 1.1, 4, minSize=(30, 30))
-        if len(faces) > 0:
-            return True
+        if len(faces) > 0: results["face"] = True
             
-        # Detect bodies
         bodies = body_cascade.detectMultiScale(gray, 1.1, 3, minSize=(50, 100))
-        if len(bodies) > 0:
-            return True
+        if len(bodies) > 0: results["body"] = True
             
-        # Detect cats
         cats = cat_cascade.detectMultiScale(gray, 1.1, 3, minSize=(30, 30))
-        if len(cats) > 0:
-            return True
+        if len(cats) > 0: results["cat"] = True
             
-        return False
+        return results
     except Exception as e:
-        print(f"Fast pass error for {image_path}: {e}")
-        return False
+        print(f"Fast pass error: {e}")
+        return {}
 
 def encode_image(image_path):
     with open(image_path, "rb") as image_file:
         return base64.b64encode(image_file.read()).decode('utf-8')
 
-def analyze_image(image_path, api_key, model="google/gemma-4-31b-it"):
-    if not os.path.exists(image_path):
-        return None
-
+def analyze_image_openrouter(image_path, api_key):
     base64_image = encode_image(image_path)
-    
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
+    headers = { "Authorization": f"Bearer {api_key}", "Content-Type": "application/json" }
     
     payload = {
-        "model": model,
+        "model": MODEL_CLOUD,
         "messages": [
             {
                 "role": "user",
                 "content": [
                     {
                         "type": "text",
-                        "text": "Analyze this webcam image. Detect if there are 'person', 'dog', or 'cat' present. Return ONLY a valid JSON object like this: {\"person\": true, \"dog\": false, \"cat\": false}. Do not include any other text."
+                        "text": "Detect objects in this webcam image. Look for: person, dog, cat, car, face, body, etc. Return ONLY a valid JSON object with boolean keys for detected items. Example: {\"person\": true, \"dog\": false, \"car\": true}"
                     },
                     {
                         "type": "image_url",
-                        "image_url": {
-                            "url": f"data:image/jpeg;base64,{base64_image}"
-                        }
+                        "image_url": { "url": f"data:image/jpeg;base64,{base64_image}" }
                     }
                 ]
             }
-        ]
+        ],
+        "response_format": { "type": "json_object" }
     }
     
     try:
-        response = requests.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers=headers,
-            data=json.dumps(payload)
-        )
-        if response.status_code != 200:
-            print(f"Error {response.status_code}: {response.text}")
-            return None
-        result = response.json()
-        if 'choices' not in result or not result['choices']:
-            return None
-            
-        content = result['choices'][0]['message']['content'].strip()
-        
-        try:
-            return json.loads(content)
-        except json.JSONDecodeError:
-            if "```json" in content:
-                content = content.split("```json")[1].split("```")[0].strip()
-            elif "```" in content:
-                content = content.split("```")[1].split("```")[0].strip()
-            return json.loads(content)
-    except Exception as e:
-        print(f"Error analyzing {image_path}: {e}")
+        response = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, data=json.dumps(payload))
+        if response.status_code != 200: return None
+        content = response.json()['choices'][0]['message']['content'].strip()
+        return json.loads(content)
+    except:
         return None
+
+def analyze_burst_openrouter(image_paths, api_key):
+    """Analyze a sequence of images for a textual description."""
+    content_list = [{ "type": "text", "text": "These images were taken in a sequence. Describe what is happening across this time period. Who is there? What are they doing?" }]
+    
+    for path in image_paths:
+        base64_img = encode_image(path)
+        content_list.append({
+            "type": "image_url",
+            "image_url": { "url": f"data:image/jpeg;base64,{base64_img}" }
+        })
+
+    payload = {
+        "model": MODEL_CLOUD,
+        "messages": [{ "role": "user", "content": content_list }]
+    }
+    
+    try:
+        headers = { "Authorization": f"Bearer {api_key}", "Content-Type": "application/json" }
+        response = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, data=json.dumps(payload))
+        return response.json()['choices'][0]['message']['content'].strip()
+    except:
+        return "Failed to analyze sequence."
+
+def get_free_mem_gb():
+    try:
+        with open('/proc/meminfo', 'r') as f:
+            lines = f.readlines()
+            free = [l for l in lines if l.startswith('MemAvailable')][0]
+            return int(free.split()[1]) / (1024 * 1024)
+    except:
+        return 0
 
 def main():
     api_key = os.getenv("OPENROUTER_API_KEY")
-    if not api_key:
-        print("Error: OPENROUTER_API_KEY environment variable not set.")
-        sys.exit(1)
-        
     watch_dirs = ["/mnt/models/Webcam21", "/mnt/models/Webcam22"]
     base_dir = "/home/user/webcam"
     analysis_file = os.path.join(base_dir, "analysis.json")
+    burst_file = os.path.join(base_dir, "bursts.json")
     
-    if os.path.exists(analysis_file):
-        with open(analysis_file, 'r') as f:
-            analysis_data = json.load(f)
-    else:
-        analysis_data = {}
+    analysis_data = json.load(open(analysis_file)) if os.path.exists(analysis_file) else {}
+    burst_data = json.load(open(burst_file)) if os.path.exists(burst_file) else {}
 
     for image_dir in watch_dirs:
-        if not os.path.exists(image_dir):
-            continue
-            
+        if not os.path.exists(image_dir): continue
         print(f"Scanning {image_dir}...")
-        images = [f for f in os.listdir(image_dir) if f.lower().endswith(('.jpg', '.jpeg', '.png', '.gif'))]
         
-        # Sort by date (newest first) if possible
-        images.sort(key=lambda x: os.path.getmtime(os.path.join(image_dir, x)), reverse=True)
+        images = [f for f in os.listdir(image_dir) if f.lower().endswith(('.jpg', '.jpeg', '.png', '.gif'))]
+        images.sort(key=lambda x: os.path.getmtime(os.path.join(image_dir, x))) # Oldest to newest for sequence detection
 
         new_analysis = False
-        processed_count = 0
         
-        for img in images:
-            if img in analysis_data:
-                continue
-                
+        # 1. Image Bursts Detection
+        bursts = []
+        if images:
+            current_burst = [images[0]]
+            for i in range(1, len(images)):
+                t1 = os.path.getmtime(os.path.join(image_dir, images[i-1]))
+                t2 = os.path.getmtime(os.path.join(image_dir, images[i]))
+                if t2 - t1 < BURST_THRESHOLD_SECONDS:
+                    current_burst.append(images[i])
+                else:
+                    if len(current_burst) >= 2: bursts.append(current_burst)
+                    current_burst = [images[i]]
+            if len(current_burst) >= 2: bursts.append(current_burst)
+
+        # 2. Individual Image Analysis
+        deep_pass_count = 0
+        for img in reversed(images): # Process newest first for UI freshness
+            if img in analysis_data: continue
+            
             image_path = os.path.join(image_dir, img)
+            fp_results = fast_pass(image_path)
             
-            # FAST PASS: OpenCV Haar Cascades
-            if fast_pass(image_path):
-                print(f"Candidate detected in {img}. Triggering deep pass...")
-                result = analyze_image(image_path, api_key)
-                if result:
-                    analysis_data[img] = result
+            if fp_results:
+                print(f"Trigger detected in {img}: {fp_results}")
+                if api_key and deep_pass_count < 10:
+                    result = analyze_image_openrouter(image_path, api_key)
+                    if result:
+                        analysis_data[img] = result
+                        new_analysis = True
+                        deep_pass_count += 1
+                else:
+                    # Save fast pass results as placeholder
+                    analysis_data[img] = {**fp_results, "fast_pass": "partial"}
                     new_analysis = True
-                    processed_count += 1
             else:
-                # No candidate, save a negative result to avoid reprocessing
-                analysis_data[img] = {"person": False, "dog": False, "cat": False, "fast_pass": "negative"}
+                analysis_data[img] = { "fast_pass": "negative" }
                 new_analysis = True
-                # We don't count these towards processed_count limit as they are cheap
+
+        # 3. Burst Analysis
+        for burst in bursts:
+            burst_id = burst[-1] # Use last image as ID
+            if burst_id in burst_data: continue
             
-            if processed_count >= 20: # Limit deep passes per run
-                break
-        
+            # Only analyze burst if at least one image has a detection
+            has_detection = any(img in analysis_data and any(v is True for k, v in analysis_data[img].items() if k != 'fast_pass') for img in burst)
+            
+            if has_detection and api_key:
+                print(f"Analyzing burst ending at {burst_id}...")
+                full_paths = [os.path.join(image_dir, f) for f in burst[-3:]] # Take last 3 max
+                summary = analyze_burst_openrouter(full_paths, api_key)
+                burst_data[burst_id] = { "summary": summary, "images": burst }
+                new_analysis = True
+
         if new_analysis:
-            with open(analysis_file, 'w') as f:
-                json.dump(analysis_data, f, indent=2)
-            print(f"Updated {analysis_file}")
+            with open(analysis_file, 'w') as f: json.dump(analysis_data, f, indent=2)
+            with open(burst_file, 'w') as f: json.dump(burst_data, f, indent=2)
+            print(f"Updated data files.")
 
 if __name__ == "__main__":
     main()

@@ -37,10 +37,9 @@ do
     fi
 
     # Sync analysis results if available
-    if [ -f "/home/user/webcam/analysis.json" ]; then
-        cp /home/user/webcam/analysis.json "$IMAGE_DIR/analysis.json"
-    fi
+    [ -f "/home/user/webcam/analysis.json" ] && cp /home/user/webcam/analysis.json "$IMAGE_DIR/analysis.json"
+    [ -f "/home/user/webcam/bursts.json" ] && cp /home/user/webcam/bursts.json "$IMAGE_DIR/bursts.json"
 
-    echo "images.json, index.html, and analysis.json have been updated"
+    echo "images.json, index.html, and analysis files have been updated"
     sleep 60 # MH 20240402 buffer the cpu?
 done
