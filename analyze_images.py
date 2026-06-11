@@ -238,6 +238,11 @@ def main():
         apply_retention(image_dir, analysis_data, pins)
 
         images = [f for f in os.listdir(image_dir) if f.lower().endswith(('.jpg', '.jpeg', '.png', '.gif'))]
+        # Chronological order is REQUIRED for burst detection below:
+        # it groups by the gap between consecutive entries, and an
+        # unsorted list yields negative gaps that chain unrelated
+        # images (taken days apart) into one false "burst".
+        images.sort(key=lambda x: os.path.getmtime(os.path.join(image_dir, x)))
 
         generate_thumbnails(image_dir, images)
 
@@ -340,6 +345,30 @@ def main():
             del analysis_data[k]
         with open(analysis_file, 'w') as f: json.dump(analysis_data, f, indent=2)
         print(f"Pruned {len(stale)} stale analysis entries.")
+
+    # Prune burst entries that reference deleted images or that span
+    # longer than the chain rule allows (false groups created before
+    # the chronological-sort fix). They re-detect correctly next run.
+    def burst_valid(b):
+        imgs = b.get("images", [])
+        if not imgs or any(i not in existing for i in imgs):
+            return False
+        times = []
+        for i in imgs:
+            for d in watch_dirs:
+                p = os.path.join(d, i)
+                if os.path.exists(p):
+                    times.append(os.path.getmtime(p))
+                    break
+        max_span = BURST_THRESHOLD_SECONDS * max(1, len(imgs) - 1)
+        return bool(times) and (max(times) - min(times)) <= max_span
+
+    bad_bursts = [k for k, b in burst_data.items() if not burst_valid(b)]
+    if bad_bursts:
+        for k in bad_bursts:
+            del burst_data[k]
+        with open(burst_file, 'w') as f: json.dump(burst_data, f, indent=2)
+        print(f"Pruned {len(bad_bursts)} invalid burst entries.")
 
 if __name__ == "__main__":
     main()
