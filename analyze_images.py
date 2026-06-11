@@ -123,6 +123,73 @@ def get_free_mem_gb():
 
 THUMB_WIDTH = 320
 
+# Retention policy (applied once per gated pipeline run)
+MAX_AGE_DAYS = 30   # no-detection images older than this are removed
+MAX_DIR_GB = 4.0    # per-camera disk budget
+
+def has_detection(entry):
+    return any(v is True for k, v in entry.items() if k != 'fast_pass')
+
+def apply_retention(image_dir, analysis_data, pins):
+    """Delete images to honor the age and disk budgets.
+
+    Rules: pinned images are never deleted; unanalyzed images are never
+    deleted (they haven't been looked at yet); no-detection images go
+    first, oldest first; images WITH detections are only deleted if the
+    disk budget is still exceeded after that.
+    Returns the set of deleted filenames."""
+    now = time.time()
+    deleted = set()
+
+    entries = []
+    for f in os.listdir(image_dir):
+        if not f.lower().endswith(('.jpg', '.jpeg', '.png', '.gif')):
+            continue
+        try:
+            st = os.stat(os.path.join(image_dir, f))
+        except OSError:
+            continue
+        entries.append((f, st.st_mtime, st.st_size))
+
+    def delete(f):
+        for path in (os.path.join(image_dir, f), os.path.join(image_dir, "thumbs", f)):
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+        deleted.add(f)
+
+    def is_deletable_negative(f):
+        return (f not in pins and f in analysis_data
+                and not has_detection(analysis_data[f]))
+
+    # Pass 1: max age - only analyzed images with no identified objects
+    cutoff = now - MAX_AGE_DAYS * 86400
+    for f, mtime, size in entries:
+        if mtime < cutoff and is_deletable_negative(f):
+            delete(f)
+
+    # Pass 2: disk budget - oldest negatives first, then oldest detected
+    remaining = [e for e in entries if e[0] not in deleted]
+    total = sum(s for _, _, s in remaining)
+    budget = MAX_DIR_GB * 1024 ** 3
+    if total > budget:
+        negatives = sorted((e for e in remaining if is_deletable_negative(e[0])),
+                           key=lambda e: e[1])
+        detected = sorted((e for e in remaining
+                           if e[0] not in pins and e[0] in analysis_data
+                           and has_detection(analysis_data[e[0]])),
+                          key=lambda e: e[1])
+        for f, mtime, size in negatives + detected:
+            if total <= budget:
+                break
+            delete(f)
+            total -= size
+
+    if deleted:
+        print(f"Retention: removed {len(deleted)} images from {image_dir}")
+    return deleted
+
 def generate_thumbnails(image_dir, images):
     """Create missing thumbnails under <image_dir>/thumbs/ for grid view."""
     thumb_dir = os.path.join(image_dir, "thumbs")
@@ -154,8 +221,11 @@ def main():
     analysis_file = os.path.join(base_dir, "analysis.json")
     burst_file = os.path.join(base_dir, "bursts.json")
     
+    pins_file = os.path.join(base_dir, "pins.json")
+
     analysis_data = json.load(open(analysis_file)) if os.path.exists(analysis_file) else {}
     burst_data = json.load(open(burst_file)) if os.path.exists(burst_file) else {}
+    pins = set(json.load(open(pins_file))) if os.path.exists(pins_file) else set()
 
     free_mem = get_free_mem_gb()
     can_run_local = free_mem >= MIN_MEM_FOR_LOCAL_GB
@@ -165,6 +235,8 @@ def main():
         if not os.path.exists(image_dir): continue
         print(f"Scanning {image_dir}...")
         
+        apply_retention(image_dir, analysis_data, pins)
+
         images = [f for f in os.listdir(image_dir) if f.lower().endswith(('.jpg', '.jpeg', '.png', '.gif'))]
 
         generate_thumbnails(image_dir, images)
@@ -256,6 +328,18 @@ def main():
             with open(analysis_file, 'w') as f: json.dump(analysis_data, f, indent=2)
             with open(burst_file, 'w') as f: json.dump(burst_data, f, indent=2)
             print(f"Updated data files.")
+
+    # Prune analysis entries for images deleted by retention or the API
+    existing = set()
+    for d in watch_dirs:
+        if os.path.exists(d):
+            existing.update(os.listdir(d))
+    stale = [k for k in analysis_data if k not in existing]
+    if stale:
+        for k in stale:
+            del analysis_data[k]
+        with open(analysis_file, 'w') as f: json.dump(analysis_data, f, indent=2)
+        print(f"Pruned {len(stale)} stale analysis entries.")
 
 if __name__ == "__main__":
     main()

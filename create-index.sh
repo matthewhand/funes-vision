@@ -36,6 +36,7 @@ run_analysis() {
         cp "$BASE_DIR/index.html" "$IMAGE_DIR/index.html"
         [ -f "$BASE_DIR/analysis.json" ] && cp "$BASE_DIR/analysis.json" "$IMAGE_DIR/analysis.json"
         [ -f "$BASE_DIR/bursts.json" ] && cp "$BASE_DIR/bursts.json" "$IMAGE_DIR/bursts.json"
+        [ -f "$BASE_DIR/pins.json" ] && cp "$BASE_DIR/pins.json" "$IMAGE_DIR/pins.json"
 
         echo "$(date): Analysis and sync complete."
     fi

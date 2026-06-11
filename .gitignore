@@ -1,3 +1,6 @@
 bursts.json
 *.log
 nohup.out
+__pycache__/
+pins.json
+analysis.json
