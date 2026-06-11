@@ -368,6 +368,19 @@
       border-radius: 2px 2px 0 0;
       transition: all 0.3s ease;
       min-height: 1px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Portion of the hour's events matching the active object filter */
+    .chart-bar-match {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      background: #ef4444;
+      border-radius: 2px 2px 0 0;
+      box-shadow: 0 0 6px rgba(239, 68, 68, 0.5);
     }
 
     .chart-bar-wrapper:hover .chart-bar {
@@ -1651,13 +1664,22 @@
         return true;
       });
 
+      // Per-hour counts of images matching the active object filter,
+      // so those hours can be highlighted in the chart
+      const matchHours = Array(24).fill(0);
       baseFilteredList.forEach(filename => {
         const meta = parseFilename(filename);
-        if (meta.hour !== -1) {
-          hours[meta.hour]++;
+        if (meta.hour === -1) return;
+        hours[meta.hour]++;
+
+        if (state.activeObjectFilter) {
+          const analysis = state.analysis[filename] || {};
+          if (!effectiveLabels(analysis).has(state.activeObjectFilter)) return;
+          if (!state.showPotentialHits && analysis.fast_pass === 'partial') return;
+          matchHours[meta.hour]++;
         }
       });
-      
+
       const maxCount = Math.max(...hours, 1);
       const chartContainer = document.getElementById('activity-chart');
       chartContainer.innerHTML = '';
@@ -1669,12 +1691,21 @@
         
         const isPm = h >= 12;
         const displayHr = h % 12 === 0 ? 12 : h % 12;
-        const labelStr = `${displayHr} ${isPm ? 'PM' : 'AM'}: ${count} event${count !== 1 ? 's' : ''}`;
-        
+        const matchCount = matchHours[h];
+        let labelStr = `${displayHr} ${isPm ? 'PM' : 'AM'}: ${count} event${count !== 1 ? 's' : ''}`;
+        if (state.activeObjectFilter) labelStr += ` (${matchCount} ${state.activeObjectFilter})`;
+
         const activeClass = state.activeHourChartFilter === h ? 'active' : '';
+        // Red overlay sized to the matching share of this hour's events
+        const matchHtml = matchCount > 0
+          ? `<div class="chart-bar-match" style="height: ${(matchCount / count) * 100}%"></div>`
+          : '';
+
+        // Hours with matches stay visible even when the hour is quiet
+        const barPct = matchCount > 0 ? Math.max(pct, 8) : pct;
 
         barWrapper.innerHTML = `
-          <div class="chart-bar ${activeClass}" style="height: ${pct}%" title="${labelStr}"></div>
+          <div class="chart-bar ${activeClass}" style="height: ${barPct}%" title="${labelStr}">${matchHtml}</div>
         `;
         
         barWrapper.addEventListener('click', () => {
