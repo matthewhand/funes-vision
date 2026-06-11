@@ -383,6 +383,13 @@
       box-shadow: 0 0 6px rgba(239, 68, 68, 0.5);
     }
 
+    /* Day-mode bars are full-height 24h timelines; red segments sit at
+       the time of day they occurred (top = midnight) */
+    .chart-bar.day-bar .chart-bar-match {
+      bottom: auto;
+      border-radius: 1px;
+    }
+
     .chart-bar-wrapper:hover .chart-bar {
       background: var(--accent-color);
       box-shadow: 0 0 6px rgba(59, 130, 246, 0.5);
@@ -1313,7 +1320,7 @@
           <div class="chart-viewport" id="activity-chart">
             <!-- Dynamic bars inserted here -->
           </div>
-          <div class="chart-x-axis">
+          <div class="chart-x-axis" id="chart-x-axis">
             <span>12 AM</span>
             <span>6 AM</span>
             <span>12 PM</span>
@@ -1657,56 +1664,110 @@
       });
     }
 
-    // Render Hourly bar-chart counts
+    // Render the sidebar activity chart.
+    // All dates: one bar per DAY. Each bar is a midnight(top) to
+    //   midnight(bottom) timeline; red segments mark WHEN matches
+    //   occurred that day, sized by how many images matched.
+    // Specific date: one bar per HOUR (red = matching share, clickable).
     function renderActivityChart() {
+      const chartContainer = document.getElementById('activity-chart');
+      const xAxis = document.getElementById('chart-x-axis');
+      chartContainer.innerHTML = '';
+
+      // Does this image count as a "match" for red highlighting?
+      // With an object filter: that object. Without: any visible detection.
+      const isMatch = (filename) => {
+        const analysis = state.analysis[filename] || {};
+        const labels = effectiveLabels(analysis);
+        const isPartial = analysis.fast_pass === 'partial';
+        if (!state.showPotentialHits && isPartial) return false;
+        if (state.activeObjectFilter) return labels.has(state.activeObjectFilter);
+        return Array.from(labels).some(l => !state.blacklist.includes(l)) ||
+               (state.showPotentialHits && isPartial);
+      };
+
+      const searchOk = (filename) => !state.searchQuery ||
+        filename.toLowerCase().includes(state.searchQuery.toLowerCase());
+
+      const what = state.activeObjectFilter || 'detection';
+
+      if (state.activeDateFilter === 'all') {
+        // ---- DAY MODE ----
+        const days = {};
+        state.allImages.forEach(filename => {
+          if (!searchOk(filename)) return;
+          const meta = parseFilename(filename);
+          if (!meta || meta.hour === -1) return;
+          const d = days[meta.dateStr] || (days[meta.dateStr] =
+            { total: 0, matchTotal: 0, matchHours: Array(24).fill(0), label: meta.formattedDate });
+          d.total++;
+          if (isMatch(filename)) { d.matchHours[meta.hour]++; d.matchTotal++; }
+        });
+
+        const sortedDays = Object.keys(days).sort();
+        const maxTotal = Math.max(...sortedDays.map(k => days[k].total), 1);
+
+        sortedDays.forEach(dayStr => {
+          const d = days[dayStr];
+          const barWrapper = document.createElement('div');
+          barWrapper.className = 'chart-bar-wrapper';
+
+          // Red segments at the time-of-day they occurred, sized by
+          // that hour's share of the day's images
+          let segs = '';
+          d.matchHours.forEach((m, h) => {
+            if (m === 0) return;
+            const hgt = Math.max(6, (m / d.total) * 100);
+            segs += `<div class="chart-bar-match" style="top: ${(h / 24) * 100}%; height: ${hgt}%"></div>`;
+          });
+
+          const intensity = 0.08 + 0.22 * (d.total / maxTotal);
+          const title = `${d.label}: ${d.total} events, ${d.matchTotal} ${what}${d.matchTotal !== 1 ? 's' : ''}`;
+          barWrapper.innerHTML = `
+            <div class="chart-bar day-bar" style="height: 100%; background: rgba(59, 130, 246, ${intensity.toFixed(2)})" title="${title}">${segs}</div>
+          `;
+          barWrapper.addEventListener('click', () => {
+            state.activeDateFilter = dayStr; // Drill into that day
+            renderDateSidebar();
+            applyFiltersAndSearch();
+          });
+          chartContainer.appendChild(barWrapper);
+        });
+
+        if (xAxis) {
+          const fmt = s => `${parseInt(s.slice(5, 7), 10)}/${parseInt(s.slice(8, 10), 10)}`;
+          xAxis.innerHTML = sortedDays.length
+            ? `<span>${fmt(sortedDays[0])}</span><span>days &middot; top=12AM</span><span>${fmt(sortedDays[sortedDays.length - 1])}</span>`
+            : '';
+        }
+        return;
+      }
+
+      // ---- HOUR MODE (a specific day is selected) ----
+      if (xAxis) xAxis.innerHTML = '<span>12 AM</span><span>6 AM</span><span>12 PM</span><span>6 PM</span><span>11 PM</span>';
+
       const hours = Array(24).fill(0);
-      
-      // Compute counts over current base filters (date filter + tab filter + search, but ignoring time-of-day/specific-hour selection so chart represents the whole day's overview)
-      const baseFilteredList = state.allImages.filter(filename => {
-        const meta = parseFilename(filename);
-        
-        // Match Date filter
-        if (state.activeDateFilter !== 'all' && meta.dateStr !== state.activeDateFilter) return false;
-        // Tab filter intentionally NOT applied: the chart always shows
-        // total activity as context; matches are highlighted in red.
-        // Match Search Query
-        if (state.searchQuery) {
-          const q = state.searchQuery.toLowerCase();
-          if (!filename.toLowerCase().includes(q)) return false;
-        }
-        return true;
-      });
-
-      // Per-hour counts of images matching the active object filter,
-      // so those hours can be highlighted in the chart
       const matchHours = Array(24).fill(0);
-      baseFilteredList.forEach(filename => {
+      state.allImages.forEach(filename => {
+        if (!searchOk(filename)) return;
         const meta = parseFilename(filename);
-        if (meta.hour === -1) return;
+        if (!meta || meta.hour === -1) return;
+        if (meta.dateStr !== state.activeDateFilter) return;
         hours[meta.hour]++;
-
-        if (state.activeObjectFilter) {
-          const analysis = state.analysis[filename] || {};
-          if (!effectiveLabels(analysis).has(state.activeObjectFilter)) return;
-          if (!state.showPotentialHits && analysis.fast_pass === 'partial') return;
-          matchHours[meta.hour]++;
-        }
+        if (isMatch(filename)) matchHours[meta.hour]++;
       });
 
       const maxCount = Math.max(...hours, 1);
-      const chartContainer = document.getElementById('activity-chart');
-      chartContainer.innerHTML = '';
-      
+
       hours.forEach((count, h) => {
         const barWrapper = document.createElement('div');
         barWrapper.className = 'chart-bar-wrapper';
         const pct = (count / maxCount) * 100;
-        
+
         const isPm = h >= 12;
         const displayHr = h % 12 === 0 ? 12 : h % 12;
         const matchCount = matchHours[h];
-        let labelStr = `${displayHr} ${isPm ? 'PM' : 'AM'}: ${count} event${count !== 1 ? 's' : ''}`;
-        if (state.activeObjectFilter) labelStr += ` (${matchCount} ${state.activeObjectFilter})`;
+        let labelStr = `${displayHr} ${isPm ? 'PM' : 'AM'}: ${count} event${count !== 1 ? 's' : ''} (${matchCount} ${what}${matchCount !== 1 ? 's' : ''})`;
 
         const activeClass = state.activeHourChartFilter === h ? 'active' : '';
         // Red overlay sized to the matching share of this hour's events
@@ -1720,7 +1781,7 @@
         barWrapper.innerHTML = `
           <div class="chart-bar ${activeClass}" style="height: ${barPct}%" title="${labelStr}">${matchHtml}</div>
         `;
-        
+
         barWrapper.addEventListener('click', () => {
           if (state.activeHourChartFilter === h) {
             state.activeHourChartFilter = null; // Toggle off
@@ -1929,7 +1990,18 @@
       document.getElementById('stats-label').textContent = `Showing ${state.filteredImages.length} of ${state.allImages.length} logs`;
 
       if (state.filteredImages.length === 0) {
-        showEmptyState('No snapshots found matching the current timeline filter or search criteria.');
+        // Explain WHY it's empty and offer one-tap escapes
+        let msg = 'No snapshots found matching the current timeline filter or search criteria.';
+        let actions = '';
+        if (state.activeFilter === 'objects') {
+          msg = 'No images with AI detections match the current filters.';
+          if (state.blacklist.length > 0) {
+            msg += ` (${state.blacklist.length} label${state.blacklist.length !== 1 ? 's are' : ' is'} hidden via the Hidden menu.)`;
+            actions += '<button class="btn" id="empty-unhide">Unhide all labels</button>';
+          }
+          actions += '<button class="btn" id="empty-show-all">Show all images</button>';
+        }
+        showEmptyState(msg, actions);
       } else {
         renderNextPage();
       }
@@ -2099,16 +2171,34 @@
     }
 
     // Empty state UI helper
-    function showEmptyState(message) {
+    function showEmptyState(message, actionsHtml = '') {
       const grid = document.getElementById('image-grid');
       grid.innerHTML = `
         <div class="empty-state">
           <i data-lucide="image-off"></i>
           <h3>No Snapshots Found</h3>
           <p>${message}</p>
+          <div style="display:flex; gap:8px; justify-content:center; margin-top:12px;">${actionsHtml}</div>
         </div>
       `;
       document.getElementById('sentinel-text').textContent = '';
+
+      const unhideBtn = document.getElementById('empty-unhide');
+      if (unhideBtn) unhideBtn.onclick = () => {
+        state.blacklist = [];
+        localStorage.setItem('webcam_ai_blacklist', '[]');
+        renderObjectFilters();
+        applyFiltersAndSearch();
+      };
+      const showAllBtn = document.getElementById('empty-show-all');
+      if (showAllBtn) showAllBtn.onclick = () => {
+        state.activeFilter = 'all';
+        state.activeHourChartFilter = null;
+        document.querySelectorAll('#filter-tabs .tab-btn').forEach(btn =>
+          btn.classList.toggle('active', btn.dataset.filter === 'all'));
+        applyFiltersAndSearch();
+      };
+
       lucide.createIcons();
     }
 
