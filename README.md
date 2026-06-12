@@ -17,11 +17,11 @@ Everything runs on this box. No images leave the machine.
 
 ## Using the gallery
 
-- **Objects tab** (default) — only images with AI-verified detections.
+- **Timeline tab** (default) — appear/disappear events per object ("car
+  disappeared 9:15", "person appeared 7:02"). Tap an event to play it as a
+  short animation; tap the image to step frame-by-frame.
+- **Objects tab** — only images with AI-verified detections.
 - **All tab** — every snapshot.
-- **Timeline tab** — appear/disappear events per object ("car disappeared
-  9:15", "person appeared 7:02"). Tap an event to play it as a short
-  animation; tap the image to step frame-by-frame.
 - **Object buttons** (person, dog, cat, car…) appear automatically for
   whatever the AI has detected. Tap to filter, tap again to clear. Face and
   body detections are merged into **person** by default.
