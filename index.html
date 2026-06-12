@@ -583,6 +583,13 @@
     .tag-face { background: #ec4899; color: white; }
     .tag-body { background: #10b981; color: white; }
 
+    .tag-disputed {
+      background: rgba(239, 68, 68, 0.12);
+      color: #ef4444;
+      border: 1px solid rgba(239, 68, 68, 0.35);
+      text-decoration: line-through;
+    }
+
     .tag-potential {
       background: rgba(245, 158, 11, 0.15);
       color: #f59e0b;
@@ -1389,8 +1396,8 @@
                 <span>Merge labels (&rarr;person, &rarr;dog)</span>
                 <div class="blacklist-status"></div>
               </div>
-              <div class="blacklist-item" id="consensus-toggle" title="Only count person/car/cat/dog when BOTH the fast detector and Gemma saw it - cuts AI hallucination false positives">
-                <span>Require YOLO + Gemma agreement</span>
+              <div class="blacklist-item" id="unconfirmed-toggle" title="Also show DISPUTED detections (one model saw it, the other ruled it out). Preliminary (awaiting Gemma) hits are always shown with a '?' badge.">
+                <span>Show unconfirmed detections</span>
                 <div class="blacklist-status"></div>
               </div>
               <div style="font-size: 0.7rem; font-weight: 700; text-transform: uppercase; color: var(--text-secondary); margin: 8px 0; border-bottom: 1px solid var(--border-color); padding-bottom: 4px;">
@@ -1404,13 +1411,19 @@
                 <span>Gemma backfill when idle</span>
                 <div class="blacklist-status"></div>
               </div>
+              <div style="font-size: 0.7rem; font-weight: 700; text-transform: uppercase; color: var(--text-secondary); margin: 8px 0; border-bottom: 1px solid var(--border-color); padding-bottom: 4px;">
+                Intervals
+              </div>
+              <label style="display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:0.78rem; padding:2px 0;" title="Server: seconds between idle catch-up sweeps">
+                Idle sweep (s)
+                <input type="number" id="sweep-interval-input" min="15" max="3600" step="15" style="width:70px; padding:4px; background:var(--bg-tertiary); color:var(--text-primary); border:1px solid var(--border-color); border-radius:4px;">
+              </label>
+              <label style="display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:0.78rem; padding:2px 0;" title="This browser: seconds between AI status polls">
+                Status poll (s)
+                <input type="number" id="poll-interval-input" min="5" max="300" step="5" style="width:70px; padding:4px; background:var(--bg-tertiary); color:var(--text-primary); border:1px solid var(--border-color); border-radius:4px;">
+              </label>
             </div>
           </div>
-
-          <button class="btn btn-mode-toggle" id="btn-precision-toggle" title="Toggle between Verified and Potential (OpenCV) hits">
-            <i data-lucide="zap"></i>
-            <span id="mode-toggle-label">Mode: Precise</span>
-          </button>
 
           <div class="blacklist-menu">
             <button class="btn" id="btn-system-status" title="Pipeline status">
@@ -1548,9 +1561,8 @@
       blacklist: JSON.parse(localStorage.getItem('webcam_ai_blacklist') || '[]'),
       // Map raw AI labels to a canonical UI label (e.g. face/body -> person)
       labelAliases: JSON.parse(localStorage.getItem('webcam_ai_aliases') || '{"face":"person","body":"person","raccoon":"dog"}'),
-      // Require detector+LLM agreement on YOLO-capable labels (default on)
-      requireConsensus: JSON.parse(localStorage.getItem('webcam_consensus') || 'true'),
-      showPotentialHits: false, // Precision vs Accuracy toggle
+      // Show disputed detections (one model saw it, the other didn't)
+      showUnconfirmed: JSON.parse(localStorage.getItem('webcam_show_unconfirmed') || 'false'),
       isLive: true,         // auto-polling switch
       pollingInterval: null,
       lightboxIndex: -1,    // index in filteredImages
@@ -1733,13 +1745,9 @@
       // Does this image count as a "match" for red highlighting?
       // With an object filter: that object. Without: any visible detection.
       const isMatch = (filename) => {
-        const analysis = state.analysis[filename] || {};
-        const labels = effectiveLabels(analysis);
-        const isPartial = analysis.fast_pass === 'partial';
-        if (!state.showPotentialHits && isPartial) return false;
+        const labels = effectiveLabels(state.analysis[filename] || {});
         if (state.activeObjectFilter) return labels.has(state.activeObjectFilter);
-        return Array.from(labels).some(l => !state.blacklist.includes(l)) ||
-               (state.showPotentialHits && isPartial);
+        return Array.from(labels).some(l => !state.blacklist.includes(l));
       };
 
       const searchOk = (filename) => !state.searchQuery ||
@@ -1859,19 +1867,42 @@
     // where YOLO could actually have seen the object)
     const YOLO_CAPABLE = new Set(['person', 'car', 'cat', 'dog']);
 
-    // Set of canonical labels detected in an analysis entry.
-    // With consensus on, an LLM verdict for a YOLO-capable label only
-    // counts if the detector saw it too (entry._yolo, recorded at
-    // deep-pass time) - cuts LLM hallucination false positives.
-    const effectiveLabels = (analysis) => {
-      const out = new Set();
-      const verified = analysis && !('fast_pass' in analysis); // LLM verdict
-      const yoloSaw = new Set(((analysis && analysis._yolo) || []).map(canonicalLabel));
-      Object.entries(analysis || {}).forEach(([key, val]) => {
+    // Detection lifecycle, per canonical label:
+    //   preliminary - only the fast detector has run (awaiting Gemma)
+    //   verified    - Gemma confirmed it (or the label is beyond YOLO's
+    //                 classes, so consensus is impossible)
+    //   disputed    - one model saw it and the other ruled it out
+    const labelStates = (analysis) => {
+      const states = new Map();
+      if (!analysis) return states;
+      const hasVerdict = !('fast_pass' in analysis); // Gemma has ruled
+      const yoloSaw = new Set((analysis._yolo || []).map(canonicalLabel));
+      Object.entries(analysis).forEach(([key, val]) => {
         if (val !== true || key === 'fast_pass') return;
         const label = canonicalLabel(key);
-        if (state.requireConsensus && verified && YOLO_CAPABLE.has(label) && !yoloSaw.has(label)) return;
-        out.add(label);
+        if (!hasVerdict) {
+          states.set(label, 'preliminary');
+        } else if (YOLO_CAPABLE.has(label) && !yoloSaw.has(label)) {
+          states.set(label, 'disputed'); // Gemma-only claim
+        } else {
+          states.set(label, 'verified');
+        }
+      });
+      if (hasVerdict) {
+        // YOLO saw it but Gemma ruled it out
+        yoloSaw.forEach(label => {
+          if (!states.has(label)) states.set(label, 'disputed');
+        });
+      }
+      return states;
+    };
+
+    // Canonical labels visible under current settings: verified and
+    // preliminary always; disputed only with "show unconfirmed" on
+    const effectiveLabels = (analysis) => {
+      const out = new Set();
+      labelStates(analysis).forEach((st, label) => {
+        if (st !== 'disputed' || state.showUnconfirmed) out.add(label);
       });
       return out;
     };
@@ -1989,32 +2020,22 @@
     document.getElementById('alias-toggle').onclick = toggleAliases;
     renderAliasToggle();
 
-    // Detector+LLM consensus toggle
-    const consensusToggle = document.getElementById('consensus-toggle');
-    const renderConsensusToggle = () =>
-      consensusToggle.classList.toggle('hidden-label', !state.requireConsensus);
-    consensusToggle.onclick = () => {
-      state.requireConsensus = !state.requireConsensus;
-      localStorage.setItem('webcam_consensus', JSON.stringify(state.requireConsensus));
+    // "Show unconfirmed" toggle: include disputed detections
+    const unconfirmedToggle = document.getElementById('unconfirmed-toggle');
+    const renderUnconfirmedToggle = () =>
+      unconfirmedToggle.classList.toggle('hidden-label', !state.showUnconfirmed);
+    unconfirmedToggle.onclick = () => {
+      state.showUnconfirmed = !state.showUnconfirmed;
+      localStorage.setItem('webcam_show_unconfirmed', JSON.stringify(state.showUnconfirmed));
       state.activeObjectFilter = null; // filtered label may no longer exist
-      renderConsensusToggle();
+      renderUnconfirmedToggle();
       renderObjectFilters();
       applyFiltersAndSearch();
-      showToast(state.requireConsensus
-        ? 'Consensus ON - showing only detector+Gemma agreed labels'
-        : 'Consensus OFF - showing all Gemma labels');
+      showToast(state.showUnconfirmed
+        ? 'Showing disputed detections too'
+        : 'Hiding disputed detections (models disagree)');
     };
-    renderConsensusToggle();
-
-    // Precise <-> Potential mode toggle (show unverified OpenCV-only hits)
-    const precisionBtn = document.getElementById('btn-precision-toggle');
-    precisionBtn.onclick = () => {
-      state.showPotentialHits = !state.showPotentialHits;
-      document.getElementById('mode-toggle-label').textContent =
-        state.showPotentialHits ? 'Mode: Potential' : 'Mode: Precise';
-      precisionBtn.classList.toggle('active', state.showPotentialHits);
-      applyFiltersAndSearch();
-    };
+    renderUnconfirmedToggle();
 
     // Apply Active Filters & Search Query
     function applyFiltersAndSearch() {
@@ -2022,28 +2043,16 @@
         const meta = parseFilename(filename);
         const analysis = state.analysis[filename] || {};
         
-        // 1. Object filter (raw labels resolved through alias map) -
-        // applies on both tabs when a specific object is selected
+        // 1. Object filter (raw labels resolved through alias map and
+        // the detection lifecycle) - applies on both tabs
         const labels = effectiveLabels(analysis);
         const hasWhitelistedDetection = Array.from(labels).some(l => !state.blacklist.includes(l));
-        const isPartial = analysis.fast_pass === 'partial';
-        if (state.activeObjectFilter) {
-          if (!labels.has(state.activeObjectFilter)) return false;
-          // In PRECISE mode only LLM-verified hits count; POTENTIAL also
-          // matches unverified OpenCV-only (partial) detections.
-          if (!state.showPotentialHits && isPartial) return false;
-        }
+        if (state.activeObjectFilter && !labels.has(state.activeObjectFilter)) return false;
 
-        // 2. Tab filter: "Objects" shows only images with detections
-        // (verified in PRECISE mode, plus unverified in POTENTIAL mode);
-        // "All" shows everything.
-        if (state.activeFilter === 'objects' && !state.activeObjectFilter) {
-          if (state.showPotentialHits) {
-            if (!isPartial && !hasWhitelistedDetection) return false;
-          } else {
-            if (isPartial || !hasWhitelistedDetection) return false;
-          }
-        }
+        // 2. Tab filter: "Objects" shows only images with visible
+        // detections (verified + preliminary; disputed only when
+        // "show unconfirmed" is on); "All" shows everything.
+        if (state.activeFilter === 'objects' && !state.activeObjectFilter && !hasWhitelistedDetection) return false;
 
         // 3. Date Timeline filter
         if (state.activeDateFilter !== 'all' && meta.dateStr !== state.activeDateFilter) return false;
@@ -2250,28 +2259,25 @@
       // Build Detections Badges (replacing the redundant Motion tag)
       let detectionsHtml = '';
       if (analysis) {
-        const isPartial = analysis.fast_pass === 'partial';
-        // Aliased labels (e.g. face/body -> person) collapse into one badge
-        effectiveLabels(analysis).forEach(label => {
-          // SKIP BLACKLISTED LABELS
-          if (!state.blacklist.includes(label)) {
-            let icon = 'eye';
-            if (label === 'person') icon = 'user';
-            if (label === 'dog') icon = 'dog';
-            if (label === 'cat') icon = 'cat';
+        // Lifecycle badges: verified = solid, preliminary = amber "label?",
+        // disputed = struck-through (only with "show unconfirmed" on)
+        labelStates(analysis).forEach((st, label) => {
+          if (state.blacklist.includes(label)) return;
+          if (st === 'disputed' && !state.showUnconfirmed) return;
+          let icon = 'eye';
+          if (label === 'person') icon = 'user';
+          if (label === 'dog') icon = 'dog';
+          if (label === 'cat') icon = 'cat';
+          const cls = st === 'preliminary' ? 'tag-potential' : st === 'disputed' ? 'tag-disputed' : '';
+          const suffix = st === 'preliminary' ? '?' : st === 'disputed' ? ' &#10007;' : '';
 
-            detectionsHtml += `
-              <span class="badge badge-ai tag-${label} ${isPartial ? 'tag-potential' : ''}">
-                <i data-lucide="${icon}"></i>
-                <span style="text-transform: capitalize;">${label}${isPartial ? '?' : ''}</span>
-              </span>`;
-          }
+          detectionsHtml += `
+            <span class="badge badge-ai tag-${label} ${cls}">
+              <i data-lucide="${icon}"></i>
+              <span style="text-transform: capitalize;">${label}${suffix}</span>
+            </span>`;
         });
-        
-        if (analysis.fast_pass === 'partial' && detectionsHtml === '') {
-          detectionsHtml = '<span class="badge badge-ai tag-potential"><i data-lucide="help-circle"></i>Unverified</span>';
-        }
-        
+
         if (detectionsHtml === '' && analysis.fast_pass !== 'negative') {
           detectionsHtml = '<span class="badge" style="background: rgba(255,255,255,0.05); color: var(--text-secondary);">Clear</span>';
         }
@@ -2331,9 +2337,11 @@
       }
     }
 
-    // Server-side pipeline settings (detector engine, idle backfill)
+    // Server-side pipeline settings (detector engine, idle backfill,
+    // sweep interval)
     const detectorSelect = document.getElementById('detector-select');
     const backfillToggle = document.getElementById('backfill-toggle');
+    const sweepIntervalInput = document.getElementById('sweep-interval-input');
     let backfillOn = true;
     const renderBackfillToggle = () => backfillToggle.classList.toggle('hidden-label', !backfillOn);
     (async () => {
@@ -2343,10 +2351,20 @@
           const s = await resp.json();
           if (s.fast_pass_engine) detectorSelect.value = s.fast_pass_engine;
           if (typeof s.deep_backfill === 'boolean') backfillOn = s.deep_backfill;
+          sweepIntervalInput.value = s.idle_sweep_seconds || 60;
           renderBackfillToggle();
         }
       } catch (e) { /* API offline; controls show defaults */ }
     })();
+    sweepIntervalInput.onchange = async (e) => {
+      const v = parseInt(e.target.value, 10);
+      try {
+        await apiPost('/api/settings', { idle_sweep_seconds: v });
+        showToast(`Idle sweep every ${v}s (applies next cycle)`);
+      } catch (err) {
+        showToast('Failed to update - is the API service running?');
+      }
+    };
     detectorSelect.onchange = async (e) => {
       try {
         await apiPost('/api/settings', { fast_pass_engine: e.target.value });
@@ -2864,8 +2882,22 @@
           btnSystemStatus.title = 'AI status unavailable (API offline)';
         }
       }
+      // Poll cadence is a per-browser setting
+      let aiPollTimer = null;
+      const pollInput = document.getElementById('poll-interval-input');
+      const startAiPolling = () => {
+        clearInterval(aiPollTimer);
+        const secs = Math.max(5, parseInt(localStorage.getItem('webcam_poll_seconds') || '15', 10));
+        pollInput.value = secs;
+        aiPollTimer = setInterval(updateAiLiveIndicator, secs * 1000);
+      };
+      pollInput.onchange = (e) => {
+        localStorage.setItem('webcam_poll_seconds', String(Math.max(5, parseInt(e.target.value, 10) || 15)));
+        startAiPolling();
+        showToast(`Status poll every ${pollInput.value}s`);
+      };
       updateAiLiveIndicator();
-      setInterval(updateAiLiveIndicator, 15000);
+      startAiPolling();
 
       btnSystemStatus.addEventListener('click', (e) => {
         e.stopPropagation();

@@ -28,11 +28,20 @@ except (OSError, ValueError):
     WATCH_DIRS = []
 PORT = 8190
 
-# Settings keys the UI may change, with their allowed values
+# Settings keys the UI may change: either enumerated choices or a
+# numeric range
 MUTABLE_SETTINGS = {
-    "fast_pass_engine": ("yolo", "haar"),
-    "deep_backfill": (True, False),
+    "fast_pass_engine": {"choices": ("yolo", "haar")},
+    "deep_backfill": {"choices": (True, False)},
+    "idle_sweep_seconds": {"min": 15, "max": 3600},
 }
+
+def setting_valid(key, value):
+    spec = MUTABLE_SETTINGS[key]
+    if "choices" in spec:
+        return value in spec["choices"]
+    return (isinstance(value, (int, float)) and not isinstance(value, bool)
+            and spec["min"] <= value <= spec["max"])
 
 
 def load_pins():
@@ -72,7 +81,8 @@ def pipeline_status():
         settings = {}
 
     status = {"watch_dirs": WATCH_DIRS, "settings": settings,
-              "trigger": {"inotify_active": False, "idle_sweep_seconds": 60},
+              "trigger": {"inotify_active": False,
+                          "idle_sweep_seconds": settings.get("idle_sweep_seconds", 60)},
               "llm": {"model": settings.get("model_local"), "reachable": False,
                       "allow_cloud": settings.get("allow_cloud", False)}}
 
@@ -166,10 +176,11 @@ class Handler(BaseHTTPRequestHandler):
 
         if self.path == "/api/settings":
             changed = {}
-            for key, allowed in MUTABLE_SETTINGS.items():
+            for key, spec in MUTABLE_SETTINGS.items():
                 if key in payload:
-                    if payload[key] not in allowed:
-                        self._send(400, {"error": f"{key} must be one of {list(allowed)}"})
+                    if not setting_valid(key, payload[key]):
+                        detail = list(spec["choices"]) if "choices" in spec else f"{spec['min']}..{spec['max']}"
+                        self._send(400, {"error": f"{key} must be {detail}"})
                         return
                     changed[key] = payload[key]
             if not changed:

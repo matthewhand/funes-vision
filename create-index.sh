@@ -50,13 +50,14 @@ run_analysis() {
   ) 200>$LOCKFILE
 }
 
-# Background loop for "Idle Catch-up"
+# Background loop for "Idle Catch-up"; interval is read each cycle so
+# settings.json changes apply without restarts
 idle_sweep() {
     while true; do
         # Attempt a run. If lock is busy, run_analysis will wait.
         run_analysis
-        # Sleep for a bit to allow other processes a chance at the lock
-        sleep 60
+        INTERVAL=$(jq -r '.idle_sweep_seconds // 60' "$BASE_DIR/settings.json" 2>/dev/null || echo 60)
+        sleep "${INTERVAL:-60}"
     done
 }
 
