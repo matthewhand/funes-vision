@@ -1378,6 +1378,13 @@
                 <span>Merge face/body &rarr; person</span>
                 <div class="blacklist-status"></div>
               </div>
+              <div style="font-size: 0.7rem; font-weight: 700; text-transform: uppercase; color: var(--text-secondary); margin: 8px 0; border-bottom: 1px solid var(--border-color); padding-bottom: 4px;">
+                Fast Detector
+              </div>
+              <select id="detector-select" title="Pre-filter engine that gates AI deep analysis" style="width: 100%; padding: 6px; background: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 6px; font-size: 0.8rem;">
+                <option value="yolo">YOLO (recommended)</option>
+                <option value="haar">Haar cascades (legacy)</option>
+              </select>
             </div>
           </div>
 
@@ -2113,6 +2120,26 @@
         showToast('Pin failed - is the API service running?');
       }
     }
+
+    // Fast-detector engine selector (server-side setting via the API)
+    const detectorSelect = document.getElementById('detector-select');
+    (async () => {
+      try {
+        const resp = await fetch(`${API_BASE}/api/settings`);
+        if (resp.ok) {
+          const s = await resp.json();
+          if (s.fast_pass_engine) detectorSelect.value = s.fast_pass_engine;
+        }
+      } catch (e) { /* API offline; dropdown shows default */ }
+    })();
+    detectorSelect.onchange = async (e) => {
+      try {
+        await apiPost('/api/settings', { fast_pass_engine: e.target.value });
+        showToast(`Detector: ${e.target.value.toUpperCase()} (applies to new images)`);
+      } catch (err) {
+        showToast('Failed to update - is the API service running?');
+      }
+    };
 
     async function deleteImage(filename) {
       if (!confirm(`Delete ${filename}?\nThis removes the file from the server permanently.`)) return;

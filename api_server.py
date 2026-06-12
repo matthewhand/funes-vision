@@ -17,7 +17,13 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 WATCH_DIRS = ["/mnt/models/Webcam21", "/mnt/models/Webcam22"]
 BASE_DIR = "/home/user/webcam"
 PINS_FILE = os.path.join(BASE_DIR, "pins.json")
+SETTINGS_FILE = os.path.join(BASE_DIR, "settings.json")
 PORT = 8190
+
+# Settings keys the UI may change, with their allowed values
+MUTABLE_SETTINGS = {
+    "fast_pass_engine": ("yolo", "haar"),
+}
 
 
 def load_pins():
@@ -67,6 +73,12 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/api/pins":
             self._send(200, sorted(load_pins()))
+        elif self.path == "/api/settings":
+            try:
+                settings = json.load(open(SETTINGS_FILE))
+            except (OSError, ValueError):
+                settings = {}
+            self._send(200, {k: settings.get(k) for k in MUTABLE_SETTINGS})
         else:
             self._send(404, {"error": "not found"})
 
@@ -79,7 +91,28 @@ class Handler(BaseHTTPRequestHandler):
             self._send(400, {"error": "bad request"})
             return
 
-        if self.path == "/api/pin":
+        if self.path == "/api/settings":
+            changed = {}
+            for key, allowed in MUTABLE_SETTINGS.items():
+                if key in payload:
+                    if payload[key] not in allowed:
+                        self._send(400, {"error": f"{key} must be one of {list(allowed)}"})
+                        return
+                    changed[key] = payload[key]
+            if not changed:
+                self._send(400, {"error": "no recognized settings in payload"})
+                return
+            try:
+                settings = json.load(open(SETTINGS_FILE))
+            except (OSError, ValueError):
+                settings = {}
+            settings.update(changed)
+            with open(SETTINGS_FILE, "w") as f:
+                json.dump(settings, f, indent=2)
+            print(f"Settings updated: {changed}")
+            self._send(200, {"ok": True, **changed})
+
+        elif self.path == "/api/pin":
             if find_image(filename) is None:
                 self._send(404, {"error": "image not found"})
                 return

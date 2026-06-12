@@ -18,6 +18,9 @@ MAX_DIR_GB = 4.0    # retention: per-camera disk budget
 ALLOW_CLOUD = True  # permit OpenRouter calls when local inference is unavailable
 OLLAMA_URL = "http://localhost:11434"
 MAX_DEEP_PASSES = 15  # LLM calls (local or cloud) per camera per sweep
+FAST_PASS_ENGINE = "yolo"  # "yolo" (recommended) or "haar" (legacy cascades)
+YOLO_DIR = "/mnt/models/yolo"
+YOLO_CONF = 0.45
 
 _settings_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "settings.json")
 if os.path.exists(_settings_path):
@@ -31,6 +34,7 @@ if os.path.exists(_settings_path):
         OLLAMA_URL = _s.get("ollama_url", OLLAMA_URL)
         MAX_DEEP_PASSES = _s.get("max_deep_passes", MAX_DEEP_PASSES)
         MODEL_LOCAL = _s.get("model_local", MODEL_LOCAL)
+        FAST_PASS_ENGINE = _s.get("fast_pass_engine", FAST_PASS_ENGINE)
     except (ValueError, OSError) as e:
         print(f"Warning: could not read settings.json ({e}); using defaults")
 
@@ -63,6 +67,47 @@ def fast_pass(image_path):
     except Exception as e:
         print(f"Fast pass error: {e}")
         return {}
+
+# --- YOLO fast pass (yolov4-tiny via OpenCV DNN, COCO classes) ---
+YOLO_CLASSES = {0: "person", 2: "car", 15: "cat", 16: "dog"}
+_yolo_model = None
+
+def _load_yolo():
+    global _yolo_model
+    if _yolo_model is None:
+        net = cv2.dnn.readNetFromDarknet(
+            os.path.join(YOLO_DIR, "yolov4-tiny.cfg"),
+            os.path.join(YOLO_DIR, "yolov4-tiny.weights"))
+        model = cv2.dnn_DetectionModel(net)
+        model.setInputParams(size=(416, 416), scale=1/255.0, swapRB=True)
+        _yolo_model = model
+    return _yolo_model
+
+def fast_pass_yolo(image_path):
+    """Returns detected labels dict, or None if YOLO itself is unavailable
+    (caller falls back to Haar cascades)."""
+    try:
+        img = cv2.imread(image_path)
+        if img is None:
+            return {}
+        ids, confs, _ = _load_yolo().detect(img, confThreshold=YOLO_CONF, nmsThreshold=0.4)
+        results = {}
+        for cid in np.array(ids).flatten():
+            label = YOLO_CLASSES.get(int(cid))
+            if label:
+                results[label] = True
+        return results
+    except Exception as e:
+        print(f"YOLO fast pass error: {e}")
+        return None
+
+def fast_pass_dispatch(image_path):
+    if FAST_PASS_ENGINE == "yolo":
+        results = fast_pass_yolo(image_path)
+        if results is not None:
+            return results
+        print("YOLO unavailable; falling back to Haar cascades")
+    return fast_pass(image_path)
 
 def encode_image(image_path):
     with open(image_path, "rb") as image_file:
@@ -330,7 +375,7 @@ def main():
             if img in analysis_data and analysis_data[img].get("fast_pass") == "partial":
                 fp_results = {k:v for k,v in analysis_data[img].items() if k != "fast_pass"}
             else:
-                fp_results = fast_pass(image_path)
+                fp_results = fast_pass_dispatch(image_path)
 
             if fp_results:
                 # If we haven't done deep analysis yet
