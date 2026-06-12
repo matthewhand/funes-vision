@@ -942,6 +942,16 @@
       transform: scale(1.05);
     }
 
+    @keyframes ai-pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+    #ai-live-dot.inferring {
+      background: #f59e0b !important;
+      animation: ai-pulse 1.2s ease-in-out infinite;
+    }
+    #ai-live-dot.idle { background: #10b981 !important; }
+
     .pin-btn.pinned {
       background: #f59e0b;
       border-color: #f59e0b;
@@ -1404,7 +1414,8 @@
 
           <div class="blacklist-menu">
             <button class="btn" id="btn-system-status" title="Pipeline status">
-              <i data-lucide="info"></i>
+              <span id="ai-live-dot" style="width:8px;height:8px;border-radius:50%;background:#6b7280;display:inline-block;flex-shrink:0;"></span>
+              <span id="ai-live-label">AI</span>
             </button>
             <div class="blacklist-dropdown" id="system-dropdown">
               <div style="font-size: 0.7rem; font-weight: 700; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 8px; border-bottom: 1px solid var(--border-color); padding-bottom: 4px;">
@@ -2829,6 +2840,32 @@
           el.textContent = 'API offline - status unavailable.';
         }
       }
+
+      // Always-visible AI activity indicator on the toolbar button:
+      // pulsing amber + elapsed time while inferring, green when idle
+      async function updateAiLiveIndicator() {
+        const dot = document.getElementById('ai-live-dot');
+        const label = document.getElementById('ai-live-label');
+        try {
+          const resp = await fetch(`${API_BASE}/api/status`);
+          const s = await resp.json();
+          if (s.inference && s.inference.started) {
+            dot.className = 'inferring';
+            label.textContent = `AI ${fmtDur(s.inference.running_for_s)}`;
+            btnSystemStatus.title = `Analyzing ${s.inference.image} (${s.inference.trigger}) - tap for details`;
+          } else {
+            dot.className = 'idle';
+            label.textContent = 'AI';
+            btnSystemStatus.title = 'AI idle - tap for pipeline status & audit trail';
+          }
+        } catch (err) {
+          dot.className = '';
+          label.textContent = 'AI';
+          btnSystemStatus.title = 'AI status unavailable (API offline)';
+        }
+      }
+      updateAiLiveIndicator();
+      setInterval(updateAiLiveIndicator, 15000);
 
       btnSystemStatus.addEventListener('click', (e) => {
         e.stopPropagation();
