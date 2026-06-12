@@ -4,7 +4,7 @@ IMAGE_DIR=$1
 # Global lock: analyze_images.py scans ALL camera dirs and writes shared
 # analysis.json, so concurrent instances must never run it in parallel.
 LOCKFILE="/tmp/webcam_analysis.lock"
-BASE_DIR="/home/user/webcam"
+BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Single execution gate with 1-hour timeout
 run_analysis() {

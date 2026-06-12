@@ -12,12 +12,19 @@ Endpoints (all JSON):
 """
 import json
 import os
+import subprocess
+import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-WATCH_DIRS = ["/mnt/models/Webcam21", "/mnt/models/Webcam22"]
-BASE_DIR = "/home/user/webcam"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PINS_FILE = os.path.join(BASE_DIR, "pins.json")
 SETTINGS_FILE = os.path.join(BASE_DIR, "settings.json")
+
+# Deployment-specific; configured in settings.json
+try:
+    WATCH_DIRS = json.load(open(SETTINGS_FILE)).get("watch_dirs", [])
+except (OSError, ValueError):
+    WATCH_DIRS = []
 PORT = 8190
 
 # Settings keys the UI may change, with their allowed values
@@ -56,6 +63,52 @@ def find_image(filename):
     return None
 
 
+def pipeline_status():
+    """Read-only snapshot of how the pipeline is configured and doing."""
+    try:
+        settings = json.load(open(SETTINGS_FILE))
+    except (OSError, ValueError):
+        settings = {}
+
+    status = {"watch_dirs": WATCH_DIRS, "settings": settings,
+              "trigger": {"inotify_active": False, "idle_sweep_seconds": 60},
+              "llm": {"model": settings.get("model_local"), "reachable": False,
+                      "allow_cloud": settings.get("allow_cloud", False)}}
+
+    try:
+        status["trigger"]["inotify_active"] = subprocess.run(
+            ["pgrep", "-x", "inotifywait"], capture_output=True).returncode == 0
+    except OSError:
+        pass
+
+    try:
+        url = settings.get("ollama_url", "http://localhost:11434") + "/api/version"
+        with urllib.request.urlopen(url, timeout=3):
+            status["llm"]["reachable"] = True
+    except Exception:
+        pass
+
+    try:
+        analysis = json.load(open(os.path.join(BASE_DIR, "analysis.json")))
+    except (OSError, ValueError):
+        analysis = {}
+    files = set()
+    for d in WATCH_DIRS:
+        try:
+            files.update(f for f in os.listdir(d)
+                         if f.lower().endswith(('.jpg', '.jpeg', '.png', '.gif')))
+        except OSError:
+            pass
+    status["queue"] = {
+        "images_on_disk": len(files),
+        "unanalyzed": max(0, len(files - set(analysis))),
+        "unverified_partials": sum(1 for v in analysis.values() if v.get("fast_pass") == "partial"),
+        "awaiting_backfill": sum(1 for v in analysis.values() if v.get("fast_pass") == "negative"),
+        "llm_verified": sum(1 for v in analysis.values() if "fast_pass" not in v),
+    }
+    return status
+
+
 class Handler(BaseHTTPRequestHandler):
     def _send(self, code, obj):
         body = json.dumps(obj).encode()
@@ -80,6 +133,8 @@ class Handler(BaseHTTPRequestHandler):
             except (OSError, ValueError):
                 settings = {}
             self._send(200, {k: settings.get(k) for k in MUTABLE_SETTINGS})
+        elif self.path == "/api/status":
+            self._send(200, pipeline_status())
         else:
             self._send(404, {"error": "not found"})
 

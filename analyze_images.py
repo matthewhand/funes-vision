@@ -18,10 +18,12 @@ MAX_DIR_GB = 4.0    # retention: per-camera disk budget
 ALLOW_CLOUD = True  # permit OpenRouter calls when local inference is unavailable
 OLLAMA_URL = "http://localhost:11434"
 MAX_DEEP_PASSES = 15  # LLM calls (local or cloud) per camera per sweep
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 FAST_PASS_ENGINE = "yolo"  # "yolo" (recommended) or "haar" (legacy cascades)
-YOLO_DIR = "/mnt/models/yolo"
+YOLO_DIR = os.path.join(BASE_DIR, "models", "yolo")
 YOLO_CONF = 0.45
 DEEP_BACKFILL = True  # idle sweeps spend leftover LLM budget verifying negatives, newest first
+WATCH_DIRS = []  # REQUIRED via settings.json watch_dirs - deployment specific
 # Labels that alone do NOT trigger an urgent deep pass (e.g. a car parked
 # in frame 24/7); they're recorded and verified later by the backfill.
 GATE_IGNORE_LABELS = ["car"]
@@ -41,6 +43,8 @@ if os.path.exists(_settings_path):
         FAST_PASS_ENGINE = _s.get("fast_pass_engine", FAST_PASS_ENGINE)
         DEEP_BACKFILL = _s.get("deep_backfill", DEEP_BACKFILL)
         GATE_IGNORE_LABELS = _s.get("gate_ignore_labels", GATE_IGNORE_LABELS)
+        WATCH_DIRS = _s.get("watch_dirs", WATCH_DIRS)
+        YOLO_DIR = _s.get("yolo_dir", YOLO_DIR)
     except (ValueError, OSError) as e:
         print(f"Warning: could not read settings.json ({e}); using defaults")
 
@@ -327,8 +331,11 @@ def generate_thumbnails(image_dir, images):
 
 def main():
     api_key = os.getenv("OPENROUTER_API_KEY")
-    watch_dirs = ["/mnt/models/Webcam21", "/mnt/models/Webcam22"]
-    base_dir = "/home/user/webcam"
+    if not WATCH_DIRS:
+        print("No watch_dirs configured in settings.json - nothing to do.")
+        return
+    watch_dirs = WATCH_DIRS
+    base_dir = BASE_DIR
     analysis_file = os.path.join(base_dir, "analysis.json")
     burst_file = os.path.join(base_dir, "bursts.json")
     
