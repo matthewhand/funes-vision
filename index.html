@@ -1375,8 +1375,8 @@
               <div style="font-size: 0.7rem; font-weight: 700; text-transform: uppercase; color: var(--text-secondary); margin: 8px 0; border-bottom: 1px solid var(--border-color); padding-bottom: 4px;">
                 Label Merging
               </div>
-              <div class="blacklist-item" id="alias-toggle" title="Treat face and body detections as 'person' in filters and badges">
-                <span>Merge face/body &rarr; person</span>
+              <div class="blacklist-item" id="alias-toggle" title="Merge equivalent labels: face/body -> person, raccoon -> dog">
+                <span>Merge labels (&rarr;person, &rarr;dog)</span>
                 <div class="blacklist-status"></div>
               </div>
               <div style="font-size: 0.7rem; font-weight: 700; text-transform: uppercase; color: var(--text-secondary); margin: 8px 0; border-bottom: 1px solid var(--border-color); padding-bottom: 4px;">
@@ -1532,7 +1532,7 @@
       searchQuery: '',      // search query
       blacklist: JSON.parse(localStorage.getItem('webcam_ai_blacklist') || '[]'),
       // Map raw AI labels to a canonical UI label (e.g. face/body -> person)
-      labelAliases: JSON.parse(localStorage.getItem('webcam_ai_aliases') || '{"face":"person","body":"person"}'),
+      labelAliases: JSON.parse(localStorage.getItem('webcam_ai_aliases') || '{"face":"person","body":"person","raccoon":"dog"}'),
       showPotentialHits: false, // Precision vs Accuracy toggle
       isLive: true,         // auto-polling switch
       pollingInterval: null,
@@ -1944,13 +1944,18 @@
 
     function toggleAliases() {
       const enabled = Object.keys(state.labelAliases).length > 0;
-      state.labelAliases = enabled ? {} : { face: 'person', body: 'person' };
+      state.labelAliases = enabled ? {} : { face: 'person', body: 'person', raccoon: 'dog' };
       localStorage.setItem('webcam_ai_aliases', JSON.stringify(state.labelAliases));
       // The active filter may not exist under the new mapping; reset it
       state.activeObjectFilter = null;
       renderAliasToggle();
       renderObjectFilters();
       applyFiltersAndSearch();
+    }
+    // Migrate alias maps stored before raccoon->dog joined the defaults
+    if (JSON.stringify(state.labelAliases) === '{"face":"person","body":"person"}') {
+      state.labelAliases = { face: 'person', body: 'person', raccoon: 'dog' };
+      localStorage.setItem('webcam_ai_aliases', JSON.stringify(state.labelAliases));
     }
     document.getElementById('alias-toggle').onclick = toggleAliases;
     renderAliasToggle();
