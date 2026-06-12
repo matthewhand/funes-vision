@@ -3,6 +3,13 @@
 # Run as: sudo bash /home/user/webcam/systemd/install.sh
 set -e
 
+# Clean leftovers of the official Ollama installer: 2GB of libs on the
+# root disk and a unit pointing at a missing binary/nonexistent user.
+# Our Ollama lives at /mnt/models/ollama-bin and runs as user.
+systemctl stop ollama 2>/dev/null || true
+rm -rf /usr/local/lib/ollama /usr/local/bin/ollama /usr/share/ollama
+rm -rf /etc/systemd/system/ollama.service.d
+
 cp /home/user/webcam/systemd/webcam-pipeline@.service /etc/systemd/system/
 cp /home/user/webcam/systemd/webcam-api.service /etc/systemd/system/
 cp /home/user/webcam/systemd/ollama.service /etc/systemd/system/
