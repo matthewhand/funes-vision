@@ -183,8 +183,13 @@ def log_inference(image, model, started, duration, labels, ok, trigger):
     except OSError:
         pass
 
-def run_deep_pass(image_path, img_name, can_run_local, api_key, trigger):
-    """One audited LLM deep pass: local first, cloud fallback."""
+def run_deep_pass(image_path, img_name, can_run_local, api_key, trigger, fp_labels=None):
+    """One audited LLM deep pass: local first, cloud fallback.
+
+    The successful verdict carries a "_yolo" field with the fast-pass
+    detector's labels so the UI can require detector+LLM consensus.
+    fp_labels=None means "run the detector fresh" (used for re-queued
+    partials whose stored labels may be stale, and for backfill)."""
     started = time.time()
     model = MODEL_LOCAL if can_run_local else MODEL_CLOUD
     set_inference_status({"image": img_name, "model": model,
@@ -198,6 +203,11 @@ def run_deep_pass(image_path, img_name, can_run_local, api_key, trigger):
         used = MODEL_CLOUD
         result = analyze_image_openrouter(image_path, api_key)
     set_inference_status(None)
+    if isinstance(result, dict):
+        if fp_labels is None:
+            fp = fast_pass_dispatch(image_path) or {}
+            fp_labels = sorted(k for k, v in fp.items() if v is True)
+        result["_yolo"] = fp_labels
     labels = sorted(k for k, v in (result or {}).items() if v is True)
     log_inference(img_name, used, started, time.time() - started,
                   labels, result is not None, trigger)
@@ -431,8 +441,9 @@ def main():
             image_path = os.path.join(image_dir, img)
 
             # If it's a partial, we already have fp_results
-            if img in analysis_data and analysis_data[img].get("fast_pass") == "partial":
-                fp_results = {k:v for k,v in analysis_data[img].items() if k != "fast_pass"}
+            was_partial = img in analysis_data and analysis_data[img].get("fast_pass") == "partial"
+            if was_partial:
+                fp_results = {k:v for k,v in analysis_data[img].items() if k != "fast_pass" and k != "_yolo"}
             else:
                 fp_results = fast_pass_dispatch(image_path)
 
@@ -452,7 +463,12 @@ def main():
                     # zero-second failure.
                     if deep_pass_count < max_deep_passes and \
                             (can_run_local or (ALLOW_CLOUD and api_key)):
-                        result = run_deep_pass(image_path, img, can_run_local, api_key, "priority")
+                        # Stale stored labels (re-queued partials) force a
+                        # fresh detector run for the consensus record
+                        fresh_fp = None if was_partial else \
+                            sorted(k for k, v in fp_results.items() if v is True)
+                        result = run_deep_pass(image_path, img, can_run_local, api_key,
+                                               "priority", fp_labels=fresh_fp)
                         deep_pass_count += 1
 
                     if result:

@@ -1379,6 +1379,10 @@
                 <span>Merge labels (&rarr;person, &rarr;dog)</span>
                 <div class="blacklist-status"></div>
               </div>
+              <div class="blacklist-item" id="consensus-toggle" title="Only count person/car/cat/dog when BOTH the fast detector and Gemma saw it - cuts AI hallucination false positives">
+                <span>Require YOLO + Gemma agreement</span>
+                <div class="blacklist-status"></div>
+              </div>
               <div style="font-size: 0.7rem; font-weight: 700; text-transform: uppercase; color: var(--text-secondary); margin: 8px 0; border-bottom: 1px solid var(--border-color); padding-bottom: 4px;">
                 Fast Detector
               </div>
@@ -1533,6 +1537,8 @@
       blacklist: JSON.parse(localStorage.getItem('webcam_ai_blacklist') || '[]'),
       // Map raw AI labels to a canonical UI label (e.g. face/body -> person)
       labelAliases: JSON.parse(localStorage.getItem('webcam_ai_aliases') || '{"face":"person","body":"person","raccoon":"dog"}'),
+      // Require detector+LLM agreement on YOLO-capable labels (default on)
+      requireConsensus: JSON.parse(localStorage.getItem('webcam_consensus') || 'true'),
       showPotentialHits: false, // Precision vs Accuracy toggle
       isLive: true,         // auto-polling switch
       pollingInterval: null,
@@ -1838,11 +1844,23 @@
     // Resolve a raw AI label to its canonical UI label
     const canonicalLabel = (key) => state.labelAliases[key] || key;
 
-    // Set of canonical labels detected in an analysis entry
+    // Labels the fast detector can corroborate (consensus only applies
+    // where YOLO could actually have seen the object)
+    const YOLO_CAPABLE = new Set(['person', 'car', 'cat', 'dog']);
+
+    // Set of canonical labels detected in an analysis entry.
+    // With consensus on, an LLM verdict for a YOLO-capable label only
+    // counts if the detector saw it too (entry._yolo, recorded at
+    // deep-pass time) - cuts LLM hallucination false positives.
     const effectiveLabels = (analysis) => {
       const out = new Set();
+      const verified = analysis && !('fast_pass' in analysis); // LLM verdict
+      const yoloSaw = new Set(((analysis && analysis._yolo) || []).map(canonicalLabel));
       Object.entries(analysis || {}).forEach(([key, val]) => {
-        if (val === true && key !== 'fast_pass') out.add(canonicalLabel(key));
+        if (val !== true || key === 'fast_pass') return;
+        const label = canonicalLabel(key);
+        if (state.requireConsensus && verified && YOLO_CAPABLE.has(label) && !yoloSaw.has(label)) return;
+        out.add(label);
       });
       return out;
     };
@@ -1959,6 +1977,23 @@
     }
     document.getElementById('alias-toggle').onclick = toggleAliases;
     renderAliasToggle();
+
+    // Detector+LLM consensus toggle
+    const consensusToggle = document.getElementById('consensus-toggle');
+    const renderConsensusToggle = () =>
+      consensusToggle.classList.toggle('hidden-label', !state.requireConsensus);
+    consensusToggle.onclick = () => {
+      state.requireConsensus = !state.requireConsensus;
+      localStorage.setItem('webcam_consensus', JSON.stringify(state.requireConsensus));
+      state.activeObjectFilter = null; // filtered label may no longer exist
+      renderConsensusToggle();
+      renderObjectFilters();
+      applyFiltersAndSearch();
+      showToast(state.requireConsensus
+        ? 'Consensus ON - showing only detector+Gemma agreed labels'
+        : 'Consensus OFF - showing all Gemma labels');
+    };
+    renderConsensusToggle();
 
     // Precise <-> Potential mode toggle (show unverified OpenCV-only hits)
     const precisionBtn = document.getElementById('btn-precision-toggle');
