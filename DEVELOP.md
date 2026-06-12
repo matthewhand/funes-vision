@@ -172,21 +172,11 @@ images; partials precede backfill in the queue).
 
 ## Services & infrastructure
 
-systemd units (in `systemd/`, installed by `sudo bash systemd/install.sh`):
-- `webcam-pipeline@Webcam21` / `@Webcam22` — create-index.sh watchers
-- `webcam-api` — api_server.py on :8190
-- `ollama` — **standalone binary** at `/mnt/models/ollama-bin/bin/ollama`,
-  models at `/mnt/models/ollama/models` (`OLLAMA_MODELS` pinned in the
-  unit — blobs must stay on the data disk; the root disk is small).
-  Nice=19 so inference never starves the box.
-  Do NOT use the official installer (it puts 2GB on the root disk and a
-  unit with a nonexistent user; install.sh removes its leftovers).
-
-YOLO model files: `/mnt/models/yolo/yolov4-tiny.{cfg,weights}` (24MB,
-from AlexeyAB/darknet releases).
-
-Everything pipeline-related runs as user **user** — cv2 is installed
-only for that user; running as root fails with `ModuleNotFoundError: cv2`.
+Box-specific: paths, units, hosting, Ollama/YOLO install locations, and
+operational history all live in [DEPLOYMENT.md](DEPLOYMENT.md). The app
+expects only: image dirs (`watch_dirs`), a static web server per dir,
+something invoking `create-index.sh <dir>` per camera (inotify
+recommended, polling fallback), and an Ollama endpoint (`ollama_url`).
 
 ## Deployment
 
