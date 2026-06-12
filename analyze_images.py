@@ -204,9 +204,10 @@ def run_deep_pass(image_path, img_name, can_run_local, api_key, trigger):
     return result
 
 def ollama_available():
-    """True if a local Ollama server is reachable."""
+    """True if a local Ollama server is reachable. Generous timeout:
+    when inference has all cores busy, /api/version can take seconds."""
     try:
-        return requests.get(f"{OLLAMA_URL}/api/version", timeout=3).ok
+        return requests.get(f"{OLLAMA_URL}/api/version", timeout=15).ok
     except requests.exceptions.RequestException:
         return False
 
@@ -445,7 +446,12 @@ def main():
                 if needs_deep and urgent:
                     print(f"Deep Pass Required for {img}: {fp_results}")
                     result = None
-                    if deep_pass_count < max_deep_passes:
+                    # Only attempt (and spend budget) when an engine is
+                    # actually available; otherwise leave the partial in
+                    # place for a later sweep instead of logging a
+                    # zero-second failure.
+                    if deep_pass_count < max_deep_passes and \
+                            (can_run_local or (ALLOW_CLOUD and api_key)):
                         result = run_deep_pass(image_path, img, can_run_local, api_key, "priority")
                         deep_pass_count += 1
 
@@ -510,8 +516,12 @@ def main():
                     current_burst = [images[i]]
             if len(current_burst) >= 2: bursts.append(current_burst)
 
-        # 3. Burst Analysis
+        # 3. Burst Analysis (capped per sweep - each summary is minutes
+        # of CPU inference; uncapped this can hold the lock for hours)
+        burst_analyses = 0
         for burst in bursts:
+            if burst_analyses >= 2:
+                break
             burst_id = burst[-1] # Use last image as ID
             if burst_id in burst_data: continue
             
@@ -535,6 +545,7 @@ def main():
                 set_inference_status(None)
                 log_inference(burst_id, used, started, time.time() - started,
                               ["burst summary"], summary is not None, "burst")
+                burst_analyses += 1
                 if summary:
                     burst_data[burst_id] = { "summary": summary, "images": burst }
                     new_analysis = True

@@ -11,6 +11,12 @@ run_analysis() {
   (
     # Wait up to 3600 seconds (1 hour) for the lock
     if flock -x -w 3600 200; then
+        # Debounce: waiters queued during a long sweep stampede when it
+        # ends - skip if another run completed moments ago.
+        MARKER="/tmp/webcam_analysis.lastrun"
+        if [ -f "$MARKER" ] && [ $(( $(date +%s) - $(stat -c %Y "$MARKER") )) -lt 45 ]; then
+            exit 0
+        fi
         echo "$(date): Starting gated analysis for $IMAGE_DIR..."
         
         # 1. Update images.json
@@ -38,6 +44,7 @@ run_analysis() {
         [ -f "$BASE_DIR/bursts.json" ] && cp "$BASE_DIR/bursts.json" "$IMAGE_DIR/bursts.json"
         [ -f "$BASE_DIR/pins.json" ] && cp "$BASE_DIR/pins.json" "$IMAGE_DIR/pins.json"
 
+        touch "$MARKER"
         echo "$(date): Analysis and sync complete."
     fi
   ) 200>$LOCKFILE
