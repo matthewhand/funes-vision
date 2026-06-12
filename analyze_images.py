@@ -157,6 +157,52 @@ def analyze_image_openrouter(image_path, api_key):
     except:
         return None
 
+# --- Inference audit trail (read by api_server for the UI) ---
+INFERENCE_LOG = os.path.join(BASE_DIR, "inference_log.json")
+INFERENCE_STATUS = os.path.join(BASE_DIR, "inference_status.json")
+
+def set_inference_status(payload):
+    """Live marker of the in-flight LLM call ({} when idle)."""
+    try:
+        with open(INFERENCE_STATUS, "w") as f:
+            json.dump(payload or {}, f)
+    except OSError:
+        pass
+
+def log_inference(image, model, started, duration, labels, ok, trigger):
+    try:
+        log = json.load(open(INFERENCE_LOG)) if os.path.exists(INFERENCE_LOG) else []
+    except (OSError, ValueError):
+        log = []
+    log.append({"image": image, "model": model, "trigger": trigger,
+                "started": started, "duration_s": round(duration, 1),
+                "labels": labels, "ok": ok})
+    try:
+        with open(INFERENCE_LOG, "w") as f:
+            json.dump(log[-200:], f, indent=1)
+    except OSError:
+        pass
+
+def run_deep_pass(image_path, img_name, can_run_local, api_key, trigger):
+    """One audited LLM deep pass: local first, cloud fallback."""
+    started = time.time()
+    model = MODEL_LOCAL if can_run_local else MODEL_CLOUD
+    set_inference_status({"image": img_name, "model": model,
+                          "trigger": trigger, "started": started})
+    result = None
+    used = None
+    if can_run_local:
+        used = MODEL_LOCAL
+        result = analyze_image_local(image_path)
+    if not result and ALLOW_CLOUD and api_key:
+        used = MODEL_CLOUD
+        result = analyze_image_openrouter(image_path, api_key)
+    set_inference_status(None)
+    labels = sorted(k for k, v in (result or {}).items() if v is True)
+    log_inference(img_name, used, started, time.time() - started,
+                  labels, result is not None, trigger)
+    return result
+
 def ollama_available():
     """True if a local Ollama server is reachable."""
     try:
@@ -399,12 +445,8 @@ def main():
                 if needs_deep and urgent:
                     print(f"Deep Pass Required for {img}: {fp_results}")
                     result = None
-                    if can_run_local and deep_pass_count < max_deep_passes:
-                        result = analyze_image_local(image_path)
-                        deep_pass_count += 1
-
-                    if not result and ALLOW_CLOUD and api_key and deep_pass_count < max_deep_passes:
-                        result = analyze_image_openrouter(image_path, api_key)
+                    if deep_pass_count < max_deep_passes:
+                        result = run_deep_pass(image_path, img, can_run_local, api_key, "priority")
                         deep_pass_count += 1
 
                     if result:
@@ -448,11 +490,7 @@ def main():
                     break
                 image_path = os.path.join(image_dir, img)
                 print(f"Backfill deep pass for {img}")
-                result = None
-                if can_run_local:
-                    result = analyze_image_local(image_path)
-                if not result and ALLOW_CLOUD and api_key:
-                    result = analyze_image_openrouter(image_path, api_key)
+                result = run_deep_pass(image_path, img, can_run_local, api_key, "backfill")
                 deep_pass_count += 1
                 if result:
                     analysis_data[img] = result
@@ -483,11 +521,20 @@ def main():
             if has_detection and (can_run_local or (ALLOW_CLOUD and api_key)):
                 print(f"Analyzing burst ending at {burst_id}...")
                 full_paths = [os.path.join(image_dir, f) for f in burst[-3:]] # Take last 3 max
+                started = time.time()
+                set_inference_status({"image": burst_id, "model": MODEL_LOCAL if can_run_local else MODEL_CLOUD,
+                                      "trigger": "burst", "started": started})
                 summary = None
+                used = None
                 if can_run_local:
+                    used = MODEL_LOCAL
                     summary = analyze_burst_local(full_paths)
                 if not summary and ALLOW_CLOUD and api_key:
+                    used = MODEL_CLOUD
                     summary = analyze_burst_openrouter(full_paths, api_key)
+                set_inference_status(None)
+                log_inference(burst_id, used, started, time.time() - started,
+                              ["burst summary"], summary is not None, "burst")
                 if summary:
                     burst_data[burst_id] = { "summary": summary, "images": burst }
                     new_analysis = True

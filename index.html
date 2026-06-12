@@ -2738,40 +2738,77 @@
         }
       });
 
-      // System status panel (read-only view of pipeline configuration)
+      // System status panel (read-only view of pipeline configuration,
+      // live inference state, and the AI audit trail)
       const btnSystemStatus = document.getElementById('btn-system-status');
       const systemDropdown = document.getElementById('system-dropdown');
-      btnSystemStatus.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        systemDropdown.classList.toggle('active');
-        if (!systemDropdown.classList.contains('active')) return;
+      let systemRefreshTimer = null;
+
+      const fmtDur = (s) => s >= 60 ? `${Math.floor(s / 60)}m ${Math.round(s % 60)}s` : `${Math.round(s)}s`;
+
+      async function renderSystemPanel() {
         const el = document.getElementById('system-status-content');
-        el.textContent = 'Loading...';
         try {
-          const resp = await fetch(`${API_BASE}/api/status`);
-          const s = await resp.json();
+          const [statusResp, logResp] = await Promise.all([
+            fetch(`${API_BASE}/api/status`),
+            fetch(`${API_BASE}/api/inference_log`)
+          ]);
+          const s = await statusResp.json();
+          const log = await logResp.json();
           const ok = v => v ? '<span style="color:#10b981;">&#10003;</span>' : '<span style="color:#ef4444;">&#10007;</span>';
+
+          // Live inference state
+          let inferHtml;
+          if (s.inference && s.inference.started) {
+            inferHtml = `<span style="color:#f59e0b;">&#9679;</span> <b>Analyzing now:</b> ${s.inference.image}<br>
+              &nbsp;&nbsp;${s.inference.model} &middot; ${s.inference.trigger} &middot; running ${fmtDur(s.inference.running_for_s)}`;
+          } else {
+            inferHtml = `<span style="color:#10b981;">&#9679;</span> <b>Inference:</b> idle`;
+          }
+
+          // Audit trail (last 15)
+          const trail = log.slice(0, 15).map(r => {
+            const t = new Date(r.started * 1000).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', timeZone: 'Australia/Sydney' });
+            const labels = r.labels.length ? r.labels.join(', ') : (r.ok ? 'clear' : '<span style="color:#ef4444;">failed</span>');
+            return `<div style="padding:2px 0;border-bottom:1px solid var(--border-color);">
+              ${t} &middot; <b>${labels}</b> &middot; ${fmtDur(r.duration_s)} &middot; ${r.trigger}<br>
+              <a href="${r.image}" target="_blank" style="color:var(--text-secondary);font-size:0.7rem;text-decoration:none;">${r.image.slice(-40)}</a>
+            </div>`;
+          }).join('') || '<div style="color:var(--text-secondary);">No inferences logged yet.</div>';
+
           el.innerHTML = `
+            <div style="margin-bottom:6px;">${inferHtml}</div>
             <div><b>New-image trigger:</b> inotify ${ok(s.trigger.inotify_active)}${s.trigger.inotify_active ? ' (instant)' : ' <span style="color:#ef4444;">not running!</span>'}</div>
             <div><b>Idle sweep:</b> every ${s.trigger.idle_sweep_seconds}s</div>
             <div><b>Fast detector:</b> ${(s.settings.fast_pass_engine || 'yolo').toUpperCase()}</div>
             <div><b>LLM:</b> ${s.llm.model || '?'} ${ok(s.llm.reachable)} ${s.llm.allow_cloud ? '(+cloud)' : '(local only)'}</div>
             <div><b>Idle backfill:</b> ${s.settings.deep_backfill ? 'on' : 'off'}</div>
             <div><b>Quiet labels:</b> ${(s.settings.gate_ignore_labels || []).join(', ') || 'none'}</div>
-            <div style="margin-top:6px;"><b>Watched dirs:</b><br>${s.watch_dirs.map(d => `&nbsp;&nbsp;${d}`).join('<br>') || 'none configured!'}</div>
-            <div style="margin-top:6px;"><b>Queue:</b><br>
-              &nbsp;&nbsp;${s.queue.images_on_disk} images on disk<br>
-              &nbsp;&nbsp;${s.queue.unanalyzed} unanalyzed<br>
-              &nbsp;&nbsp;${s.queue.unverified_partials} awaiting LLM (priority)<br>
-              &nbsp;&nbsp;${s.queue.awaiting_backfill} awaiting backfill<br>
-              &nbsp;&nbsp;${s.queue.llm_verified} LLM-verified</div>`;
+            <div style="margin-top:6px;"><b>Queue:</b>
+              ${s.queue.unanalyzed} new &middot; ${s.queue.unverified_partials} priority &middot;
+              ${s.queue.awaiting_backfill} backfill &middot; ${s.queue.llm_verified} verified
+              (${s.queue.images_on_disk} on disk)</div>
+            <div style="margin-top:8px;font-weight:700;text-transform:uppercase;font-size:0.7rem;color:var(--text-secondary);border-bottom:1px solid var(--border-color);padding-bottom:3px;">AI Audit Trail</div>
+            <div style="max-height:200px;overflow-y:auto;">${trail}</div>`;
         } catch (err) {
           el.textContent = 'API offline - status unavailable.';
+        }
+      }
+
+      btnSystemStatus.addEventListener('click', (e) => {
+        e.stopPropagation();
+        systemDropdown.classList.toggle('active');
+        clearInterval(systemRefreshTimer);
+        if (systemDropdown.classList.contains('active')) {
+          document.getElementById('system-status-content').textContent = 'Loading...';
+          renderSystemPanel();
+          systemRefreshTimer = setInterval(renderSystemPanel, 5000);
         }
       });
       document.addEventListener('click', (e) => {
         if (!systemDropdown.contains(e.target) && e.target !== btnSystemStatus) {
           systemDropdown.classList.remove('active');
+          clearInterval(systemRefreshTimer);
         }
       });
 

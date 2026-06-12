@@ -13,6 +13,7 @@ Endpoints (all JSON):
 import json
 import os
 import subprocess
+import time
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -99,6 +100,16 @@ def pipeline_status():
                          if f.lower().endswith(('.jpg', '.jpeg', '.png', '.gif')))
         except OSError:
             pass
+    # In-flight LLM call, if any ({} when idle)
+    inference = {}
+    try:
+        inference = json.load(open(os.path.join(BASE_DIR, "inference_status.json")))
+    except (OSError, ValueError):
+        pass
+    if inference.get("started"):
+        inference["running_for_s"] = round(time.time() - inference["started"], 1)
+    status["inference"] = inference
+
     status["queue"] = {
         "images_on_disk": len(files),
         "unanalyzed": max(0, len(files - set(analysis))),
@@ -135,6 +146,12 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, {k: settings.get(k) for k in MUTABLE_SETTINGS})
         elif self.path == "/api/status":
             self._send(200, pipeline_status())
+        elif self.path == "/api/inference_log":
+            try:
+                log = json.load(open(os.path.join(BASE_DIR, "inference_log.json")))
+            except (OSError, ValueError):
+                log = []
+            self._send(200, list(reversed(log[-50:])))  # newest first
         else:
             self._send(404, {"error": "not found"})
 
