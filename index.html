@@ -1349,9 +1349,9 @@
       <div class="content-area">
       <div class="toolbar-bar">
         <div class="tab-group" id="filter-tabs">
-          <button class="tab-btn active" data-filter="objects">Objects</button>
+          <button class="tab-btn active" data-filter="events">Timeline</button>
+          <button class="tab-btn" data-filter="objects">Objects</button>
           <button class="tab-btn" data-filter="all">All</button>
-          <button class="tab-btn" data-filter="events">Timeline</button>
         </div>
 
         <!-- Dynamic Object Filters Container -->
@@ -1522,7 +1522,7 @@
       filteredImages: [],   // Tabbed, searched, and date/time filtered filenames
       renderedCount: 0,     // Total cards currently drawn
       pageSize: 40,         // Batch load count for infinite scroll
-      activeFilter: 'objects',  // tab filter: objects (detections only), all
+      activeFilter: 'events',  // tab filter: events (timeline), objects (detections only), all
       activeObjectFilter: null, // dynamic: 'person', 'dog', etc
       activeDateFilter: 'all', // timeline filter: all, YYYY-MM-DD
       timeStart: 0,
