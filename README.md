@@ -28,12 +28,17 @@ Everything runs on this box. No images leave the machine.
 - **Day planner chart** — each bar is a day (top = midnight); red marks show
   *when* the filtered object was seen. Tap a day to drill into its hourly
   histogram below.
-- **Mode: Precise / Potential** — Precise shows only LLM-verified hits;
-  Potential also includes unverified detector-only hits (badged `label?`).
+- **Detection lifecycle badges** — solid badge = verified (both AIs agree),
+  amber `label?` = preliminary (fast detector only, awaiting the LLM),
+  struck-through red = disputed (the two AIs disagree; hidden unless
+  "Show unconfirmed detections" is on).
 - **Pin** (📌) an image to protect it from automatic cleanup forever.
   **Delete** (🗑) removes an image from the server permanently.
-- **Hidden menu** — hide noisy labels, toggle person-merging, choose the
-  fast detector, and turn idle deep analysis on/off.
+- **Settings menu** (gear icon) — hide noisy labels, label merging,
+  show/hide disputed detections, fast-detector choice, idle deep analysis
+  on/off, and sweep/poll intervals.
+- **AI button** — pulsing amber with elapsed time while the LLM is
+  analyzing; tap for pipeline status and the inference audit trail.
 
 ## What happens automatically
 
