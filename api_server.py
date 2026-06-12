@@ -23,6 +23,7 @@ PORT = 8190
 # Settings keys the UI may change, with their allowed values
 MUTABLE_SETTINGS = {
     "fast_pass_engine": ("yolo", "haar"),
+    "deep_backfill": (True, False),
 }
 
 

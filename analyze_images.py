@@ -21,6 +21,10 @@ MAX_DEEP_PASSES = 15  # LLM calls (local or cloud) per camera per sweep
 FAST_PASS_ENGINE = "yolo"  # "yolo" (recommended) or "haar" (legacy cascades)
 YOLO_DIR = "/mnt/models/yolo"
 YOLO_CONF = 0.45
+DEEP_BACKFILL = True  # idle sweeps spend leftover LLM budget verifying negatives, newest first
+# Labels that alone do NOT trigger an urgent deep pass (e.g. a car parked
+# in frame 24/7); they're recorded and verified later by the backfill.
+GATE_IGNORE_LABELS = ["car"]
 
 _settings_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "settings.json")
 if os.path.exists(_settings_path):
@@ -35,6 +39,8 @@ if os.path.exists(_settings_path):
         MAX_DEEP_PASSES = _s.get("max_deep_passes", MAX_DEEP_PASSES)
         MODEL_LOCAL = _s.get("model_local", MODEL_LOCAL)
         FAST_PASS_ENGINE = _s.get("fast_pass_engine", FAST_PASS_ENGINE)
+        DEEP_BACKFILL = _s.get("deep_backfill", DEEP_BACKFILL)
+        GATE_IGNORE_LABELS = _s.get("gate_ignore_labels", GATE_IGNORE_LABELS)
     except (ValueError, OSError) as e:
         print(f"Warning: could not read settings.json ({e}); using defaults")
 
@@ -362,7 +368,6 @@ def main():
         
         if not queue:
             print(f"No pending analysis for {image_dir}")
-            continue
 
         new_analysis = False
         deep_pass_count = 0
@@ -378,8 +383,13 @@ def main():
                 fp_results = fast_pass_dispatch(image_path)
 
             if fp_results:
-                # If we haven't done deep analysis yet
-                if img not in analysis_data or analysis_data[img].get("fast_pass") == "partial":
+                needs_deep = img not in analysis_data or analysis_data[img].get("fast_pass") == "partial"
+                # A hit consisting only of ignored labels (e.g. the
+                # permanently parked car) is recorded but not urgent -
+                # the idle backfill verifies it later.
+                urgent = any(k not in GATE_IGNORE_LABELS for k, v in fp_results.items() if v is True)
+
+                if needs_deep and urgent:
                     print(f"Deep Pass Required for {img}: {fp_results}")
                     result = None
                     if can_run_local and deep_pass_count < max_deep_passes:
@@ -389,13 +399,18 @@ def main():
                     if not result and ALLOW_CLOUD and api_key and deep_pass_count < max_deep_passes:
                         result = analyze_image_openrouter(image_path, api_key)
                         deep_pass_count += 1
-                    
+
                     if result:
                         analysis_data[img] = result
                         new_analysis = True
                     else:
                         # Still partial (limit reached or failed)
                         analysis_data[img] = {**fp_results, "fast_pass": "partial"}
+                        new_analysis = True
+                elif needs_deep:
+                    partial = {**fp_results, "fast_pass": "partial"}
+                    if analysis_data.get(img) != partial:
+                        analysis_data[img] = partial
                         new_analysis = True
             else:
                 # Negative fast pass
@@ -405,6 +420,36 @@ def main():
             if deep_pass_count >= max_deep_passes:
                 print(f"Batch limit ({max_deep_passes}) reached for {image_dir}")
                 break
+
+        # 1b. Idle backfill: spend any leftover deep-pass budget verifying
+        # fast-pass negatives with the LLM, newest first, so the whole
+        # archive eventually gets a Gemma verdict (which replaces the
+        # fast-pass marker - the LLM result always trumps the detector).
+        if DEEP_BACKFILL and deep_pass_count < max_deep_passes and \
+                (can_run_local or (ALLOW_CLOUD and api_key)):
+            def awaiting_backfill(entry):
+                if entry.get("fast_pass") == "negative":
+                    return True
+                # Partials whose only hits are ignored labels (parked car)
+                return entry.get("fast_pass") == "partial" and \
+                    all(k in GATE_IGNORE_LABELS for k, v in entry.items() if v is True)
+
+            pool = [i for i in images if i in analysis_data and awaiting_backfill(analysis_data[i])]
+            pool.sort(key=lambda x: os.path.getmtime(os.path.join(image_dir, x)), reverse=True)
+            for img in pool:
+                if deep_pass_count >= max_deep_passes:
+                    break
+                image_path = os.path.join(image_dir, img)
+                print(f"Backfill deep pass for {img}")
+                result = None
+                if can_run_local:
+                    result = analyze_image_local(image_path)
+                if not result and ALLOW_CLOUD and api_key:
+                    result = analyze_image_openrouter(image_path, api_key)
+                deep_pass_count += 1
+                if result:
+                    analysis_data[img] = result
+                    new_analysis = True
 
         # 2. Image Bursts Detection
         bursts = []
