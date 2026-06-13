@@ -6,6 +6,7 @@ import sys
 import cv2
 import numpy as np
 import time
+import bisect
 from datetime import datetime
 
 # CONFIGURATION (defaults; override in settings.json next to this script)
@@ -123,7 +124,7 @@ def encode_image(image_path):
     with open(image_path, "rb") as image_file:
         return base64.b64encode(image_file.read()).decode('utf-8')
 
-DETECT_PROMPT = "Analyze this webcam image. Specifically detect if any PERSON, FACE, BODY, DOG, or CAT is visible. If you see a human (even partial), use keys 'person', 'face', or 'body'. If you see something unusual (e.g. alien_ufo), add a descriptive key for it. Return ONLY a valid JSON object with boolean keys. Example: {\"person\": true, \"face\": true, \"dog\": false}"
+DETECT_PROMPT = "Analyze this webcam image. Specifically detect if any PERSON, FACE, BODY, DOG, or CAT is visible. If you see a human (even partial), use keys 'person', 'face', or 'body'. If you see something unusual (e.g. alien_ufo), add a descriptive key for it. Return ONLY a valid JSON object with boolean keys for detected items, PLUS - only if a person/animal/vehicle is present - a 'description' key with a brief (max 12 words) caption of what is happening. Omit 'description' for empty scenes. Example: {\"person\": true, \"face\": true, \"dog\": false, \"description\": \"person in dark jacket walking toward the gate\"}"
 
 def analyze_image_openrouter(image_path, api_key):
     base64_image = encode_image(image_path)
@@ -443,7 +444,8 @@ def main():
             # If it's a partial, we already have fp_results
             was_partial = img in analysis_data and analysis_data[img].get("fast_pass") == "partial"
             if was_partial:
-                fp_results = {k:v for k,v in analysis_data[img].items() if k != "fast_pass" and k != "_yolo"}
+                fp_results = {k:v for k,v in analysis_data[img].items()
+                              if k not in ("fast_pass", "_yolo", "description")}
             else:
                 fp_results = fast_pass_dispatch(image_path)
 
@@ -506,7 +508,32 @@ def main():
                     all(k in GATE_IGNORE_LABELS for k, v in entry.items() if v is True)
 
             pool = [i for i in images if i in analysis_data and awaiting_backfill(analysis_data[i])]
-            pool.sort(key=lambda x: os.path.getmtime(os.path.join(image_dir, x)), reverse=True)
+
+            # Prioritize frames near existing detections: appear/disappear
+            # boundaries live there, so verifying them first sharpens the
+            # Timeline fast instead of grinding empty frames newest-first.
+            mtime = lambda x: os.path.getmtime(os.path.join(image_dir, x))
+            detection_times = sorted(
+                mtime(i) for i in images
+                if i in analysis_data
+                and "fast_pass" not in analysis_data[i]  # an LLM verdict
+                and any(v is True for k, v in analysis_data[i].items() if k not in ("_yolo",))
+            )
+
+            def nearest_detection_gap(x):
+                if not detection_times:
+                    return 0
+                t = mtime(x)
+                pos = bisect.bisect_left(detection_times, t)
+                best = float("inf")
+                if pos < len(detection_times):
+                    best = detection_times[pos] - t
+                if pos > 0:
+                    best = min(best, t - detection_times[pos - 1])
+                return best
+
+            # Closest-to-a-detection first; newest first as the tiebreak
+            pool.sort(key=lambda x: (nearest_detection_gap(x), -mtime(x)))
             for img in pool:
                 if deep_pass_count >= max_deep_passes:
                     break

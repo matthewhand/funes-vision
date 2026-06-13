@@ -560,6 +560,18 @@
       height: 12px;
     }
 
+    .card-caption {
+      font-size: 0.72rem;
+      color: #fff;
+      font-style: italic;
+      margin-top: 4px;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+    }
+
     .detection-badges {
       display: flex;
       gap: 6px;
@@ -2071,8 +2083,9 @@
           const matchesDate = meta.formattedDate.toLowerCase().includes(q);
           const matchesTime = meta.formattedTime.toLowerCase().includes(q);
           const matchesType = meta.eventType.toLowerCase().includes(q);
-          
-          if (!matchesFilename && !matchesDate && !matchesTime && !matchesType) return false;
+          const matchesCaption = entryCaption(analysis).toLowerCase().includes(q);
+
+          if (!matchesFilename && !matchesDate && !matchesTime && !matchesType && !matchesCaption) return false;
         }
 
         return true;
@@ -2112,9 +2125,13 @@
       }
     }
 
-    // Derive appear/disappear events per object from the analysis data.
-    // Presence flickers lasting a single frame are smoothed out.
-    function computeObjectEvents() {
+    // Caption for an analysis entry (Gemma's free-text description, if any)
+    const entryCaption = (a) => (a && typeof a.description === 'string') ? a.description.trim() : '';
+
+    // Group each object's presence into VISITS: a contiguous run where the
+    // label is present becomes one visit (start, end, duration, frames,
+    // caption). Single-frame flickers are smoothed out.
+    function computeVisits() {
       const items = state.allImages
         .map(f => ({ f, meta: parseFilename(f), a: state.analysis[f] }))
         .filter(x => x.meta && x.a) // analyzed images only - unknown is not "absent"
@@ -2125,69 +2142,96 @@
         if (!state.blacklist.includes(l)) labels.add(l);
       }));
 
-      const events = [];
+      const visits = [];
       labels.forEach(label => {
         const present = items.map(x => effectiveLabels(x.a).has(label));
-        // Debounce single-frame flickers
+        // Debounce single-frame flickers (both directions)
         for (let i = 1; i < present.length - 1; i++) {
           if (present[i] !== present[i - 1] && present[i] !== present[i + 1]) {
             present[i] = present[i - 1];
           }
         }
-        for (let i = 1; i < present.length; i++) {
-          if (present[i] !== present[i - 1]) {
-            // The event's frame run: a little context before the
-            // transition, then frames while the new state holds
-            let j = i;
-            while (j < present.length && present[j] === present[i]) j++;
-            const frames = items.slice(Math.max(0, i - 2), Math.min(j, i + 38)).map(x => x.f);
+        let i = 0;
+        while (i < present.length) {
+          if (!present[i]) { i++; continue; }
+          const start = i;
+          while (i < present.length && present[i]) i++;
+          const end = i - 1; // inclusive last present frame
+          // Frames: 2 context before, through the end of the visit (cap 60)
+          const from = Math.max(0, start - 2);
+          const to = Math.min(present.length, end + 1);
+          const frames = items.slice(from, Math.min(to, from + 60)).map(x => x.f);
+          // First Gemma caption seen during the visit
+          let caption = '';
+          for (let k = start; k <= end && !caption; k++) caption = entryCaption(items[k].a);
 
-            events.push({
-              label,
-              type: present[i] ? 'appeared' : 'disappeared',
-              x: items[i],
-              frames,
-              sortKey: `${items[i].meta.dateStr} ${items[i].meta.timeStr}`
-            });
-          }
+          visits.push({
+            label,
+            start: items[start],
+            end: items[end],
+            frames,
+            caption,
+            count: end - start + 1,
+            ongoing: end === present.length - 1,
+            sortKey: `${items[start].meta.dateStr} ${items[start].meta.timeStr}`
+          });
         }
       });
-      events.sort((a, b) => b.sortKey.localeCompare(a.sortKey)); // newest first
-      return events;
+      visits.sort((a, b) => b.sortKey.localeCompare(a.sortKey)); // newest first
+      return visits;
     }
+
+    // Human duration between two parsed items (same-day assumption per frame mtimes)
+    const visitDuration = (v) => {
+      const ms = v.end.meta.dateObj && v.start.meta.dateObj ? (v.end.meta.dateObj - v.start.meta.dateObj) : 0;
+      const mins = Math.round(ms / 60000);
+      if (v.count <= 1 || mins <= 0) return 'momentary';
+      return mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : `${mins} min`;
+    };
 
     function renderEventsView() {
       const grid = document.getElementById('image-grid');
       grid.innerHTML = '';
       document.getElementById('sentinel-text').textContent = '';
 
-      let events = computeObjectEvents();
-      if (state.activeObjectFilter) events = events.filter(e => e.label === state.activeObjectFilter);
-      if (state.activeDateFilter !== 'all') events = events.filter(e => e.x.meta.dateStr === state.activeDateFilter);
+      let visits = computeVisits();
+      if (state.activeObjectFilter) visits = visits.filter(v => v.label === state.activeObjectFilter);
+      if (state.activeDateFilter !== 'all') visits = visits.filter(v => v.start.meta.dateStr === state.activeDateFilter);
+      if (state.searchQuery) {
+        const q = state.searchQuery.toLowerCase();
+        visits = visits.filter(v => v.label.includes(q) || v.caption.toLowerCase().includes(q));
+      }
 
       document.getElementById('stats-label').textContent =
-        `${events.length} state change${events.length !== 1 ? 's' : ''} detected`;
+        `${visits.length} visit${visits.length !== 1 ? 's' : ''} detected`;
 
-      if (events.length === 0) {
-        showEmptyState('No object appear/disappear events for the current filters yet. Events build up as Gemma verifies images.');
+      if (visits.length === 0) {
+        showEmptyState('No object visits for the current filters yet. Visits build up as Gemma verifies images.');
         return;
       }
 
       const list = document.createElement('div');
       list.style.cssText = 'display:flex;flex-direction:column;gap:8px;width:100%;grid-column:1/-1;';
-      events.slice(0, 300).forEach(ev => {
-        const appeared = ev.type === 'appeared';
+      visits.slice(0, 300).forEach(v => {
+        const icon = v.label === 'person' ? 'user' : v.label === 'dog' ? 'dog' : v.label === 'cat' ? 'cat' : 'eye';
+        const timeRange = v.count > 1
+          ? `${v.start.meta.formattedTime} – ${v.end.meta.formattedTime}`
+          : v.start.meta.formattedTime;
+        const dur = v.ongoing ? 'ongoing' : visitDuration(v);
+        const captionHtml = v.caption
+          ? `<div style="font-size:0.75rem;color:var(--text-primary);font-style:italic;margin-top:2px;">&ldquo;${v.caption}&rdquo;</div>` : '';
         const row = document.createElement('div');
         row.style.cssText = 'display:flex;align-items:center;gap:12px;padding:10px 12px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:8px;color:var(--text-primary);cursor:pointer;';
         row.innerHTML = `
-          <img src="thumbs/${ev.x.f}" onerror="this.onerror=null;this.src='${ev.x.f}'" loading="lazy" style="width:80px;height:52px;object-fit:cover;border-radius:4px;flex-shrink:0;">
-          <i data-lucide="${appeared ? 'log-in' : 'log-out'}" style="color:${appeared ? '#10b981' : '#ef4444'};width:20px;height:20px;flex-shrink:0;"></i>
+          <img src="thumbs/${v.start.f}" onerror="this.onerror=null;this.src='${v.start.f}'" loading="lazy" style="width:80px;height:52px;object-fit:cover;border-radius:4px;flex-shrink:0;">
+          <i data-lucide="${icon}" style="color:${v.ongoing ? '#f59e0b' : '#10b981'};width:20px;height:20px;flex-shrink:0;"></i>
           <div style="flex:1;min-width:0;">
-            <div style="font-weight:600;"><span style="text-transform:capitalize;">${ev.label}</span> ${ev.type}</div>
-            <div style="font-size:0.75rem;color:var(--text-secondary);">${ev.x.meta.formattedDate} &middot; ${ev.x.meta.formattedTime} &middot; ${ev.frames.length} frames</div>
+            <div style="font-weight:600;"><span style="text-transform:capitalize;">${v.label}</span> visit ${v.ongoing ? '<span style="color:#f59e0b;">(ongoing)</span>' : ''}</div>
+            <div style="font-size:0.75rem;color:var(--text-secondary);">${v.start.meta.formattedDate} &middot; ${timeRange} &middot; ${dur} &middot; ${v.count} frame${v.count !== 1 ? 's' : ''}</div>
+            ${captionHtml}
           </div>
           <i data-lucide="play-circle" style="width:22px;height:22px;color:var(--accent-color);flex-shrink:0;"></i>`;
-        row.onclick = () => openEventPlayer(ev);
+        row.onclick = () => openEventPlayer({ label: v.label, type: 'visit', x: v.start, frames: v.frames });
         list.appendChild(row);
       });
       grid.appendChild(list);
@@ -2283,6 +2327,10 @@
         }
       }
 
+      const caption = entryCaption(analysis);
+      const captionHtml = caption
+        ? `<div class="card-caption" title="${caption}">${caption}</div>` : '';
+
       card.innerHTML = `
         <div class="card-img-wrapper">
           <img class="card-img unloaded" data-src="thumbs/${filename}" data-full="${filename}" alt="${filename}">
@@ -2291,6 +2339,7 @@
           <div class="meta-info">
             <span class="time-stamp">${meta.formattedTime}</span>
             <div class="detection-badges">${detectionsHtml}</div>
+            ${captionHtml}
           </div>
           <div class="card-actions" onclick="event.stopPropagation()">
             <button class="action-icon-btn pin-btn ${state.pins.has(filename) ? 'pinned' : ''}" title="Pin (never auto-delete)">
@@ -2555,10 +2604,10 @@
       
       let aiText = '';
       if (analysis) {
-          const found = Object.entries(analysis)
-            .filter(([k, v]) => v === true && k !== 'fast_pass' && !state.blacklist.includes(k))
-            .map(([k]) => k.charAt(0).toUpperCase() + k.slice(1));
-          
+          const found = Array.from(effectiveLabels(analysis))
+            .filter(l => !state.blacklist.includes(l))
+            .map(l => l.charAt(0).toUpperCase() + l.slice(1));
+
           if (found.length > 0) {
               aiText = ` | AI DETECTED: ${found.join(', ')}`;
           } else if (analysis.fast_pass === 'negative') {
@@ -2567,18 +2616,23 @@
               aiText = ` | AI: Scanned (Clear)`;
           }
       }
-      
+
+      const caption = entryCaption(analysis);
+      const captionHtml = caption
+        ? `<div class="burst-summary" style="font-style:italic;"><strong>AI:</strong> &ldquo;${caption}&rdquo;</div>` : '';
+
       let burstHtml = '';
       if (burst) {
         burstHtml = `<div class="burst-summary">
           <strong>Sequence Activity:</strong> ${burst.summary}
         </div>`;
       }
-      
+
       footer.innerHTML = `
         <div style="margin-bottom: 8px;">
           Created: ${meta.formattedDate} at ${meta.formattedTime} | Channel: ${meta.channel} | Event Type: ${meta.eventType} | Camera IP: ${meta.ip}${aiText}
         </div>
+        ${captionHtml}
         ${burstHtml}
       `;
       
