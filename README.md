@@ -17,9 +17,9 @@ Everything runs on this box. No images leave the machine.
 
 ## Using the gallery
 
-- **Timeline tab** (default) — appear/disappear events per object ("car
-  disappeared 9:15", "person appeared 7:02"). Tap an event to play it as a
-  short animation; tap the image to step frame-by-frame.
+- **Timeline tab** (default) — one card per object "visit" ("Person visit
+  · 7:02–7:08 · 6 min", with an AI caption of what happened). Tap a visit
+  to play it as a short animation; tap the image to step frame-by-frame.
 - **Objects tab** — only images with AI-verified detections.
 - **All tab** — every snapshot.
 - **Object buttons** (person, dog, cat, car…) appear automatically for

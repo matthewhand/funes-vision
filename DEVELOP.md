@@ -121,10 +121,14 @@ localStorage: `webcam_ai_blacklist` (hidden labels) and
 - Label pipeline: raw analysis keys -> `canonicalLabel()` (alias map) ->
   blacklist filter -> filter buttons / badges / chart highlighting.
 - Tabs: Objects (detections only), All, Timeline (events).
-- Timeline: `computeObjectEvents()` derives appear/disappear transitions
-  per label from chronological verdicts; single-frame flickers smoothed;
-  each event carries a frame run (2 context frames + up to 38) played by
-  `openEventPlayer()` (2.5fps thumbnail flipbook).
+- Timeline: `computeVisits()` groups each label's contiguous presence
+  into visits (start/end, duration, frame count, ongoing flag, first
+  Gemma caption) from chronological verdicts; single-frame flickers
+  smoothed; each visit's frame run (2 context frames + up to 60) plays
+  via `openEventPlayer()` (2.5fps thumbnail flipbook).
+- Captions: Gemma's optional `description` string per entry (non-empty
+  scenes only); shown on cards/lightbox/visits and searchable. It's not
+  a boolean key so `effectiveLabels`/`labelStates`/consensus ignore it.
 - Charts: day-planner (per-day 24h timelines, red marks at match
   time-of-day) + hourly histogram (red overlay = matching share).
 - Grid lazy-loads `thumbs/<file>` with onerror fallback to full res;
