@@ -254,7 +254,7 @@ def analyze_image_local(image_path):
         print(f"Local inference failed: {e}")
         return None
 
-BURST_PROMPT = "These images were taken in a sequence. Describe what is happening across this time period. Who is there? What are they doing?"
+BURST_PROMPT = "These webcam frames were taken in sequence. Describe what happens across them - any people, animals, birds, vehicles, or notable changes in the scene (lighting, objects moving). Don't assume a person is the subject. If nothing meaningfully changes, say so in one sentence."
 
 def analyze_burst_local(image_paths):
     """Burst summary via local Ollama (multi-image message)."""
