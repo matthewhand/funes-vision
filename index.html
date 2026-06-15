@@ -1521,7 +1521,7 @@
           <div style="display: flex; align-items: center; gap: 12px; margin-left: auto;">
             <span class="stats-info" id="stats-label">Loading image logs...</span>
             
-            <div class="view-toggles">
+            <div class="view-toggles" id="view-toggles">
               <button class="view-btn" data-view="small" title="Small Cards">
                 <i data-lucide="layout-grid"></i>
               </button>
@@ -2149,6 +2149,13 @@
 
       // Render chart to reflect current counts
       renderActivityChart();
+
+      // The card-layout toggles (small/medium/large/list) only drive the
+      // image grid; the Timeline tab is a bespoke visit list that ignores
+      // them, so hide them there to avoid dead buttons.
+      const viewToggles = document.getElementById('view-toggles');
+      if (viewToggles) viewToggles.style.display =
+        state.activeFilter === 'events' ? 'none' : '';
 
       // Timeline tab renders state-change events instead of the grid
       if (state.activeFilter === 'events') {
