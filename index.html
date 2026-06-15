@@ -2443,8 +2443,14 @@
       return card;
     }
 
-    // --- Write API (pin/delete) -- served by api_server.py on the host ---
-    const API_BASE = `${location.protocol}//${location.hostname}:8190`;
+    // --- Write API (pin/delete/settings/integrations) -- api_server.py ---
+    // Behind the public reverse proxy the API is same-origin at /api/ (no
+    // extra port to expose; the proxy's basic-auth covers it). Only when the
+    // page is hit DIRECTLY on a camera container (:8180/:8280, i.e. LAN/dev)
+    // do we reach the API on its own port :8190.
+    const API_BASE = (location.port === '8180' || location.port === '8280')
+      ? `${location.protocol}//${location.hostname}:8190`
+      : '';
 
     async function apiPost(path, payload) {
       const resp = await fetch(`${API_BASE}${path}`, {

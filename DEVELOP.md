@@ -116,9 +116,13 @@ Stdlib-only HTTP server, the single write channel (nginx mounts are ro).
   `integrations.json` (blank token fields preserve the stored secret);
   `POST /api/integrations/test` → send a Slack test message. See
   [Integrations](#integrations).
-CORS is open; the UI computes the API origin as
-`http://<page-hostname>:8190`. Restart after editing:
-`sudo systemctl restart webcam-api`.
+API origin: the UI calls the API **same-origin at `/api/`** so there's no
+second port to expose publicly — the fronting reverse proxy maps `/api/`
+to `localhost:8190` behind its basic-auth (see Deployment). It falls back
+to `http://<host>:8190` only when the page is opened **directly** on a
+camera container (`:8180`/`:8280`, i.e. LAN/dev), where `:8190` is
+reachable. CORS is left open (harmless; same-origin needs none). Restart
+after editing: `sudo systemctl restart webcam-api`.
 
 ### index.html (single-file SPA)
 No build step. Key state lives in the `state` object; persisted bits in
@@ -287,6 +291,27 @@ cp index.html /mnt/models/Webcam22/index.html
 # Unit changes: sudo bash systemd/install.sh
 ```
 
+**Public access / write API.** A host reverse proxy (nginx, Certbot TLS)
+fronts each camera on its own subdomain with basic-auth (`.htpasswd`):
+`webcam.…→localhost:8180`, `dogcam.…→localhost:8280`. To make the write
+API work over the public URL **without exposing a second port**, each
+vhost also proxies `/api/` to the API, behind the same basic-auth:
+
+```nginx
+location /api/ {
+    proxy_pass http://localhost:8190;          # NB: no trailing slash — keep the /api/ prefix
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    auth_basic "Restricted Content";
+    auth_basic_user_file /etc/nginx/.htpasswd;
+}
+```
+
+This is what gives the API its auth — `:8190` itself is unauthenticated,
+so it must NOT be port-forwarded publicly; only the proxied `/api/` path
+should be reachable from outside the LAN.
+
 ## Troubleshooting
 
 - **Gallery empty in Objects tab** — usually hidden labels (localStorage
@@ -297,8 +322,11 @@ cp index.html /mnt/models/Webcam22/index.html
 - **No deep passes happening** — `curl localhost:11434/api/version`
   (Ollama up?), check journal `System Check` line for
   `Local LLM Enabled: True`, and free RAM vs `min_mem_for_local_gb`.
-- **Pin/delete/settings failing in UI** — `webcam-api` down or phone
-  can't reach `:8190`.
+- **Pin/delete/settings/integrations failing in UI** — `webcam-api` down;
+  or, over the public URL, the vhost is missing the `/api/` proxy block
+  (symptom: the panel hangs at "checking…" because `/api/…` 404s or the
+  old `:8190` origin isn't reachable). On the LAN, check the phone can
+  reach `:8190` directly.
 - **False bursts spanning days** — the chronological sort in
   analyze_images.py was removed at some point; see step 3 above.
 - Logs: `journalctl -u webcam-pipeline@Webcam21 -f` (and `@Webcam22`,
