@@ -2348,16 +2348,29 @@
       play();
     }
 
-    // Deep link from an integration (e.g. a Slack post): ?event=<burst_id>
-    // opens that sequence's flipbook once data has loaded.
+    // Deep link from an integration (e.g. a Slack post), honored once data
+    // has loaded:  ?event=<burst_id> opens that sequence's flipbook;
+    // ?image=<filename> opens that single frame. Both reuse the player so
+    // they don't depend on the active tab/filters.
     function maybeOpenDeepLink() {
-      const ev = new URLSearchParams(location.search).get('event');
-      if (!ev) return;
-      const burst = state.bursts[ev];
-      if (burst && Array.isArray(burst.images) && burst.images.length) {
-        openEventPlayer({ label: 'Sequence', type: 'playback', frames: burst.images });
-      } else {
-        showToast('That sequence is no longer available.');
+      const params = new URLSearchParams(location.search);
+      const ev = params.get('event');
+      if (ev) {
+        const burst = state.bursts[ev];
+        if (burst && Array.isArray(burst.images) && burst.images.length) {
+          openEventPlayer({ label: 'Sequence', type: 'playback', frames: burst.images });
+        } else {
+          showToast('That sequence is no longer available.');
+        }
+        return;
+      }
+      const img = params.get('image');
+      if (img) {
+        if (state.allImages.includes(img)) {
+          openEventPlayer({ label: 'Frame', type: '', frames: [img] });
+        } else {
+          showToast('That image is no longer available.');
+        }
       }
     }
 

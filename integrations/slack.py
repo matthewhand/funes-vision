@@ -12,23 +12,56 @@ Config block (the ``slack`` object of integrations.json):
 import json
 import os
 import tempfile
+import time
 
 import requests
 
 API = "https://slack.com/api"
 TIMEOUT = 30
 UPLOAD_TIMEOUT = 120
+MAX_RETRY_AFTER = 10  # cap the rate-limit wait; the sweep holds the global lock
 # GIFs above this are re-encoded as MP4 (ffmpeg compresses far better)
 GIF_MAX_BYTES = 3 * 1024 * 1024
 
+# Common Slack error codes mapped to actionable hints (shown in the UI's
+# "Send test" toast and the pipeline log when setup is wrong).
+_ERROR_HINTS = {
+    "not_in_channel": "invite the bot to that channel (/invite @yourbot)",
+    "channel_not_found": "channel_id not found — copy it from Slack (channel → View details)",
+    "is_archived": "that channel is archived",
+    "invalid_auth": "bot token rejected — re-check the xoxb- token",
+    "not_authed": "no bot token was sent",
+    "token_revoked": "bot token revoked — reinstall the Slack app",
+    "missing_scope": "the app is missing a scope (needs chat:write and files:write)",
+    "ratelimited": "Slack rate limit hit — try again shortly",
+}
+
+
+def _friendly(error):
+    hint = _ERROR_HINTS.get(error)
+    return f"{error} ({hint})" if hint else error
+
 
 def _call(method, token, **kwargs):
-    """POST a Slack Web API method, raising on a non-ok response."""
+    """POST a Slack Web API method, raising RuntimeError on failure.
+
+    Honors one HTTP 429 retry (Slack's Retry-After) and tolerates a
+    non-JSON body (error pages, gateway hiccups) instead of throwing an
+    opaque JSONDecodeError.
+    """
     headers = {"Authorization": f"Bearer {token}"}
-    resp = requests.post(f"{API}/{method}", headers=headers, timeout=TIMEOUT, **kwargs)
-    data = resp.json()
+    url = f"{API}/{method}"
+    resp = requests.post(url, headers=headers, timeout=TIMEOUT, **kwargs)
+    if resp.status_code == 429:
+        wait = min(int(resp.headers.get("Retry-After", "1") or "1"), MAX_RETRY_AFTER)
+        time.sleep(wait)
+        resp = requests.post(url, headers=headers, timeout=TIMEOUT, **kwargs)
+    try:
+        data = resp.json()
+    except ValueError:
+        raise RuntimeError(f"{method}: HTTP {resp.status_code} (non-JSON response)")
     if not data.get("ok"):
-        raise RuntimeError(f"{method}: {data.get('error', 'unknown error')}")
+        raise RuntimeError(f"{method}: {_friendly(data.get('error', 'unknown error'))}")
     return data
 
 
@@ -61,6 +94,30 @@ def _upload(token, path, title):
     return {"id": info["file_id"], "title": title}
 
 
+def _share(token, channel, text, path=None, title=None):
+    """Post ``text`` to ``channel``, attaching ``path`` if given.
+
+    Degrades gracefully: if the file upload fails (e.g. the app lacks the
+    ``files:write`` scope) it still posts the text + deep link via
+    chat.postMessage, so a notification always lands. Returns a short detail
+    string; raises only if even the text post fails (caller turns that into
+    ``(False, reason)``)."""
+    if path and os.path.exists(path):
+        try:
+            file_ref = _upload(token, path, title or os.path.basename(path))
+            _call("files.completeUploadExternal", token, data={
+                "files": json.dumps([file_ref]),
+                "channel_id": channel,
+                "initial_comment": text,
+            })
+            return f"posted {os.path.basename(path)}"
+        except Exception as upload_err:
+            _call("chat.postMessage", token, json={"channel": channel, "text": text})
+            return f"posted text-only (upload failed: {upload_err})"
+    _call("chat.postMessage", token, json={"channel": channel, "text": text})
+    return "posted (text only)"
+
+
 def post_burst(cfg, burst_id, summary, frame_paths):
     """Build an animation from ``frame_paths`` and post it with summary + link.
 
@@ -86,19 +143,7 @@ def post_burst(cfg, burst_id, summary, frame_paths):
                 mp4 = media.build_mp4(frame_paths, os.path.join(tmp, "clip.mp4"))
                 if mp4:
                     clip = mp4
-
-            if clip:
-                file_ref = _upload(token, clip, f"Sequence {burst_id}")
-                _call("files.completeUploadExternal", token, data={
-                    "files": json.dumps([file_ref]),
-                    "channel_id": channel,
-                    "initial_comment": text,
-                })
-                return True, f"posted {os.path.basename(clip)}"
-
-            # No animation could be built -- still post the summary + link
-            _call("chat.postMessage", token, json={"channel": channel, "text": text})
-            return True, "posted (text only)"
+            return True, _share(token, channel, text, clip, f"Sequence {burst_id}")
     except Exception as e:
         return False, str(e)
 
@@ -120,18 +165,9 @@ def post_image(cfg, filename, labels, caption, image_path):
     if caption:
         text += f"\n_{caption}_"
     if base:
-        text += f"\n<{base}/|Open the gallery>"
+        text += f"\n<{base}/?image={filename}|View this frame>"
 
     try:
-        if image_path and os.path.exists(image_path):
-            file_ref = _upload(token, image_path, filename)
-            _call("files.completeUploadExternal", token, data={
-                "files": json.dumps([file_ref]),
-                "channel_id": channel,
-                "initial_comment": text,
-            })
-            return True, f"posted {filename}"
-        _call("chat.postMessage", token, json={"channel": channel, "text": text})
-        return True, "posted (text only)"
+        return True, _share(token, channel, text, image_path, filename)
     except Exception as e:
         return False, str(e)

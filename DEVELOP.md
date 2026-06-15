@@ -223,24 +223,48 @@ view. Schema:
     "enabled": true,
     "bot_token": "xoxb-…",   "app_token": "xapp-…",
     "channel_id": "C0123ABCD",
-    "public_base_url": "https://dogcam.example.org"
+    "public_base_url": "https://dogcam.example.org",
+    "notify_mode": "context"
   }
 }
 ```
+
+`notify_mode` (per integration) controls *what* triggers a post:
+- `context` (default, quietest) — only burst/sequence summaries
+  (`notify_burst`), the contextual narrative + frame animation.
+- `objects` — every freshly-analyzed frame **with a detection**
+  (`notify_image`).
+- `all` — every freshly-analyzed frame, detections and clears alike.
+
+Per-image modes fire only on **priority** deep passes (newly-arrived
+detector hits), never the idle backfill of the archive — that would flood
+the channel. Volume is therefore bounded by `max_deep_passes` per sweep.
 
 ### Slack
 Posts the burst's frame animation + AI summary with a deep link back to
 the gallery. Uses Slack's current upload flow (`files.getUploadURLExternal`
 → upload → `files.completeUploadExternal`; legacy `files.upload` is
 retired). Needs the **bot token** (`xoxb-`, scopes `chat:write` +
-`files:write`) and a **channel id**; the **app token** (`xapp-`) is stored
+`files:write`) and a **channel id**, and **the bot must be invited to that
+channel** (`/invite @yourbot`) — otherwise calls fail `not_in_channel`
+(surfaced with a hint by `_friendly`). The **app token** (`xapp-`) is stored
 for future Socket Mode work but isn't required to post. `media.py` makes a
 looping GIF (≤24 frames, 480px, 2.5fps) and falls back to MP4 (ffmpeg) when
-the GIF exceeds 3 MB. The deep link is `<public_base_url>/?event=<burst_id>`,
-which the SPA honours on load (`maybeOpenDeepLink`) by opening that
-sequence's flipbook. `public_base_url` is a single site, so for a
-multi-camera deployment it points at one camera's gallery — per-camera URL
-mapping is a future enhancement.
+the GIF exceeds 3 MB. `_call` honours one HTTP-429 retry (Slack's
+`Retry-After`, capped so it can't stall the locked sweep). If the file
+upload fails (commonly a `missing_scope` when the app lacks `files:write`),
+`_share` **degrades to a text-only post** with the summary + deep link, so
+a notification still lands — the animation starts attaching automatically
+once the scope is added.
+
+Deep links the SPA honours on load (`maybeOpenDeepLink`, both reuse the
+flipbook player so they ignore the active tab/filters):
+- bursts → `<public_base_url>/?event=<burst_id>` (plays the sequence)
+- frames → `<public_base_url>/?image=<filename>` (shows that one frame)
+
+`public_base_url` is a single site, so for a multi-camera deployment it
+points at one camera's gallery — per-camera URL mapping is a future
+enhancement.
 
 ## Services & infrastructure
 
