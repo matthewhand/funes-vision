@@ -529,6 +529,21 @@
       color: var(--accent-color);
     }
 
+    /* Small controls above/below the dynamic object-filter chips */
+    .filter-meta-btn {
+      font-size: 0.62rem;
+      line-height: 1.4;
+      padding: 1px 8px;
+      background: var(--bg-tertiary);
+      color: var(--text-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .filter-meta-btn:hover { color: var(--text-primary); }
+    .filter-meta-btn.active { color: var(--accent-color); border-color: var(--accent-color); }
+
     /* AI Label Styles */
     .ai-labels-overlay {
       position: absolute;
@@ -1385,8 +1400,12 @@
 
         <!-- Dynamic Object Filters Container -->
         <div style="display: flex; gap: 8px; align-items: center;">
-          <div class="tab-group" id="object-filters" style="display: none;">
-            <!-- Buttons injected by JS -->
+          <div id="object-filter-panel" style="display: none; flex-direction: column; gap: 4px; align-items: flex-start;">
+            <button type="button" id="sticky-toggle" class="filter-meta-btn" title="When on, toggle several object filters at once (match any). When off, one at a time."></button>
+            <div class="tab-group" id="object-filters">
+              <!-- Buttons injected by JS -->
+            </div>
+            <button type="button" id="hide-filters-toggle" class="filter-meta-btn" title="Hide or show the object filter chips"></button>
           </div>
           
           <div class="blacklist-menu">
@@ -1619,7 +1638,10 @@
       renderedCount: 0,     // Total cards currently drawn
       pageSize: 40,         // Batch load count for infinite scroll
       activeFilter: 'events',  // tab filter: events (timeline), objects (detections only), all
-      activeObjectFilter: null, // dynamic: 'person', 'dog', etc
+      objectFilters: new Set(), // dynamic multi-select: {'person','dog'}; empty = all (match ANY)
+      // "Sticky" select accumulates filters (toggle several on/off); off = one-at-a-time
+      stickySelect: JSON.parse(localStorage.getItem('webcam_sticky_filters') || 'false'),
+      filtersHidden: JSON.parse(localStorage.getItem('webcam_filters_hidden') || 'false'),
       activeDateFilter: 'all', // timeline filter: all, YYYY-MM-DD
       timeStart: 0,
       timeEnd: 23,
@@ -1814,14 +1836,14 @@
       // With an object filter: that object. Without: any visible detection.
       const isMatch = (filename) => {
         const labels = effectiveLabels(state.analysis[filename] || {});
-        if (state.activeObjectFilter) return labels.has(state.activeObjectFilter);
+        if (objectFilterActive()) return labelsMatchObjectFilter(labels);
         return Array.from(labels).some(l => !state.blacklist.includes(l));
       };
 
       const searchOk = (filename) => !state.searchQuery ||
         filename.toLowerCase().includes(state.searchQuery.toLowerCase());
 
-      const what = state.activeObjectFilter || 'detection';
+      const what = objectFilterActive() ? Array.from(state.objectFilters).join(' / ') : 'detection';
 
       // ---- 1. Day planner: one bar per day, top=12AM bottom=12PM ----
       const daysContainer = document.getElementById('activity-chart-days');
@@ -1975,6 +1997,12 @@
       return out;
     };
 
+    // --- Object filter helpers (multi-select, "match ANY") ---
+    const objectFilterActive = () => state.objectFilters.size > 0;
+    const labelsMatchObjectFilter = (labelsSet) =>
+      state.objectFilters.size === 0 ||
+      Array.from(state.objectFilters).some(l => labelsSet.has(l));
+
     function renderObjectFilters() {
       const detectedSet = new Set();
       Object.values(state.analysis).forEach(res => {
@@ -1984,24 +2012,50 @@
       // Update the Blacklist Management Menu
       renderBlacklistMenu(detectedSet);
 
+      const panel = document.getElementById('object-filter-panel');
       const container = document.getElementById('object-filters');
+      const stickyBtn = document.getElementById('sticky-toggle');
+      const hideBtn = document.getElementById('hide-filters-toggle');
+
       // Only show filter buttons for labels NOT in blacklist
       const whitelisted = Array.from(detectedSet).filter(obj => !state.blacklist.includes(obj)).sort();
-      
+
       if (whitelisted.length === 0) {
-        container.style.display = 'none';
+        panel.style.display = 'none';
         return;
       }
+      panel.style.display = 'flex';
 
-      container.style.display = 'flex';
+      // Bottom control: hide / show the chips (sticky preference)
+      hideBtn.textContent = state.filtersHidden ? '▾ Show filters' : '▴ Hide filters';
+      hideBtn.onclick = () => {
+        state.filtersHidden = !state.filtersHidden;
+        localStorage.setItem('webcam_filters_hidden', JSON.stringify(state.filtersHidden));
+        renderObjectFilters();
+      };
+
+      // Collapsed: leave only the show/hide control
+      stickyBtn.style.display = state.filtersHidden ? 'none' : '';
+      container.style.display = state.filtersHidden ? 'none' : 'flex';
+      if (state.filtersHidden) return;
+
+      // Top control: sticky select (accumulate multiple) vs one-at-a-time
+      stickyBtn.textContent = state.stickySelect ? '◉ Sticky select: on' : '○ Sticky select: off';
+      stickyBtn.classList.toggle('active', state.stickySelect);
+      stickyBtn.onclick = () => {
+        state.stickySelect = !state.stickySelect;
+        localStorage.setItem('webcam_sticky_filters', JSON.stringify(state.stickySelect));
+        renderObjectFilters();
+      };
+
       container.innerHTML = '';
-      
-      // Add "All Detections" toggle
+
+      // "All AI" clears every active filter
       const allBtn = document.createElement('button');
-      allBtn.className = `tab-btn ${state.activeObjectFilter === null ? 'active' : ''}`;
+      allBtn.className = `tab-btn ${state.objectFilters.size === 0 ? 'active' : ''}`;
       allBtn.textContent = 'All AI';
       allBtn.onclick = () => {
-        state.activeObjectFilter = null;
+        state.objectFilters.clear();
         renderObjectFilters();
         applyFiltersAndSearch();
       };
@@ -2009,18 +2063,25 @@
 
       whitelisted.forEach(obj => {
         const btn = document.createElement('button');
-        const isActive = state.activeObjectFilter === obj;
+        const isActive = state.objectFilters.has(obj);
         btn.className = `tab-btn ${isActive ? 'active' : ''}`;
         btn.style.textTransform = 'capitalize';
-        
+
         let icon = 'eye';
         if (obj === 'person') icon = 'user';
         if (obj === 'dog') icon = 'dog';
         if (obj === 'cat') icon = 'cat';
-        
+
         btn.innerHTML = `<i data-lucide="${icon}" style="width:14px;height:14px;vertical-align:middle;margin-right:4px;"></i>${obj}`;
         btn.onclick = () => {
-          state.activeObjectFilter = isActive ? null : obj;
+          if (state.stickySelect) {
+            // accumulate: toggle this label in/out, others stay
+            if (isActive) state.objectFilters.delete(obj); else state.objectFilters.add(obj);
+          } else {
+            // one-at-a-time: this label only (re-click clears)
+            if (isActive && state.objectFilters.size === 1) state.objectFilters.clear();
+            else { state.objectFilters.clear(); state.objectFilters.add(obj); }
+          }
           window.scrollTo({ top: 0, behavior: 'smooth' });
           renderObjectFilters();
           applyFiltersAndSearch();
@@ -2058,7 +2119,7 @@
         state.blacklist = state.blacklist.filter(l => l !== label);
       } else {
         state.blacklist.push(label);
-        if (state.activeObjectFilter === label) state.activeObjectFilter = null;
+        state.objectFilters.delete(label);
       }
       localStorage.setItem('webcam_ai_blacklist', JSON.stringify(state.blacklist));
       renderObjectFilters();
@@ -2074,8 +2135,8 @@
       const enabled = Object.keys(state.labelAliases).length > 0;
       state.labelAliases = enabled ? {} : { face: 'person', body: 'person', raccoon: 'dog' };
       localStorage.setItem('webcam_ai_aliases', JSON.stringify(state.labelAliases));
-      // The active filter may not exist under the new mapping; reset it
-      state.activeObjectFilter = null;
+      // The active filters may not exist under the new mapping; reset them
+      state.objectFilters.clear();
       renderAliasToggle();
       renderObjectFilters();
       applyFiltersAndSearch();
@@ -2095,7 +2156,7 @@
     unconfirmedToggle.onclick = () => {
       state.showUnconfirmed = !state.showUnconfirmed;
       localStorage.setItem('webcam_show_unconfirmed', JSON.stringify(state.showUnconfirmed));
-      state.activeObjectFilter = null; // filtered label may no longer exist
+      state.objectFilters.clear(); // filtered labels may no longer exist
       renderUnconfirmedToggle();
       renderObjectFilters();
       applyFiltersAndSearch();
@@ -2115,12 +2176,12 @@
         // the detection lifecycle) - applies on both tabs
         const labels = effectiveLabels(analysis);
         const hasWhitelistedDetection = Array.from(labels).some(l => !state.blacklist.includes(l));
-        if (state.activeObjectFilter && !labels.has(state.activeObjectFilter)) return false;
+        if (objectFilterActive() && !labelsMatchObjectFilter(labels)) return false;
 
         // 2. Tab filter: "Objects" shows only images with visible
         // detections (verified + preliminary; disputed only when
         // "show unconfirmed" is on); "All" shows everything.
-        if (state.activeFilter === 'objects' && !state.activeObjectFilter && !hasWhitelistedDetection) return false;
+        if (state.activeFilter === 'objects' && !objectFilterActive() && !hasWhitelistedDetection) return false;
 
         // 3. Date Timeline filter
         if (state.activeDateFilter !== 'all' && meta.dateStr !== state.activeDateFilter) return false;
@@ -2258,7 +2319,7 @@
       document.getElementById('sentinel-text').textContent = '';
 
       let visits = computeVisits();
-      if (state.activeObjectFilter) visits = visits.filter(v => v.label === state.activeObjectFilter);
+      if (objectFilterActive()) visits = visits.filter(v => state.objectFilters.has(v.label));
       if (state.activeDateFilter !== 'all') visits = visits.filter(v => v.start.meta.dateStr === state.activeDateFilter);
       if (state.searchQuery) {
         const q = state.searchQuery.toLowerCase();
