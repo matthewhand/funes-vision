@@ -78,7 +78,8 @@ no restarts needed). Per camera dir, in order:
 7. **Bursts** — consecutive images < `burst_threshold_seconds` apart form
    a burst; bursts containing a detection get an LLM sequence summary
    (last 3 frames). Invalid cached bursts (missing files, or spans
-   violating the chain rule) are pruned and re-detected.
+   violating the chain rule) are pruned and re-detected. A new summary is
+   fanned out to enabled notifiers — see [Integrations](#integrations).
 8. **Pruning** — analysis/burst entries whose files no longer exist
    (retention, API delete, external cleanup) are removed.
 
@@ -110,6 +111,11 @@ Stdlib-only HTTP server, the single write channel (nginx mounts are ro).
   validated against the camera dirs (no path traversal)
 - `GET/POST /api/settings` → restricted to `MUTABLE_SETTINGS`
   (currently `fast_pass_engine`, `deep_backfill`) with value validation
+- `GET /api/integrations` → **redacted** integration config (presence of
+  tokens, never their values); `POST /api/integrations` → merge into
+  `integrations.json` (blank token fields preserve the stored secret);
+  `POST /api/integrations/test` → send a Slack test message. See
+  [Integrations](#integrations).
 CORS is open; the UI computes the API origin as
 `http://<page-hostname>:8190`. Restart after editing:
 `sudo systemctl restart webcam-api`.
@@ -173,6 +179,68 @@ images; partials precede backfill in the queue).
 | `fast_pass_engine` | yolo | `yolo` or `haar` (UI-selectable) |
 | `deep_backfill` | true | idle LLM verification of the archive (UI-toggleable) |
 | `gate_ignore_labels` | ["car"] | labels that alone don't trigger urgent deep passes |
+
+## Integrations
+
+The pipeline fans **burst (sequence) summaries** out to external services.
+A burst summary is the gallery's "contextual analysis" — a narrative of
+what happened across a run of frames — so it's the natural notification
+event (per-image captions are far too frequent). The hook fires once per
+burst, right after `bursts.json` is updated (`analyze_images.py`, burst
+analysis step).
+
+```
+analyze_images.py  (new burst summary)
+        │  notify_burst(burst_id, summary, frame_paths, image_dir)
+        ▼
+integrations/__init__.py   reads integrations.json, dispatches to each
+        │                  enabled integration; fully guarded (a failing
+        │                  notifier never escapes into the locked sweep)
+        ├─ integrations/slack.py    builds a clip + posts via Slack
+        └─ integrations/media.py    frames → looping GIF, MP4 fallback
+```
+
+### The contract (for new integrations)
+Expose `post_burst(cfg, burst_id, summary, frame_paths)` from a module in
+`integrations/`, returning `(ok, detail)` and **never raising**; then add
+an `enabled` dispatch block in `notify_burst`. `frame_paths` are local
+thumbnail paths (full-res fallback) for the burst's frames; `cfg` is that
+integration's block of `integrations.json`. **New integrations are welcome
+but must come in via PR** — keep the guard discipline (no exception may
+reach the pipeline, which holds the global lock) and the secret-handling
+rules below.
+
+### integrations.json (secrets — NOT a synced data file)
+Lives at the repo root, **gitignored**, written `0600` by `api_server.py`,
+and deliberately **excluded from the nginx web-root sync** (`create-index.sh`
+copies only `index.html` + the four public JSON files), so bot tokens are
+never world-readable. `GET /api/integrations` only ever returns a redacted
+view. Schema:
+
+```json
+{
+  "slack": {
+    "enabled": true,
+    "bot_token": "xoxb-…",   "app_token": "xapp-…",
+    "channel_id": "C0123ABCD",
+    "public_base_url": "https://dogcam.example.org"
+  }
+}
+```
+
+### Slack
+Posts the burst's frame animation + AI summary with a deep link back to
+the gallery. Uses Slack's current upload flow (`files.getUploadURLExternal`
+→ upload → `files.completeUploadExternal`; legacy `files.upload` is
+retired). Needs the **bot token** (`xoxb-`, scopes `chat:write` +
+`files:write`) and a **channel id**; the **app token** (`xapp-`) is stored
+for future Socket Mode work but isn't required to post. `media.py` makes a
+looping GIF (≤24 frames, 480px, 2.5fps) and falls back to MP4 (ffmpeg) when
+the GIF exceeds 3 MB. The deep link is `<public_base_url>/?event=<burst_id>`,
+which the SPA honours on load (`maybeOpenDeepLink`) by opening that
+sequence's flipbook. `public_base_url` is a single site, so for a
+multi-camera deployment it points at one camera's gallery — per-camera URL
+mapping is a future enhancement.
 
 ## Services & infrastructure
 

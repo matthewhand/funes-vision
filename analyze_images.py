@@ -212,6 +212,15 @@ def run_deep_pass(image_path, img_name, can_run_local, api_key, trigger, fp_labe
     labels = sorted(k for k, v in (result or {}).items() if v is True)
     log_inference(img_name, used, started, time.time() - started,
                   labels, result is not None, trigger)
+    # Per-image notify (objects/all modes) — ONLY for freshly-queued frames,
+    # never the idle backfill of the historical archive (would be a flood).
+    # Guarded: a notifier failure must never break the sweep.
+    if isinstance(result, dict) and trigger == "priority":
+        try:
+            from integrations import notify_image
+            notify_image(img_name, labels, result.get("description", ""), image_path)
+        except Exception as e:
+            print(f"notify_image failed: {e}")
     return result
 
 def ollama_available():
@@ -592,6 +601,20 @@ def main():
                 if summary:
                     burst_data[burst_id] = { "summary": summary, "images": burst }
                     new_analysis = True
+                    # Fan the new contextual analysis out to integrations
+                    # (Slack, ...). Prefer thumbnails for a lightweight clip;
+                    # fully guarded so a notifier never breaks the sweep.
+                    try:
+                        from integrations import notify_burst
+                        thumb_dir = os.path.join(image_dir, "thumbs")
+                        frame_paths = [
+                            os.path.join(thumb_dir, f) if os.path.exists(os.path.join(thumb_dir, f))
+                            else os.path.join(image_dir, f)
+                            for f in burst
+                        ]
+                        notify_burst(burst_id, summary, frame_paths, image_dir=image_dir)
+                    except Exception as e:
+                        print(f"Integration notify failed: {e}")
 
         if new_analysis:
             with open(analysis_file, 'w') as f: json.dump(analysis_data, f, indent=2)

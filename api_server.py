@@ -20,6 +20,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PINS_FILE = os.path.join(BASE_DIR, "pins.json")
 SETTINGS_FILE = os.path.join(BASE_DIR, "settings.json")
+# Integration config + secrets (Slack tokens etc). Deliberately separate
+# from settings.json: gitignored, mode 600, and NOT synced into the public
+# nginx web roots, so bot tokens never become world-readable.
+INTEGRATIONS_FILE = os.path.join(BASE_DIR, "integrations.json")
 
 # Deployment-specific; configured in settings.json
 try:
@@ -42,6 +46,40 @@ def setting_valid(key, value):
         return value in spec["choices"]
     return (isinstance(value, (int, float)) and not isinstance(value, bool)
             and spec["min"] <= value <= spec["max"])
+
+
+def load_integrations():
+    try:
+        with open(INTEGRATIONS_FILE) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def redacted_integrations():
+    """Public-safe view: presence of tokens, never their values."""
+    slack = load_integrations().get("slack") or {}
+    return {
+        "slack": {
+            "enabled": bool(slack.get("enabled")),
+            "has_bot_token": bool(slack.get("bot_token")),
+            "has_app_token": bool(slack.get("app_token")),
+            "channel_id": slack.get("channel_id", ""),
+            "public_base_url": slack.get("public_base_url", ""),
+            "notify_mode": slack.get("notify_mode", "context"),
+        }
+    }
+
+
+def save_slack_settings(changes):
+    """Merge ``changes`` into the slack block, preserving omitted fields."""
+    data = load_integrations()
+    slack = data.get("slack") or {}
+    slack.update(changes)
+    data["slack"] = slack
+    fd = os.open(INTEGRATIONS_FILE, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        json.dump(data, f, indent=2)
 
 
 def load_pins():
@@ -154,6 +192,8 @@ class Handler(BaseHTTPRequestHandler):
             except (OSError, ValueError):
                 settings = {}
             self._send(200, {k: settings.get(k) for k in MUTABLE_SETTINGS})
+        elif self.path == "/api/integrations":
+            self._send(200, redacted_integrations())
         elif self.path == "/api/status":
             self._send(200, pipeline_status())
         elif self.path == "/api/inference_log":
@@ -195,6 +235,47 @@ class Handler(BaseHTTPRequestHandler):
                 json.dump(settings, f, indent=2)
             print(f"Settings updated: {changed}")
             self._send(200, {"ok": True, **changed})
+
+        elif self.path == "/api/integrations":
+            slack_in = payload.get("slack") or {}
+            changes = {}
+            if "enabled" in slack_in:
+                changes["enabled"] = bool(slack_in["enabled"])
+            # Blank token fields preserve the stored secret (the redacted
+            # GET means the UI can't echo it back to re-submit)
+            for tok in ("bot_token", "app_token"):
+                v = slack_in.get(tok)
+                if isinstance(v, str) and v.strip():
+                    changes[tok] = v.strip()
+            if "channel_id" in slack_in:
+                changes["channel_id"] = str(slack_in["channel_id"]).strip()
+            if "public_base_url" in slack_in:
+                url = str(slack_in["public_base_url"]).strip()
+                if url and not url.startswith(("http://", "https://")):
+                    self._send(400, {"error": "public_base_url must start with http:// or https://"})
+                    return
+                changes["public_base_url"] = url
+            if "notify_mode" in slack_in:
+                mode = str(slack_in["notify_mode"]).strip()
+                if mode not in ("context", "objects", "all"):
+                    self._send(400, {"error": "notify_mode must be context, objects, or all"})
+                    return
+                changes["notify_mode"] = mode
+            if not changes:
+                self._send(400, {"error": "no integration settings in payload"})
+                return
+            save_slack_settings(changes)
+            print(f"Integrations updated: slack {sorted(changes)}")
+            self._send(200, {"ok": True, **redacted_integrations()})
+
+        elif self.path == "/api/integrations/test":
+            slack = load_integrations().get("slack") or {}
+            try:
+                from integrations import slack as slack_mod
+                ok, detail = slack_mod.send_test_message(slack)
+            except Exception as e:
+                ok, detail = False, str(e)
+            self._send(200 if ok else 400, {"ok": ok, "detail": detail})
 
         elif self.path == "/api/pin":
             if find_image(filename) is None:
