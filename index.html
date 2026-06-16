@@ -2071,6 +2071,7 @@
         if (obj === 'person') icon = 'user';
         if (obj === 'dog') icon = 'dog';
         if (obj === 'cat') icon = 'cat';
+        if (obj === 'bird') icon = 'bird';
 
         btn.innerHTML = `<i data-lucide="${icon}" style="width:14px;height:14px;vertical-align:middle;margin-right:4px;"></i>${obj}`;
         btn.onclick = () => {
@@ -2337,7 +2338,7 @@
       const list = document.createElement('div');
       list.style.cssText = 'display:flex;flex-direction:column;gap:8px;width:100%;grid-column:1/-1;';
       visits.slice(0, 300).forEach(v => {
-        const icon = v.label === 'person' ? 'user' : v.label === 'dog' ? 'dog' : v.label === 'cat' ? 'cat' : 'eye';
+        const icon = v.label === 'person' ? 'user' : v.label === 'dog' ? 'dog' : v.label === 'cat' ? 'cat' : v.label === 'bird' ? 'bird' : 'eye';
         const timeRange = v.count > 1
           ? `${v.start.meta.formattedTime} – ${v.end.meta.formattedTime}`
           : v.start.meta.formattedTime;
@@ -2462,6 +2463,7 @@
           if (label === 'person') icon = 'user';
           if (label === 'dog') icon = 'dog';
           if (label === 'cat') icon = 'cat';
+          if (label === 'bird') icon = 'bird';
           const cls = st === 'preliminary' ? 'tag-potential' : st === 'disputed' ? 'tag-disputed' : '';
           const suffix = st === 'preliminary' ? '?' : st === 'disputed' ? ' &#10007;' : '';
 

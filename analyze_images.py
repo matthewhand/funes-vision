@@ -80,7 +80,7 @@ def fast_pass(image_path):
         return {}
 
 # --- YOLO fast pass (yolov4-tiny via OpenCV DNN, COCO classes) ---
-YOLO_CLASSES = {0: "person", 2: "car", 15: "cat", 16: "dog"}
+YOLO_CLASSES = {0: "person", 2: "car", 14: "bird", 15: "cat", 16: "dog"}
 _yolo_model = None
 
 def _load_yolo():
@@ -124,7 +124,7 @@ def encode_image(image_path):
     with open(image_path, "rb") as image_file:
         return base64.b64encode(image_file.read()).decode('utf-8')
 
-DETECT_PROMPT = "Analyze this webcam image. Specifically detect if any PERSON, FACE, BODY, DOG, or CAT is visible. If you see a human (even partial), use keys 'person', 'face', or 'body'. If you see something unusual (e.g. alien_ufo), add a descriptive key for it. Return ONLY a valid JSON object with boolean keys for detected items, PLUS - only if a person/animal/vehicle is present - a 'description' key with a brief (max 12 words) caption of what is happening. Omit 'description' for empty scenes. Example: {\"person\": true, \"face\": true, \"dog\": false, \"description\": \"person in dark jacket walking toward the gate\"}"
+DETECT_PROMPT = "Analyze this webcam image. Specifically detect if any PERSON, FACE, BODY, DOG, CAT, or BIRD is visible. If you see a human (even partial), use keys 'person', 'face', or 'body'. For an animal use 'dog', 'cat', or 'bird'. If you see something unusual (e.g. alien_ufo), add a descriptive key for it. Return ONLY a valid JSON object with boolean keys for detected items, PLUS - only if a person, animal, bird, or vehicle is present - a 'description' key with a brief (max 12 words) caption of what is happening. Omit 'description' for empty scenes. Example: {\"person\": true, \"face\": true, \"dog\": false, \"description\": \"person in dark jacket walking toward the gate\"}"
 
 def analyze_image_openrouter(image_path, api_key):
     base64_image = encode_image(image_path)
