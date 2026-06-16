@@ -2392,17 +2392,20 @@
       overlay.innerHTML = `
         <img id="evp-img" style="max-width:95vw;max-height:75vh;border-radius:8px;background:#111;">
         <div id="evp-label" style="color:white;font-size:0.85rem;text-align:center;"></div>
+        <input type="range" id="evp-scrub" min="0" value="0" aria-label="Scrub through frames" style="width:min(95vw,520px);accent-color:var(--accent-color);cursor:pointer;">
         <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;">
-          <button class="btn" id="evp-toggle">Pause</button>
-          <a class="btn" id="evp-full" target="_blank">Full res</a>
-          <button class="btn" id="evp-share">Copy link</button>
-          <button class="btn" id="evp-close">Close</button>
+          <button class="btn" id="evp-toggle" aria-label="Play or pause">Pause</button>
+          <a class="btn" id="evp-full" target="_blank" aria-label="Open full resolution image">Full res</a>
+          <button class="btn" id="evp-share" aria-label="Copy a shareable link to this frame">Copy link</button>
+          <button class="btn" id="evp-close" aria-label="Close player">Close</button>
         </div>`;
       document.body.appendChild(overlay);
 
       const imgEl = overlay.querySelector('#evp-img');
       const labelEl = overlay.querySelector('#evp-label');
       const fullEl = overlay.querySelector('#evp-full');
+      const scrubEl = overlay.querySelector('#evp-scrub');
+      scrubEl.max = Math.max(0, frames.length - 1);
 
       const show = () => {
         imgEl.onerror = () => { imgEl.onerror = null; imgEl.src = frames[idx]; };
@@ -2411,7 +2414,11 @@
         labelEl.innerHTML = `<span style="text-transform:capitalize;">${ev.label}</span> ${ev.type} &middot; frame ${idx + 1}/${frames.length}` +
           (meta ? `<br>${meta.formattedDate} ${meta.formattedTime}` : '');
         fullEl.href = frames[idx];
+        if (Number(scrubEl.value) !== idx) scrubEl.value = idx;
       };
+
+      // Drag the slider to seek to any frame (pauses playback)
+      scrubEl.oninput = () => { pause(); idx = parseInt(scrubEl.value, 10) || 0; show(); };
 
       const play = () => {
         timer = setInterval(() => { idx = (idx + 1) % frames.length; show(); }, 400);
@@ -2983,17 +2990,39 @@
       es.addEventListener('new-detection', (e) => {
         let d = {}; try { d = JSON.parse(e.data); } catch (_) {}
         const what = (d.labels && d.labels.length) ? d.labels.join(', ') : 'activity';
-        showToast(`🔴 New detection: ${what}`);
+        bumpActivity(what);
         loadData(true);
       });
       es.addEventListener('new-burst', () => {
-        showToast('🔴 New sequence summarized');
+        bumpActivity('sequence');
         loadData(true);
       });
       es.onerror = () => {
         // Auto-reconnects; meanwhile make sure the responsive poll is running
         if (!state.pollingInterval) startPolling();
       };
+    }
+
+    // Persistent live-activity indicator: accumulates as SSE events stream in
+    // (so you don't miss them like a transient toast), and clears + jumps to
+    // the newest frames when tapped.
+    function bumpActivity(label) {
+      state.newActivity = (state.newActivity || 0) + 1;
+      state.lastActivity = label;
+      let pill = document.getElementById('activity-pill');
+      if (!pill) {
+        pill = document.createElement('button');
+        pill.id = 'activity-pill';
+        pill.style.cssText = 'position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:2500;background:#ef4444;color:#fff;border:none;border-radius:999px;padding:8px 16px;font-size:0.8rem;font-weight:600;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,0.4);';
+        pill.onclick = () => {
+          state.newActivity = 0;
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+          pill.remove();
+        };
+        document.body.appendChild(pill);
+      }
+      const n = state.newActivity;
+      pill.textContent = `🔴 ${n} new ${n === 1 ? 'event' : 'events'}${state.lastActivity ? ` · ${state.lastActivity}` : ''} — tap to view`;
     }
 
     // Notification toast alert
@@ -3355,6 +3384,23 @@
       document.getElementById('lightbox-play').addEventListener('click', toggleSlideshow);
       document.getElementById('lightbox-zoom-in').addEventListener('click', () => zoomLightbox(1.2));
       document.getElementById('lightbox-zoom-out').addEventListener('click', () => zoomLightbox(1 / 1.2));
+
+      // Touch swipe to navigate (mobile). Only when NOT zoomed — otherwise a
+      // touch drag is a pan. Horizontal-dominant swipe past a threshold flips.
+      const lbImg = document.getElementById('lightbox-image');
+      let swipeX = 0, swipeY = 0;
+      lbImg.addEventListener('touchstart', (e) => {
+        if (state.zoomScale > 1 || e.touches.length !== 1) { swipeX = null; return; }
+        swipeX = e.touches[0].clientX; swipeY = e.touches[0].clientY;
+      }, { passive: true });
+      lbImg.addEventListener('touchend', (e) => {
+        if (swipeX == null) return;
+        const dx = e.changedTouches[0].clientX - swipeX;
+        const dy = e.changedTouches[0].clientY - swipeY;
+        if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+          navigateLightbox(dx < 0 ? 1 : -1);  // swipe left -> next
+        }
+      }, { passive: true });
 
       // Lightbox Pan & Zoom Mouse Drag Event Handlers
       const zoomContainer = document.getElementById('image-zoom-container');
