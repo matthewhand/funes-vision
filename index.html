@@ -1608,6 +1608,9 @@
         <button class="lightbox-btn" id="lightbox-download" title="Download Snapshot">
           <i data-lucide="download"></i>
         </button>
+        <button class="lightbox-btn" id="lightbox-share" title="Copy shareable link">
+          <i data-lucide="link"></i>
+        </button>
         <button class="lightbox-btn btn-close" id="lightbox-close" title="Close (Esc)">
           <i data-lucide="x"></i>
         </button>
@@ -2391,6 +2394,7 @@
         <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;">
           <button class="btn" id="evp-toggle">Pause</button>
           <a class="btn" id="evp-full" target="_blank">Full res</a>
+          <button class="btn" id="evp-share">Copy link</button>
           <button class="btn" id="evp-close">Close</button>
         </div>`;
       document.body.appendChild(overlay);
@@ -2422,6 +2426,8 @@
       imgEl.onclick = () => { pause(); idx = (idx + 1) % frames.length; show(); };
       const close = () => { pause(); overlay.remove(); };
       overlay.querySelector('#evp-close').onclick = close;
+      // Share the exact frame being viewed (same deep link Slack posts use)
+      overlay.querySelector('#evp-share').onclick = () => shareLink('?image=' + frames[idx]);
       overlay.onclick = (e) => { if (e.target === overlay) close(); };
 
       // Preload thumbs so playback is smooth
@@ -2429,6 +2435,22 @@
 
       show();
       play();
+    }
+
+    // Copy a same-origin deep link (?event=/?image=) to the clipboard so a
+    // visit/frame can be shared - the same links the Slack integration posts.
+    // Clipboard API needs a secure context (https/localhost); falls back to a
+    // prompt on plain-http LAN access.
+    function shareLink(query) {
+      const url = `${location.origin}${location.pathname}${query}`;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(url).then(
+          () => showToast('Link copied to clipboard'),
+          () => window.prompt('Copy this link:', url)
+        );
+      } else {
+        window.prompt('Copy this link:', url);
+      }
     }
 
     // Deep link from an integration (e.g. a Slack post), honored once data
@@ -2828,7 +2850,8 @@
         a.download = filename;
         a.click();
       };
-      
+      document.getElementById('lightbox-share').onclick = () => shareLink('?image=' + filename);
+
       lightbox.classList.add('active');
       document.body.style.overflow = 'hidden';
       
