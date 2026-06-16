@@ -1357,12 +1357,12 @@
             <input type="text" id="search-input" class="search-input" placeholder="Filter by timestamp or event...">
           </div>
           
-          <button id="btn-refresh" class="btn" title="Force Reload">
+          <button id="btn-refresh" class="btn" aria-label="Force Reload" title="Force Reload">
             <i data-lucide="refresh-cw" id="refresh-icon"></i>
             <span>Refresh</span>
           </button>
 
-          <div id="live-toggle" class="live-badge" title="Toggle real-time auto-polling">
+          <div id="live-toggle" class="live-badge" aria-label="Toggle real-time auto-polling" title="Toggle real-time auto-polling">
             <div class="live-dot"></div>
             <span id="live-text">Live: ON</span>
           </div>
@@ -1556,16 +1556,16 @@
             <span class="stats-info" id="stats-label">Loading image logs...</span>
             
             <div class="view-toggles" id="view-toggles">
-              <button class="view-btn" data-view="small" title="Small Cards">
+              <button class="view-btn" data-view="small" aria-label="Small Cards" title="Small Cards">
                 <i data-lucide="layout-grid"></i>
               </button>
-              <button class="view-btn active" data-view="medium" title="Medium Grid">
+              <button class="view-btn active" data-view="medium" aria-label="Medium Grid" title="Medium Grid">
                 <i data-lucide="grid"></i>
               </button>
-              <button class="view-btn" data-view="large" title="Large Grid">
+              <button class="view-btn" data-view="large" aria-label="Large Grid" title="Large Grid">
                 <i data-lucide="layout-template"></i>
               </button>
-              <button class="view-btn" data-view="list" title="List View">
+              <button class="view-btn" data-view="list" aria-label="List View" title="List View">
                 <i data-lucide="list"></i>
               </button>
             </div>
@@ -1597,22 +1597,22 @@
     <div class="lightbox-header">
       <div class="lightbox-title" id="lightbox-title">Image Details</div>
       <div class="lightbox-controls">
-        <button class="lightbox-btn" id="lightbox-play" title="Play Slideshow">
+        <button class="lightbox-btn" id="lightbox-play" aria-label="Play Slideshow" title="Play Slideshow">
           <i data-lucide="play" id="play-icon"></i>
         </button>
-        <button class="lightbox-btn" id="lightbox-zoom-in" title="Zoom In (+)">
+        <button class="lightbox-btn" id="lightbox-zoom-in" aria-label="Zoom In (+)" title="Zoom In (+)">
           <i data-lucide="zoom-in"></i>
         </button>
-        <button class="lightbox-btn" id="lightbox-zoom-out" title="Zoom Out (-)">
+        <button class="lightbox-btn" id="lightbox-zoom-out" aria-label="Zoom Out (-)" title="Zoom Out (-)">
           <i data-lucide="zoom-out"></i>
         </button>
-        <button class="lightbox-btn" id="lightbox-download" title="Download Snapshot">
+        <button class="lightbox-btn" id="lightbox-download" aria-label="Download Snapshot" title="Download Snapshot">
           <i data-lucide="download"></i>
         </button>
         <button class="lightbox-btn" id="lightbox-share" title="Copy shareable link">
           <i data-lucide="link"></i>
         </button>
-        <button class="lightbox-btn btn-close" id="lightbox-close" title="Close (Esc)">
+        <button class="lightbox-btn btn-close" id="lightbox-close" aria-label="Close (Esc)" title="Close (Esc)">
           <i data-lucide="x"></i>
         </button>
       </div>
@@ -1621,7 +1621,7 @@
     <div class="lightbox-body">
       <span class="zoom-badge" id="zoom-badge">100% Zoom</span>
       
-      <button class="nav-arrow arrow-left" id="lightbox-prev" title="Previous (←)">
+      <button class="nav-arrow arrow-left" id="lightbox-prev" aria-label="Previous (←)" title="Previous (←)">
         <i data-lucide="chevron-left"></i>
       </button>
       
@@ -1629,7 +1629,7 @@
         <img src="" alt="Fullscreen view" class="lightbox-image" id="lightbox-image">
       </div>
       
-      <button class="nav-arrow arrow-right" id="lightbox-next" title="Next (→)">
+      <button class="nav-arrow arrow-right" id="lightbox-next" aria-label="Next (→)" title="Next (→)">
         <i data-lucide="chevron-right"></i>
       </button>
     </div>
