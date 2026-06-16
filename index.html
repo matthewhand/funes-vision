@@ -3045,6 +3045,20 @@
       pill.textContent = `🔴 ${n} new ${n === 1 ? 'event' : 'events'}${state.lastActivity ? ` · ${state.lastActivity}` : ''} — tap to view`;
     }
 
+    // Back-to-top button: appears after scrolling down a long grid
+    (function () {
+      const btn = document.createElement('button');
+      btn.id = 'back-to-top';
+      btn.setAttribute('aria-label', 'Scroll to top');
+      btn.textContent = '↑';
+      btn.style.cssText = 'position:fixed;bottom:20px;right:20px;z-index:1500;width:44px;height:44px;border-radius:50%;border:1px solid var(--border-color);background:var(--bg-secondary);color:var(--text-primary);font-size:1.2rem;cursor:pointer;box-shadow:0 3px 10px rgba(0,0,0,0.35);display:none;';
+      btn.onclick = () => window.scrollTo({ top: 0, behavior: 'smooth' });
+      document.body.appendChild(btn);
+      window.addEventListener('scroll', () => {
+        btn.style.display = window.scrollY > 600 ? 'block' : 'none';
+      }, { passive: true });
+    })();
+
     // Notification toast alert
     function showToast(message) {
       const toast = document.getElementById('toast-alert');
