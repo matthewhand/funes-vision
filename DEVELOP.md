@@ -157,6 +157,21 @@ localStorage: `webcam_ai_blacklist` (hidden labels) and
   Australia/Sydney. If the cameras follow DST this is off by 1h in
   summer (parse offset is fixed).
 
+**UI interactions (keyboard / gestures / live):**
+- Lightbox: `←`/`→` navigate, `Esc` close, `Space` slideshow, `+`/`-` zoom,
+  scroll-wheel zoom, drag to pan when zoomed, **swipe** to navigate on
+  mobile (only when not zoomed); neighbours are preloaded for instant nav.
+- Flipbook player (`openEventPlayer`): a frame **scrubber** plus `←`/`→`
+  step, `Space` play/pause, `Esc` close; "Copy link" yields a `?image=`
+  deep link.
+- Real-time: an `EventSource` on `/api/events` raises an accumulating
+  **activity pill** ("N new — tap to view") and a `(N)` **tab-title badge**;
+  tapping the pill clears both and scrolls to newest. Falls back to polling.
+- Deep links honoured on load (`maybeOpenDeepLink`): `?event=<burst_id>`
+  (sequence) and `?image=<filename>` (single frame); a copy-link button in
+  the player and lightbox produces them.
+- A back-to-top button appears after scrolling ~600px.
+
 ## Data files (all in repo dir, synced to web roots)
 
 | File | Writer | Purpose |
