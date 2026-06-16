@@ -2963,6 +2963,38 @@
       }
     }
 
+    // Real-time push: subscribe to the API's SSE stream for new detections /
+    // bursts. On an event we show a banner and refresh immediately, and relax
+    // the full-refetch poll to a backstop cadence. Degrades gracefully: if
+    // EventSource is unsupported or the stream can't connect (e.g. a buffering
+    // proxy), the regular 6s poll keeps the gallery fresh.
+    function startEventStream() {
+      if (!window.EventSource) return;
+      let es;
+      try { es = new EventSource(`${API_BASE}/api/events`); }
+      catch (e) { return; }
+
+      es.addEventListener('open', () => {
+        // SSE live -> slow the poll to a backstop (SSE handles immediacy)
+        if (state.pollingInterval) clearInterval(state.pollingInterval);
+        state.pollingInterval = setInterval(() => loadData(true), 30000);
+      });
+      es.addEventListener('new-detection', (e) => {
+        let d = {}; try { d = JSON.parse(e.data); } catch (_) {}
+        const what = (d.labels && d.labels.length) ? d.labels.join(', ') : 'activity';
+        showToast(`🔴 New detection: ${what}`);
+        loadData(true);
+      });
+      es.addEventListener('new-burst', () => {
+        showToast('🔴 New sequence summarized');
+        loadData(true);
+      });
+      es.onerror = () => {
+        // Auto-reconnects; meanwhile make sure the responsive poll is running
+        if (!state.pollingInterval) startPolling();
+      };
+    }
+
     // Notification toast alert
     function showToast(message) {
       const toast = document.getElementById('toast-alert');
@@ -2992,6 +3024,7 @@
       // Load initial data
       loadData().then(maybeOpenDeepLink);
       startPolling();
+      startEventStream();
 
       // Top control listeners
       document.getElementById('btn-refresh').addEventListener('click', () => loadData(false));

@@ -202,8 +202,85 @@ class Handler(BaseHTTPRequestHandler):
             except (OSError, ValueError):
                 log = []
             self._send(200, list(reversed(log[-50:])))  # newest first
+        elif self.path == "/api/events":
+            self.stream_events()
         else:
             self._send(404, {"error": "not found"})
+
+    # --- Server-Sent Events: push new detections / bursts to the UI ---
+    @staticmethod
+    def _verified_detections(analysis):
+        """Files carrying a final LLM verdict with at least one true label."""
+        out = {}
+        for f, v in analysis.items():
+            if "fast_pass" in v:
+                continue  # detector-only, not yet a verdict
+            labels = sorted(k for k, val in v.items() if val is True and k != "_yolo")
+            if labels:
+                out[f] = labels
+        return out
+
+    def _sse(self, event, data):
+        self.wfile.write(f"event: {event}\ndata: {json.dumps(data)}\n\n".encode())
+        self.wfile.flush()
+
+    def stream_events(self):
+        """Long-lived text/event-stream emitting new-detection / new-burst as
+        the pipeline writes analysis.json / bursts.json. Cheap: it polls file
+        mtimes and only re-reads on change. The first pass seeds state without
+        emitting, so a client doesn't get blasted with the whole backlog."""
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "keep-alive")
+        self.send_header("X-Accel-Buffering", "no")  # ask any proxy not to buffer
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+
+        analysis_path = os.path.join(BASE_DIR, "analysis.json")
+        bursts_path = os.path.join(BASE_DIR, "bursts.json")
+        seen_det, seen_bursts = {}, set()
+        a_mtime = b_mtime = -1.0
+        seeded = False
+        try:
+            while True:
+                try:
+                    amt = os.path.getmtime(analysis_path)
+                except OSError:
+                    amt = 0.0
+                if amt != a_mtime:
+                    a_mtime = amt
+                    try:
+                        cur = self._verified_detections(json.load(open(analysis_path)))
+                    except (OSError, ValueError):
+                        cur = {}
+                    if seeded:
+                        for f in cur.keys() - seen_det.keys():
+                            self._sse("new-detection", {"file": f, "labels": cur[f]})
+                    seen_det = cur
+
+                try:
+                    bmt = os.path.getmtime(bursts_path)
+                except OSError:
+                    bmt = 0.0
+                if bmt != b_mtime:
+                    b_mtime = bmt
+                    try:
+                        bursts = json.load(open(bursts_path))
+                    except (OSError, ValueError):
+                        bursts = {}
+                    if seeded:
+                        for bid in bursts.keys() - seen_bursts:
+                            self._sse("new-burst", {"id": bid,
+                                                    "summary": bursts.get(bid, {}).get("summary", "")})
+                    seen_bursts = set(bursts)
+
+                seeded = True
+                self.wfile.write(b": ping\n\n")  # heartbeat keeps the connection alive
+                self.wfile.flush()
+                time.sleep(3)
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            return  # client went away
 
     def do_POST(self):
         try:
