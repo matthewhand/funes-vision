@@ -1313,6 +1313,20 @@
       .lightbox-image-wrapper {
         max-width: 95%;
       }
+      /* Object-filter chips scroll horizontally instead of blowing up the
+         toolbar height when there are several labels */
+      #object-filter-panel { max-width: 100%; }
+      #object-filters {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        max-width: 100%;
+        -webkit-overflow-scrolling: touch;
+      }
+      #object-filters::-webkit-scrollbar { height: 4px; }
+      /* Reclaim width: Settings/Integrations collapse to their icons
+         (the AI button keeps its live status label) */
+      #btn-manage-blacklist span,
+      #btn-integrations span { display: none; }
     }
   </style>
 </head>
