@@ -16,9 +16,12 @@ here, then add an ``enabled`` dispatch block in ``notify_burst`` below.
 """
 import json
 import os
+import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CONFIG_FILE = os.path.join(ROOT, "integrations.json")
+# Delivery observability (read by api_server for the Integrations panel)
+STATE_FILE = os.path.join(ROOT, "integrations_state.json")
 
 
 def load_config():
@@ -28,6 +31,25 @@ def load_config():
             return json.load(f)
     except (OSError, ValueError):
         return {}
+
+
+def _record_delivery(name, kind, ok, detail):
+    """Persist the last send result per integration so the UI can show
+    'last delivered / last error' for the channel you rely on while away."""
+    try:
+        state = json.load(open(STATE_FILE)) if os.path.exists(STATE_FILE) else {}
+    except (OSError, ValueError):
+        state = {}
+    entry = state.get(name) or {}
+    stamp = {"ts": time.time(), "kind": kind, "ok": bool(ok), "detail": (detail or "")[:200]}
+    entry["last_delivery"] = stamp
+    entry["last_error" if not ok else "last_ok"] = stamp
+    state[name] = entry
+    try:
+        with open(STATE_FILE, "w") as f:
+            json.dump(state, f, indent=1)
+    except OSError:
+        pass
 
 
 # Notification modes (per integration, key "notify_mode"):
@@ -55,8 +77,10 @@ def notify_burst(burst_id, summary, frame_paths, image_dir=None):
         try:
             from . import slack as slack_mod
             ok, detail = slack_mod.post_burst(slack, burst_id, summary, frame_paths)
+            _record_delivery("slack", "burst", ok, detail)
             print(f"[integrations] slack: {detail}")
         except Exception as e:
+            _record_delivery("slack", "burst", False, str(e))
             print(f"[integrations] slack failed: {e}")
 
 
@@ -80,6 +104,8 @@ def notify_image(filename, labels, caption, image_path, image_dir=None):
     try:
         from . import slack as slack_mod
         ok, detail = slack_mod.post_image(slack, filename, labels, caption, image_path)
+        _record_delivery("slack", "image", ok, detail)
         print(f"[integrations] slack image: {detail}")
     except Exception as e:
+        _record_delivery("slack", "image", False, str(e))
         print(f"[integrations] slack image failed: {e}")

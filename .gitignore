@@ -7,3 +7,6 @@ analysis.json
 inference_log.json
 inference_status.json
 integrations.json
+integrations_state.json
+retention_log.json
+alert_state.json

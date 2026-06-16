@@ -312,6 +312,22 @@ THUMB_WIDTH = 320
 def has_detection(entry):
     return any(v is True for k, v in entry.items() if k != 'fast_pass')
 
+RETENTION_LOG = os.path.join(BASE_DIR, "retention_log.json")
+
+def _log_retention(image_dir, count, bytes_freed):
+    """Audit trail of deletions so vanishing images are explainable in-UI."""
+    try:
+        log = json.load(open(RETENTION_LOG)) if os.path.exists(RETENTION_LOG) else []
+    except (ValueError, OSError):
+        log = []
+    log.append({"ts": time.time(), "dir": os.path.basename(image_dir.rstrip("/")),
+                "count": count, "bytes_freed": bytes_freed})
+    try:
+        with open(RETENTION_LOG, "w") as f:
+            json.dump(log[-100:], f, indent=1)
+    except OSError:
+        pass
+
 def apply_retention(image_dir, analysis_data, pins):
     """Delete images to honor the age and disk budgets.
 
@@ -369,7 +385,10 @@ def apply_retention(image_dir, analysis_data, pins):
             total -= size
 
     if deleted:
+        sizes = {f: s for f, _, s in entries}
+        freed = sum(sizes.get(f, 0) for f in deleted)
         print(f"Retention: removed {len(deleted)} images from {image_dir}")
+        _log_retention(image_dir, len(deleted), freed)
     return deleted
 
 def generate_thumbnails(image_dir, images):

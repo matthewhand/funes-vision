@@ -56,6 +56,13 @@ def load_integrations():
         return {}
 
 
+def _integration_state():
+    try:
+        return json.load(open(os.path.join(BASE_DIR, "integrations_state.json")))
+    except (OSError, ValueError):
+        return {}
+
+
 def redacted_integrations():
     """Public-safe view: presence of tokens, never their values."""
     slack = load_integrations().get("slack") or {}
@@ -67,6 +74,7 @@ def redacted_integrations():
             "channel_id": slack.get("channel_id", ""),
             "public_base_url": slack.get("public_base_url", ""),
             "notify_mode": slack.get("notify_mode", "context"),
+            "last_delivery": (_integration_state().get("slack") or {}).get("last_delivery"),
         }
     }
 
@@ -241,6 +249,11 @@ def pipeline_status():
         status["trigger"]["last_sweep_age_s"] = None
     status["cameras"] = _camera_stats(settings.get("max_dir_gb", 4.0))
     status["metrics"] = _inference_metrics()
+    try:
+        rlog = json.load(open(os.path.join(BASE_DIR, "retention_log.json")))
+        status["retention"] = rlog[-1] if rlog else None
+    except (OSError, ValueError):
+        status["retention"] = None
     return status
 
 

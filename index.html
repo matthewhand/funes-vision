@@ -1522,6 +1522,7 @@
                   <button class="btn" id="slack-save" style="flex:1;">Save</button>
                   <button class="btn" id="slack-test" style="flex:1;">Send test</button>
                 </div>
+                <div id="slack-last-delivery" style="font-size:0.66rem; margin-top:8px; text-align:center;"></div>
               </div>
             </div>
           </div>
@@ -3122,6 +3123,19 @@
           statusEl.textContent = !s.has_bot_token ? 'not configured'
             : (s.enabled ? 'enabled' : 'configured (off)');
           statusEl.style.color = s.has_bot_token && s.enabled ? '#10b981' : 'var(--text-secondary)';
+          // Delivery observability: when did the last post actually go out?
+          const delEl = document.getElementById('slack-last-delivery');
+          if (delEl) {
+            const d = s.last_delivery;
+            if (!d) { delEl.textContent = ''; }
+            else {
+              const ago = Math.max(0, Math.round(Date.now() / 1000 - d.ts));
+              const when = ago < 90 ? `${ago}s ago` : ago < 5400 ? `${Math.round(ago / 60)}m ago` : `${Math.round(ago / 3600)}h ago`;
+              delEl.innerHTML = d.ok
+                ? `<span style="color:#10b981;">✓ last sent ${when}</span> <span style="color:var(--text-secondary);">(${d.kind})</span>`
+                : `<span style="color:#ef4444;">✗ last send failed ${when}: ${(d.detail || '').slice(0, 60)}</span>`;
+            }
+          }
         } catch (e) {
           statusEl.textContent = e.message === 'timeout' ? 'API not reachable (timed out)' : 'API offline';
           statusEl.style.color = '#ef4444';
@@ -3239,6 +3253,7 @@
               const pct = c.budget_pct == null ? '' : ` <span style="color:${c.budget_pct > 85 ? '#ef4444' : 'inherit'};">(${c.budget_pct}%)</span>`;
               return `<div>${dot} <b>${c.name}</b>: last frame ${age} &middot; ${(c.bytes / 1e9).toFixed(1)}GB${pct} &middot; ${c.images} imgs</div>`;
             }).join('')}
+            ${s.retention ? `<div style="color:var(--text-secondary);">Last cleanup: removed ${s.retention.count} img${s.retention.count !== 1 ? 's' : ''} (${(s.retention.bytes_freed / 1e6).toFixed(0)} MB) ${fmtDur(Math.max(0, Math.round(Date.now() / 1000 - s.retention.ts)))} ago</div>` : ''}
             <div style="margin-top:8px;font-weight:700;text-transform:uppercase;font-size:0.7rem;color:var(--text-secondary);border-bottom:1px solid var(--border-color);padding-bottom:3px;">Inference (last ${(s.metrics && s.metrics.window_min) || 60}m)</div>
             ${s.metrics && s.metrics.count ? `
               <div>${s.metrics.count} runs &middot; ${Math.round(s.metrics.success_rate * 100)}% ok${s.metrics.failures ? ` <span style="color:#ef4444;">(${s.metrics.failures} fail)</span>` : ''}</div>
