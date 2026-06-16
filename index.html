@@ -2522,14 +2522,31 @@
       ? `${location.protocol}//${location.hostname}:8190`
       : '';
 
-    async function apiPost(path, payload) {
-      const resp = await fetch(`${API_BASE}${path}`, {
+    // All write-API calls go through here: a hard timeout (via AbortController)
+    // so an unreachable API fails fast with a clear error instead of hanging
+    // the panel indefinitely. Throws Error('timeout') or Error(`API <code>`).
+    const API_TIMEOUT_MS = 6000;
+    async function apiFetch(path, options = {}) {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), options.timeout || API_TIMEOUT_MS);
+      let resp;
+      try {
+        resp = await fetch(`${API_BASE}${path}`, { ...options, signal: ctrl.signal });
+      } catch (e) {
+        throw new Error(e.name === 'AbortError' ? 'timeout' : 'unreachable');
+      } finally {
+        clearTimeout(t);
+      }
+      if (!resp.ok) throw new Error(`API ${resp.status}`);
+      return resp.json();
+    }
+
+    function apiPost(path, payload) {
+      return apiFetch(path, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-      if (!resp.ok) throw new Error(`API ${resp.status}`);
-      return resp.json();
     }
 
     async function togglePin(filename, card) {
@@ -2553,15 +2570,12 @@
     const renderBackfillToggle = () => backfillToggle.classList.toggle('hidden-label', !backfillOn);
     (async () => {
       try {
-        const resp = await fetch(`${API_BASE}/api/settings`);
-        if (resp.ok) {
-          const s = await resp.json();
-          if (s.fast_pass_engine) detectorSelect.value = s.fast_pass_engine;
-          if (typeof s.deep_backfill === 'boolean') backfillOn = s.deep_backfill;
-          sweepIntervalInput.value = s.idle_sweep_seconds || 60;
-          renderBackfillToggle();
-        }
-      } catch (e) { /* API offline; controls show defaults */ }
+        const s = await apiFetch('/api/settings');
+        if (s.fast_pass_engine) detectorSelect.value = s.fast_pass_engine;
+        if (typeof s.deep_backfill === 'boolean') backfillOn = s.deep_backfill;
+        sweepIntervalInput.value = s.idle_sweep_seconds || 60;
+        renderBackfillToggle();
+      } catch (e) { /* API offline/timeout; controls show defaults */ }
     })();
     sweepIntervalInput.onchange = async (e) => {
       const v = parseInt(e.target.value, 10);
@@ -3024,10 +3038,10 @@
 
       async function loadIntegrations() {
         const statusEl = document.getElementById('slack-status');
+        statusEl.textContent = 'checking…';
+        statusEl.style.color = 'var(--text-secondary)';
         try {
-          const resp = await fetch(`${API_BASE}/api/integrations`);
-          if (!resp.ok) throw new Error('api');
-          const s = (await resp.json()).slack || {};
+          const s = (await apiFetch('/api/integrations')).slack || {};
           slackEnabled = !!s.enabled;
           renderSlackEnabled();
           document.getElementById('slack-channel').value = s.channel_id || '';
@@ -3039,7 +3053,8 @@
             : (s.enabled ? 'enabled' : 'configured (off)');
           statusEl.style.color = s.has_bot_token && s.enabled ? '#10b981' : 'var(--text-secondary)';
         } catch (e) {
-          statusEl.textContent = 'API offline';
+          statusEl.textContent = e.message === 'timeout' ? 'API not reachable (timed out)' : 'API offline';
+          statusEl.style.color = '#ef4444';
         }
       }
 
@@ -3078,14 +3093,20 @@
 
       document.getElementById('slack-test').addEventListener('click', async () => {
         showToast('Sending Slack test message...');
+        // The test reaches out to Slack server-side, so allow longer; read the
+        // body even on a 4xx (it carries the actionable {detail} hint).
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), 15000);
         try {
           const resp = await fetch(`${API_BASE}/api/integrations/test`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}'
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}', signal: ctrl.signal
           });
           const r = await resp.json();
           showToast(r.ok ? 'Slack test sent ✓' : `Slack test failed: ${r.detail || 'error'}`);
         } catch (e) {
-          showToast('Test failed - is the API running?');
+          showToast(e.name === 'AbortError' ? 'Test timed out - API/Slack not responding' : 'Test failed - is the API running?');
+        } finally {
+          clearTimeout(t);
         }
       });
 
@@ -3100,12 +3121,10 @@
       async function renderSystemPanel() {
         const el = document.getElementById('system-status-content');
         try {
-          const [statusResp, logResp] = await Promise.all([
-            fetch(`${API_BASE}/api/status`),
-            fetch(`${API_BASE}/api/inference_log`)
+          const [s, log] = await Promise.all([
+            apiFetch('/api/status'),
+            apiFetch('/api/inference_log')
           ]);
-          const s = await statusResp.json();
-          const log = await logResp.json();
           const ok = v => v ? '<span style="color:#10b981;">&#10003;</span>' : '<span style="color:#ef4444;">&#10007;</span>';
 
           // Live inference state
@@ -3142,7 +3161,9 @@
             <div style="margin-top:8px;font-weight:700;text-transform:uppercase;font-size:0.7rem;color:var(--text-secondary);border-bottom:1px solid var(--border-color);padding-bottom:3px;">AI Audit Trail</div>
             <div style="max-height:200px;overflow-y:auto;">${trail}</div>`;
         } catch (err) {
-          el.textContent = 'API offline - status unavailable.';
+          el.textContent = err.message === 'timeout'
+            ? 'API not reachable (request timed out).'
+            : 'API offline - status unavailable.';
         }
       }
 
@@ -3152,8 +3173,7 @@
         const dot = document.getElementById('ai-live-dot');
         const label = document.getElementById('ai-live-label');
         try {
-          const resp = await fetch(`${API_BASE}/api/status`);
-          const s = await resp.json();
+          const s = await apiFetch('/api/status', { timeout: 4000 });
           if (s.inference && s.inference.started) {
             dot.className = 'inferring';
             label.textContent = `AI ${fmtDur(s.inference.running_for_s)}`;
