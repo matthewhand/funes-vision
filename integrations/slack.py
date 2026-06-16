@@ -65,20 +65,23 @@ def _call(method, token, **kwargs):
     return data
 
 
-def send_test_message(cfg):
-    """Post a plain confirmation message to verify creds. Returns (ok, detail)."""
+def send_message(cfg, text):
+    """Post a plain text message (used for health alerts). Returns (ok, detail)."""
     cfg = cfg or {}
     token, channel = cfg.get("bot_token"), cfg.get("channel_id")
     if not token or not channel:
         return False, "bot_token and channel_id are required"
     try:
-        _call("chat.postMessage", token, json={
-            "channel": channel,
-            "text": ":white_check_mark: Webcam gallery connected to Slack.",
-        })
-        return True, "Test message sent"
+        _call("chat.postMessage", token, json={"channel": channel, "text": text})
+        return True, "sent"
     except Exception as e:
         return False, str(e)
+
+
+def send_test_message(cfg):
+    """Post a plain confirmation message to verify creds. Returns (ok, detail)."""
+    ok, detail = send_message(cfg, ":white_check_mark: Webcam gallery connected to Slack.")
+    return ok, ("Test message sent" if ok else detail)
 
 
 def _upload(token, path, title):

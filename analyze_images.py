@@ -328,6 +328,116 @@ def _log_retention(image_dir, count, bytes_freed):
     except OSError:
         pass
 
+ALERT_STATE = os.path.join(BASE_DIR, "alert_state.json")
+ALERT_COOLDOWN_S = 6 * 3600  # don't re-alert a persistent condition more often
+
+def _scan_dir(image_dir):
+    """Newest image mtime and total bytes for a camera dir (one scandir)."""
+    newest, total = 0.0, 0
+    try:
+        with os.scandir(image_dir) as it:
+            for e in it:
+                if not (e.is_file() and e.name.lower().endswith(('.jpg', '.jpeg', '.png', '.gif'))):
+                    continue
+                try:
+                    st = e.stat()
+                except OSError:
+                    continue
+                total += st.st_size
+                newest = max(newest, st.st_mtime)
+    except OSError:
+        pass
+    return newest, total
+
+def _recovery_text(key):
+    if key == "llm_down":
+        return "✅ Inference restored — Ollama reachable again."
+    if key == "infer_fail":
+        return "✅ Inference failures cleared."
+    if key.startswith("cam_"):
+        return f"✅ {key[4:]}: receiving frames again."
+    if key.startswith("disk_"):
+        return f"✅ {key[5:]}: storage back under budget."
+    return f"✅ Recovered: {key}"
+
+def run_health_checks(watch_dirs, can_run_local, api_key):
+    """Evaluate pipeline / camera / storage health and push DEBOUNCED Slack
+    alerts (plus recovery notices) through the integrations layer. Runs once
+    per sweep; fully guarded so it can never break the pipeline."""
+    now = time.time()
+    try:
+        offline_hours = json.load(open(_settings_path)).get("camera_offline_hours", 12)
+    except Exception:
+        offline_hours = 12
+    offline_s = offline_hours * 3600
+
+    alerts = {}
+    # Inference capability: dead if neither local nor cloud can run
+    if not can_run_local and not (ALLOW_CLOUD and api_key):
+        alerts["llm_down"] = ("⚠️ *Inference unavailable* — local Ollama is unreachable "
+                              "and no cloud fallback is configured. New images won't be analysed.")
+
+    budget = MAX_DIR_GB * 1024 ** 3
+    for d in watch_dirs:
+        if not os.path.exists(d):
+            continue
+        name = os.path.basename(d.rstrip('/'))
+        newest, total = _scan_dir(d)
+        if newest == 0 or now - newest > offline_s:
+            ago = "no frames yet" if newest == 0 else f"{int((now - newest) / 3600)}h"
+            alerts[f"cam_{name}"] = f"⚠️ *{name}*: no new frames in {ago} — camera offline?"
+        if budget and total > 0.9 * budget:
+            alerts[f"disk_{name}"] = (f"⚠️ *{name}*: storage at {int(100 * total / budget)}% "
+                                      f"of the {MAX_DIR_GB:g}GB budget — retention is deleting images.")
+
+    try:
+        log = json.load(open(INFERENCE_LOG))
+    except (OSError, ValueError):
+        log = []
+    fails = sum(1 for e in log if now - e.get("started", 0) <= 3600 and not e.get("ok"))
+    if fails >= 3:
+        alerts["infer_fail"] = f"⚠️ *{fails} inference failures* in the last hour."
+
+    try:
+        state = json.load(open(ALERT_STATE)) if os.path.exists(ALERT_STATE) else {}
+    except (ValueError, OSError):
+        state = {}
+
+    try:
+        from integrations import notify_alert
+    except Exception:
+        notify_alert = None
+
+    def send(msg):
+        if notify_alert:
+            try:
+                notify_alert(msg)
+            except Exception as e:
+                print(f"Alert send failed: {e}")
+
+    # Fire new alerts (or re-fire after the cooldown)
+    for key, msg in alerts.items():
+        prev = state.get(key, {})
+        if (not prev.get("active")) or (now - prev.get("last_fired", 0) > ALERT_COOLDOWN_S):
+            print(f"Health alert: {key}")
+            send(msg)
+            state[key] = {"active": True, "last_fired": now}
+        else:
+            state[key]["active"] = True
+
+    # Recovery: previously active, no longer tripped
+    for key, prev in list(state.items()):
+        if prev.get("active") and key not in alerts:
+            print(f"Health recovered: {key}")
+            send(_recovery_text(key))
+            state[key]["active"] = False
+
+    try:
+        with open(ALERT_STATE, "w") as f:
+            json.dump(state, f, indent=1)
+    except OSError:
+        pass
+
 def apply_retention(image_dir, analysis_data, pins):
     """Delete images to honor the age and disk budgets.
 
@@ -675,6 +785,12 @@ def main():
             del burst_data[k]
         with open(burst_file, 'w') as f: json.dump(burst_data, f, indent=2)
         print(f"Pruned {len(bad_bursts)} invalid burst entries.")
+
+    # Operational health alerts (debounced; pushed to Slack if configured)
+    try:
+        run_health_checks(watch_dirs, can_run_local, api_key)
+    except Exception as e:
+        print(f"Health check failed: {e}")
 
 if __name__ == "__main__":
     main()

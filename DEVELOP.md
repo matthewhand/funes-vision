@@ -112,10 +112,20 @@ Stdlib-only HTTP server, the single write channel (nginx mounts are ro).
 - `GET/POST /api/settings` → restricted to `MUTABLE_SETTINGS`
   (currently `fast_pass_engine`, `deep_backfill`) with value validation
 - `GET /api/integrations` → **redacted** integration config (presence of
-  tokens, never their values); `POST /api/integrations` → merge into
-  `integrations.json` (blank token fields preserve the stored secret);
-  `POST /api/integrations/test` → send a Slack test message. See
+  tokens, never their values; plus `last_delivery`); `POST /api/integrations`
+  → merge into `integrations.json` (blank token fields preserve the stored
+  secret); `POST /api/integrations/test` → send a Slack test message. See
   [Integrations](#integrations).
+- `GET /api/status` → live snapshot: trigger/LLM/queue **plus** per-camera
+  liveness (`last_frame_age_s`, `stale`) + disk (`bytes`, `budget_pct`),
+  `trigger.last_sweep_age_s`, an inference `metrics` rollup (success rate,
+  failures, local/cloud, avg + p95 latency), and last `retention` event.
+- `GET /api/health` → compact `{status: ok|degraded, checks, cameras}` for an
+  external uptime monitor (200 when ok, 503 when degraded).
+- `GET /api/events` → **SSE** stream (`text/event-stream`) emitting
+  `new-detection` / `new-burst`; sets `X-Accel-Buffering: no` so it streams
+  through the `/api/` proxy without a config change. The UI consumes it via
+  EventSource (banner + instant refresh), falling back to polling.
 API origin: the UI calls the API **same-origin at `/api/`** so there's no
 second port to expose publicly — the fronting reverse proxy maps `/api/`
 to `localhost:8190` behind its basic-auth (see Deployment). It falls back
@@ -156,6 +166,9 @@ localStorage: `webcam_ai_blacklist` (hidden labels) and
 | `pins.json` | api_server | filenames protected from retention |
 | `images.json` | create-index.sh | per-camera newest-first listing (web root only) |
 | `settings.json` | human or api_server | pipeline tunables |
+| `retention_log.json` | pipeline | deletion audit (count + bytes); gitignored, local-only |
+| `integrations_state.json` | pipeline | last Slack delivery result; gitignored, local-only |
+| `alert_state.json` | pipeline | health-alert debounce/recovery state; gitignored, local-only |
 
 `analysis.json` entry states:
 - `{"fast_pass": "negative"}` — detector saw nothing; LLM hasn't looked.
@@ -183,6 +196,20 @@ images; partials precede backfill in the queue).
 | `fast_pass_engine` | yolo | `yolo` or `haar` (UI-selectable) |
 | `deep_backfill` | true | idle LLM verification of the archive (UI-toggleable) |
 | `gate_ignore_labels` | ["car"] | labels that alone don't trigger urgent deep passes |
+| `camera_offline_hours` | 12 | no frames in this long → a Slack "camera offline?" alert |
+
+## Observability & health alerts
+
+Beyond `/api/status` + `/api/health` (above), the pipeline pushes **debounced
+Slack alerts** at the end of each sweep (`run_health_checks` in
+`analyze_images.py`) when: local Ollama is down with no cloud fallback, a
+camera has gone silent past `camera_offline_hours`, storage exceeds 90% of
+`max_dir_gb`, or ≥3 inferences failed in the last hour. State lives in
+`alert_state.json` with a 6h cooldown so a persistent condition alerts once,
+and a ✅ recovery is sent when it clears. Alerts go through the same
+integrations layer (`notify_alert`) and only fire when Slack is enabled.
+Camera-offline is intentionally conservative — motion cams are legitimately
+quiet, so the default threshold is generous and tunable.
 
 ## Integrations
 

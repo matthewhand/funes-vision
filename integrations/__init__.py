@@ -84,6 +84,24 @@ def notify_burst(burst_id, summary, frame_paths, image_dir=None):
             print(f"[integrations] slack failed: {e}")
 
 
+def notify_alert(message):
+    """Push an operational health alert (text-only) to enabled integrations.
+    Independent of notify_mode - alerts are about the pipeline, not detections.
+    Returns True if any integration accepted it."""
+    slack = load_config().get("slack") or {}
+    if not slack.get("enabled"):
+        return False
+    try:
+        from . import slack as slack_mod
+        ok, detail = slack_mod.send_message(slack, message)
+        _record_delivery("slack", "alert", ok, detail)
+        return ok
+    except Exception as e:
+        _record_delivery("slack", "alert", False, str(e))
+        print(f"[integrations] alert failed: {e}")
+        return False
+
+
 def notify_image(filename, labels, caption, image_path, image_dir=None):
     """Fan a single freshly-analyzed frame out to enabled integrations whose
     notify_mode wants per-image alerts:
