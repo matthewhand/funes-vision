@@ -124,7 +124,9 @@ def find_image(filename):
 # are quiet. Cameras only capture on motion, so "stale" is generous.
 LASTRUN_MARKER = "/tmp/webcam_analysis.lastrun"
 CAMERA_STALE_S = 6 * 3600
-SWEEP_STALE_S = 1800  # no sweep in 30 min -> pipeline likely stalled
+SWEEP_STALE_S = 3600  # no sweep in 1h (= analysis lock timeout) -> stalled.
+                      # A full both-camera catch-up sweep legitimately takes
+                      # ~45 min, so a shorter window false-degrades /api/health.
 IMG_EXTS = ('.jpg', '.jpeg', '.png', '.gif')
 
 
