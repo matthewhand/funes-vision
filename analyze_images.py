@@ -372,8 +372,11 @@ def run_health_checks(watch_dirs, can_run_local, api_key):
     offline_s = offline_hours * 3600
 
     alerts = {}
-    # Inference capability: dead if neither local nor cloud can run
-    if not can_run_local and not (ALLOW_CLOUD and api_key):
+    # Inference capability. Only a genuinely DOWN Ollama (server unreachable)
+    # with no cloud fallback is an outage. Don't alert on `can_run_local`
+    # being briefly false — that includes the free-memory gate, which flaps
+    # sweep-to-sweep and recovers on its own (false alarms otherwise).
+    if not ollama_available() and not (ALLOW_CLOUD and api_key):
         alerts["llm_down"] = ("⚠️ *Inference unavailable* — local Ollama is unreachable "
                               "and no cloud fallback is configured. New images won't be analysed.")
 
