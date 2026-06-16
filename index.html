@@ -2432,7 +2432,16 @@
       overlay.querySelector('#evp-toggle').onclick = () => timer ? pause() : play();
       // Tap the image to step a frame (pauses playback)
       imgEl.onclick = () => { pause(); idx = (idx + 1) % frames.length; show(); };
-      const close = () => { pause(); overlay.remove(); };
+      // Keyboard control while the player is open: Esc closes, arrows step
+      // frames, Space toggles playback. Removed on close so it can't leak.
+      const onKey = (e) => {
+        if (e.key === 'Escape') close();
+        else if (e.key === 'ArrowRight') { pause(); idx = (idx + 1) % frames.length; show(); }
+        else if (e.key === 'ArrowLeft') { pause(); idx = (idx - 1 + frames.length) % frames.length; show(); }
+        else if (e.key === ' ' || e.code === 'Space') { e.preventDefault(); timer ? pause() : play(); }
+      };
+      const close = () => { pause(); document.removeEventListener('keydown', onKey); overlay.remove(); };
+      document.addEventListener('keydown', onKey);
       overlay.querySelector('#evp-close').onclick = close;
       // Share the exact frame being viewed (same deep link Slack posts use)
       overlay.querySelector('#evp-share').onclick = () => shareLink('?image=' + frames[idx]);
