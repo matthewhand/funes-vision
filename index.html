@@ -3006,9 +3006,12 @@
     // Persistent live-activity indicator: accumulates as SSE events stream in
     // (so you don't miss them like a transient toast), and clears + jumps to
     // the newest frames when tapped.
+    const BASE_TITLE = document.title;
     function bumpActivity(label) {
       state.newActivity = (state.newActivity || 0) + 1;
       state.lastActivity = label;
+      // Tab badge: surfaces new activity even when this tab is backgrounded
+      document.title = `(${state.newActivity}) ${BASE_TITLE}`;
       let pill = document.getElementById('activity-pill');
       if (!pill) {
         pill = document.createElement('button');
@@ -3016,6 +3019,7 @@
         pill.style.cssText = 'position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:2500;background:#ef4444;color:#fff;border:none;border-radius:999px;padding:8px 16px;font-size:0.8rem;font-weight:600;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,0.4);';
         pill.onclick = () => {
           state.newActivity = 0;
+          document.title = BASE_TITLE;
           window.scrollTo({ top: 0, behavior: 'smooth' });
           pill.remove();
         };
