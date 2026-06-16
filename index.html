@@ -1330,6 +1330,17 @@
       #btn-manage-blacklist span,
       #btn-integrations span { display: none; }
     }
+
+    /* Accessibility: honor the OS "reduce motion" preference — kill the
+       hover-scale transforms, transitions, and smooth scrolling. */
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.001ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.001ms !important;
+        scroll-behavior: auto !important;
+      }
+    }
   </style>
 </head>
 <body>
