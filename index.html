@@ -1842,12 +1842,15 @@
       });
       sidebarList.appendChild(allItem);
       
-      // Sort and list dates
+      // Sort and list dates ("Today"/"Yesterday" prefix for the recent ones)
+      const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Australia/Sydney' });
       const sortedDates = Object.keys(dateCounts).sort().reverse();
       sortedDates.forEach(dateStr => {
         const item = document.createElement('div');
         item.className = `sidebar-item ${state.activeDateFilter === dateStr ? 'active' : ''}`;
-        item.innerHTML = `<span>${dateCounts[dateStr].label}</span><span class="count-badge">${dateCounts[dateStr].count}</span>`;
+        const rel = dayLabel(dateStr, todayStr);
+        const label = rel ? `${rel} · ${dateCounts[dateStr].label}` : dateCounts[dateStr].label;
+        item.innerHTML = `<span>${label}</span><span class="count-badge">${dateCounts[dateStr].count}</span>`;
         item.addEventListener('click', () => {
           state.activeDateFilter = dateStr;
           document.querySelectorAll('.sidebar-item').forEach(el => el.classList.remove('active'));
@@ -2285,6 +2288,18 @@
         renderNextPage();
       }
     }
+
+    // === pure:dayLabel ===
+    // 'Today'/'Yesterday'/'' for a YYYY-MM-DD vs a reference YYYY-MM-DD.
+    // (tested in tests/test_day_label.js)
+    function dayLabel(dateStr, todayStr) {
+      const re = /^\d{4}-\d{2}-\d{2}$/;
+      if (!re.test(dateStr) || !re.test(todayStr)) return '';
+      if (dateStr === todayStr) return 'Today';
+      const y = new Date(Date.parse(todayStr + 'T00:00:00Z') - 86400000).toISOString().slice(0, 10);
+      return dateStr === y ? 'Yesterday' : '';
+    }
+    // === /pure:dayLabel ===
 
     // === pure:relativeTime ===
     // Compact "Nm/h/d ago" from epoch seconds; '' for bad/future input.
