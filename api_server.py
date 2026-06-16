@@ -37,6 +37,7 @@ PORT = 8190
 MUTABLE_SETTINGS = {
     "fast_pass_engine": {"choices": ("yolo", "haar")},
     "deep_backfill": {"choices": (True, False)},
+    "deep_passes_enabled": {"choices": (True, False)},
     "idle_sweep_seconds": {"min": 15, "max": 3600},
 }
 
@@ -287,9 +288,12 @@ def health_summary():
     s = pipeline_status()
     swept = s["trigger"].get("last_sweep_age_s")
     fs = s.get("filesystem")
+    llm_on = s.get("settings", {}).get("deep_passes_enabled", True)
     checks = {
         "inotify": bool(s["trigger"]["inotify_active"]),
-        "llm_reachable": bool(s["llm"]["reachable"]),
+        # When deep passes are intentionally disabled, an unreachable LLM is
+        # expected, not degraded.
+        "llm_reachable": (not llm_on) or bool(s["llm"]["reachable"]),
         "recent_sweep": swept is not None and swept < SWEEP_STALE_S,
         "disk_space": bool(fs and fs.get("free_gb", 0) > 1.0),
     }

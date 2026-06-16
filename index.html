@@ -1466,6 +1466,10 @@
                 <option value="yolo">YOLO (recommended)</option>
                 <option value="haar">Haar cascades (legacy)</option>
               </select>
+              <div class="blacklist-item" id="deep-passes-toggle" title="Master switch for ALL Gemma analysis (priority + backfill + burst summaries). Off = detector-only, frees CPU/RAM." style="margin-top: 8px;">
+                <span>Gemma deep passes</span>
+                <div class="blacklist-status"></div>
+              </div>
               <div class="blacklist-item" id="backfill-toggle" title="When idle, run Gemma over ALL images (newest first), not just detector hits" style="margin-top: 8px;">
                 <span>Gemma backfill when idle</span>
                 <div class="blacklist-status"></div>
@@ -2632,18 +2636,33 @@
     // sweep interval)
     const detectorSelect = document.getElementById('detector-select');
     const backfillToggle = document.getElementById('backfill-toggle');
+    const deepPassesToggle = document.getElementById('deep-passes-toggle');
     const sweepIntervalInput = document.getElementById('sweep-interval-input');
     let backfillOn = true;
+    let deepPassesOn = true;
     const renderBackfillToggle = () => backfillToggle.classList.toggle('hidden-label', !backfillOn);
+    const renderDeepPassesToggle = () => deepPassesToggle.classList.toggle('hidden-label', !deepPassesOn);
     (async () => {
       try {
         const s = await apiFetch('/api/settings');
         if (s.fast_pass_engine) detectorSelect.value = s.fast_pass_engine;
         if (typeof s.deep_backfill === 'boolean') backfillOn = s.deep_backfill;
+        if (typeof s.deep_passes_enabled === 'boolean') deepPassesOn = s.deep_passes_enabled;
         sweepIntervalInput.value = s.idle_sweep_seconds || 60;
         renderBackfillToggle();
+        renderDeepPassesToggle();
       } catch (e) { /* API offline/timeout; controls show defaults */ }
     })();
+    deepPassesToggle.onclick = async () => {
+      try {
+        await apiPost('/api/settings', { deep_passes_enabled: !deepPassesOn });
+        deepPassesOn = !deepPassesOn;
+        renderDeepPassesToggle();
+        showToast(deepPassesOn ? 'Gemma deep passes ON' : 'Gemma deep passes OFF - detector-only (saves CPU/RAM)');
+      } catch (err) {
+        showToast('Failed to update - is the API service running?');
+      }
+    };
     sweepIntervalInput.onchange = async (e) => {
       const v = parseInt(e.target.value, 10);
       try {
@@ -2672,6 +2691,7 @@
       }
     };
     renderBackfillToggle();
+    renderDeepPassesToggle();
 
     async function deleteImage(filename) {
       if (!confirm(`Delete ${filename}?\nThis removes the file from the server permanently.`)) return;

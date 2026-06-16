@@ -24,6 +24,8 @@ FAST_PASS_ENGINE = "yolo"  # "yolo" (recommended) or "haar" (legacy cascades)
 YOLO_DIR = os.path.join(BASE_DIR, "models", "yolo")
 YOLO_CONF = 0.45
 DEEP_BACKFILL = True  # idle sweeps spend leftover LLM budget verifying negatives, newest first
+DEEP_PASSES_ENABLED = True  # master switch for ALL Gemma/LLM work (priority + backfill + bursts);
+                            # set false to run detector-only and free CPU/RAM
 WATCH_DIRS = []  # REQUIRED via settings.json watch_dirs - deployment specific
 # Labels that alone do NOT trigger an urgent deep pass (e.g. a car parked
 # in frame 24/7); they're recorded and verified later by the backfill.
@@ -43,6 +45,7 @@ if os.path.exists(_settings_path):
         MODEL_LOCAL = _s.get("model_local", MODEL_LOCAL)
         FAST_PASS_ENGINE = _s.get("fast_pass_engine", FAST_PASS_ENGINE)
         DEEP_BACKFILL = _s.get("deep_backfill", DEEP_BACKFILL)
+        DEEP_PASSES_ENABLED = _s.get("deep_passes_enabled", DEEP_PASSES_ENABLED)
         GATE_IGNORE_LABELS = _s.get("gate_ignore_labels", GATE_IGNORE_LABELS)
         WATCH_DIRS = _s.get("watch_dirs", WATCH_DIRS)
         YOLO_DIR = _s.get("yolo_dir", YOLO_DIR)
@@ -376,7 +379,7 @@ def run_health_checks(watch_dirs, can_run_local, api_key):
     # with no cloud fallback is an outage. Don't alert on `can_run_local`
     # being briefly false — that includes the free-memory gate, which flaps
     # sweep-to-sweep and recovers on its own (false alarms otherwise).
-    if not ollama_available() and not (ALLOW_CLOUD and api_key):
+    if DEEP_PASSES_ENABLED and not ollama_available() and not (ALLOW_CLOUD and api_key):
         alerts["llm_down"] = ("⚠️ *Inference unavailable* — local Ollama is unreachable "
                               "and no cloud fallback is configured. New images won't be analysed.")
 
@@ -546,7 +549,10 @@ def main():
 
     free_mem = get_free_mem_gb()
     can_run_local = free_mem >= MIN_MEM_FOR_LOCAL_GB and ollama_available()
-    print(f"System Check: Free Memory = {free_mem:.1f}GB. Local LLM Enabled: {can_run_local}. Cloud Enabled: {ALLOW_CLOUD}")
+    # Master gate for any LLM deep-pass/burst work this sweep
+    llm_ready = DEEP_PASSES_ENABLED and (can_run_local or (ALLOW_CLOUD and api_key))
+    print(f"System Check: Free Memory = {free_mem:.1f}GB. Local LLM Enabled: {can_run_local}. "
+          f"Cloud Enabled: {ALLOW_CLOUD}. Deep passes: {'ON' if DEEP_PASSES_ENABLED else 'OFF (detector-only)'}")
 
     for image_dir in watch_dirs:
         if not os.path.exists(image_dir): continue
@@ -604,8 +610,7 @@ def main():
                     # actually available; otherwise leave the partial in
                     # place for a later sweep instead of logging a
                     # zero-second failure.
-                    if deep_pass_count < max_deep_passes and \
-                            (can_run_local or (ALLOW_CLOUD and api_key)):
+                    if deep_pass_count < max_deep_passes and llm_ready:
                         # Stale stored labels (re-queued partials) force a
                         # fresh detector run for the consensus record
                         fresh_fp = None if was_partial else \
@@ -639,8 +644,7 @@ def main():
         # fast-pass negatives with the LLM, newest first, so the whole
         # archive eventually gets a Gemma verdict (which replaces the
         # fast-pass marker - the LLM result always trumps the detector).
-        if DEEP_BACKFILL and deep_pass_count < max_deep_passes and \
-                (can_run_local or (ALLOW_CLOUD and api_key)):
+        if DEEP_BACKFILL and deep_pass_count < max_deep_passes and llm_ready:
             def awaiting_backfill(entry):
                 if entry.get("fast_pass") == "negative":
                     return True
@@ -712,7 +716,7 @@ def main():
             # Only analyze burst if at least one image has a detection
             has_detection = any(img in analysis_data and any(v is True for k, v in analysis_data[img].items() if k != 'fast_pass') for img in burst)
             
-            if has_detection and (can_run_local or (ALLOW_CLOUD and api_key)):
+            if has_detection and llm_ready:
                 print(f"Analyzing burst ending at {burst_id}...")
                 full_paths = [os.path.join(image_dir, f) for f in burst[-3:]] # Take last 3 max
                 started = time.time()
