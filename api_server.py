@@ -233,7 +233,14 @@ def pipeline_status():
     except (OSError, ValueError):
         pass
     if inference.get("started"):
-        inference["running_for_s"] = round(time.time() - inference["started"], 1)
+        age = round(time.time() - inference["started"], 1)
+        # A real call can't outlive ~2x its 900s timeout; an older marker means
+        # the process died without clearing it -> report idle, not a phantom
+        # "Analyzing for 45m" in the UI.
+        if age > 1800:
+            inference = {}
+        else:
+            inference["running_for_s"] = age
     status["inference"] = inference
 
     status["queue"] = {
