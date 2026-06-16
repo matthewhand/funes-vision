@@ -3228,6 +3228,22 @@
               ${s.queue.unanalyzed} new &middot; ${s.queue.unverified_partials} priority &middot;
               ${s.queue.awaiting_backfill} backfill &middot; ${s.queue.llm_verified} verified
               (${s.queue.images_on_disk} on disk)</div>
+            <div><b>Last sweep:</b> ${s.trigger.last_sweep_age_s == null
+              ? '<span style="color:#ef4444;">unknown</span>'
+              : (s.trigger.last_sweep_age_s < 1800 ? fmtDur(s.trigger.last_sweep_age_s) + ' ago'
+                 : `<span style="color:#ef4444;">${fmtDur(s.trigger.last_sweep_age_s)} ago — stalled?</span>`)}</div>
+            <div style="margin-top:8px;font-weight:700;text-transform:uppercase;font-size:0.7rem;color:var(--text-secondary);border-bottom:1px solid var(--border-color);padding-bottom:3px;">Cameras</div>
+            ${(s.cameras || []).map(c => {
+              const dot = c.stale ? '<span style="color:#ef4444;">&#9679;</span>' : '<span style="color:#10b981;">&#9679;</span>';
+              const age = c.last_frame_age_s == null ? 'no frames' : fmtDur(c.last_frame_age_s) + ' ago';
+              const pct = c.budget_pct == null ? '' : ` <span style="color:${c.budget_pct > 85 ? '#ef4444' : 'inherit'};">(${c.budget_pct}%)</span>`;
+              return `<div>${dot} <b>${c.name}</b>: last frame ${age} &middot; ${(c.bytes / 1e9).toFixed(1)}GB${pct} &middot; ${c.images} imgs</div>`;
+            }).join('')}
+            <div style="margin-top:8px;font-weight:700;text-transform:uppercase;font-size:0.7rem;color:var(--text-secondary);border-bottom:1px solid var(--border-color);padding-bottom:3px;">Inference (last ${(s.metrics && s.metrics.window_min) || 60}m)</div>
+            ${s.metrics && s.metrics.count ? `
+              <div>${s.metrics.count} runs &middot; ${Math.round(s.metrics.success_rate * 100)}% ok${s.metrics.failures ? ` <span style="color:#ef4444;">(${s.metrics.failures} fail)</span>` : ''}</div>
+              <div>${s.metrics.local} local / ${s.metrics.cloud} cloud &middot; avg ${fmtDur(s.metrics.avg_s)} &middot; p95 ${fmtDur(s.metrics.p95_s)}</div>`
+              : '<div style="color:var(--text-secondary);">no inferences in window</div>'}
             <div style="margin-top:8px;font-weight:700;text-transform:uppercase;font-size:0.7rem;color:var(--text-secondary);border-bottom:1px solid var(--border-color);padding-bottom:3px;">AI Audit Trail</div>
             <div style="max-height:200px;overflow-y:auto;">${trail}</div>`;
         } catch (err) {

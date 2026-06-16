@@ -111,6 +111,74 @@ def find_image(filename):
     return None
 
 
+# Pipeline liveness: create-index.sh touches this every sweep (incl. the ~60s
+# idle loop), so a recent mtime means the pipeline is alive even when cameras
+# are quiet. Cameras only capture on motion, so "stale" is generous.
+LASTRUN_MARKER = "/tmp/webcam_analysis.lastrun"
+CAMERA_STALE_S = 6 * 3600
+SWEEP_STALE_S = 1800  # no sweep in 30 min -> pipeline likely stalled
+IMG_EXTS = ('.jpg', '.jpeg', '.png', '.gif')
+
+
+def _inference_metrics(window_s=3600):
+    """Roll up inference_log.json over the last window into health numbers."""
+    try:
+        log = json.load(open(os.path.join(BASE_DIR, "inference_log.json")))
+    except (OSError, ValueError):
+        log = []
+    now = time.time()
+    recent = [e for e in log if now - e.get("started", 0) <= window_s]
+    if not recent:
+        return {"window_min": window_s // 60, "count": 0}
+    ok = sum(1 for e in recent if e.get("ok"))
+    durs = sorted(e.get("duration_s", 0) for e in recent)
+    # OpenRouter model ids contain a '/'; local Ollama tags don't
+    cloud = sum(1 for e in recent if "/" in (e.get("model") or ""))
+    return {
+        "window_min": window_s // 60,
+        "count": len(recent),
+        "ok": ok,
+        "failures": len(recent) - ok,
+        "success_rate": round(ok / len(recent), 3),
+        "local": len(recent) - cloud,
+        "cloud": cloud,
+        "avg_s": round(sum(durs) / len(durs), 1),
+        "p95_s": round(durs[min(len(durs) - 1, int(len(durs) * 0.95))], 1),
+    }
+
+
+def _camera_stats(max_dir_gb):
+    """Per-camera liveness + disk usage (one scandir per dir)."""
+    now = time.time()
+    budget = max_dir_gb * 1024 ** 3
+    cams = []
+    for d in WATCH_DIRS:
+        newest, count, total = 0.0, 0, 0
+        try:
+            with os.scandir(d) as it:
+                for e in it:
+                    if not (e.is_file() and e.name.lower().endswith(IMG_EXTS)):
+                        continue
+                    try:
+                        st = e.stat()
+                    except OSError:
+                        continue
+                    count += 1
+                    total += st.st_size
+                    newest = max(newest, st.st_mtime)
+        except OSError:
+            pass
+        cams.append({
+            "name": os.path.basename(d.rstrip("/")),
+            "images": count,
+            "bytes": total,
+            "budget_pct": round(100 * total / budget, 1) if budget else None,
+            "last_frame_age_s": round(now - newest) if newest else None,
+            "stale": (newest == 0) or (now - newest > CAMERA_STALE_S),
+        })
+    return cams
+
+
 def pipeline_status():
     """Read-only snapshot of how the pipeline is configured and doing."""
     try:
@@ -165,7 +233,32 @@ def pipeline_status():
         "awaiting_backfill": sum(1 for v in analysis.values() if v.get("fast_pass") == "negative"),
         "llm_verified": sum(1 for v in analysis.values() if "fast_pass" not in v),
     }
+
+    # Liveness + observability
+    try:
+        status["trigger"]["last_sweep_age_s"] = round(time.time() - os.path.getmtime(LASTRUN_MARKER))
+    except OSError:
+        status["trigger"]["last_sweep_age_s"] = None
+    status["cameras"] = _camera_stats(settings.get("max_dir_gb", 4.0))
+    status["metrics"] = _inference_metrics()
     return status
+
+
+def health_summary():
+    """Compact health for an external uptime monitor: ok | degraded."""
+    s = pipeline_status()
+    swept = s["trigger"].get("last_sweep_age_s")
+    checks = {
+        "inotify": bool(s["trigger"]["inotify_active"]),
+        "llm_reachable": bool(s["llm"]["reachable"]),
+        "recent_sweep": swept is not None and swept < SWEEP_STALE_S,
+    }
+    return {
+        "status": "ok" if all(checks.values()) else "degraded",
+        "checks": checks,
+        "cameras": [{"name": c["name"], "last_frame_age_s": c["last_frame_age_s"], "stale": c["stale"]}
+                    for c in s.get("cameras", [])],
+    }
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -196,6 +289,9 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, redacted_integrations())
         elif self.path == "/api/status":
             self._send(200, pipeline_status())
+        elif self.path == "/api/health":
+            h = health_summary()
+            self._send(200 if h["status"] == "ok" else 503, h)
         elif self.path == "/api/inference_log":
             try:
                 log = json.load(open(os.path.join(BASE_DIR, "inference_log.json")))
