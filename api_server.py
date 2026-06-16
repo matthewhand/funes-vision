@@ -5,10 +5,17 @@ The gallery itself is served by read-only nginx containers, so this
 service is the single write channel. It runs on the host as the same
 user as the analysis pipeline.
 
-Endpoints (all JSON):
-  GET  /api/pins              -> ["file1.jpg", ...]
+Endpoints (JSON unless noted):
+  GET  /api/pins                  -> ["file1.jpg", ...]
   POST /api/pin    {"filename": f, "pinned": true|false}
   POST /api/delete {"filename": f}
+  GET/POST /api/settings          -> MUTABLE_SETTINGS only (validated)
+  GET/POST /api/integrations      -> redacted integration config
+  POST /api/integrations/test     -> send a Slack test message
+  GET  /api/status                -> pipeline/camera/disk/metrics snapshot
+  GET  /api/health                -> {ok|degraded} for uptime monitors (200/503)
+  GET  /api/inference_log         -> recent LLM audit trail
+  GET  /api/events                -> SSE stream: new-detection / new-burst
 """
 import json
 import os

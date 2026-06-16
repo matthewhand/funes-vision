@@ -61,7 +61,7 @@ def _record_delivery(name, kind, ok, detail):
 DEFAULT_NOTIFY_MODE = "context"
 
 
-def notify_burst(burst_id, summary, frame_paths, image_dir=None):
+def notify_burst(burst_id, summary, frame_paths):
     """Fan a new burst summary out to enabled integrations in "context" mode.
 
     Fully guarded: a misconfigured or failing integration is logged and
@@ -102,7 +102,7 @@ def notify_alert(message):
         return False
 
 
-def notify_image(filename, labels, caption, image_path, image_dir=None):
+def notify_image(filename, labels, caption, image_path):
     """Fan a single freshly-analyzed frame out to enabled integrations whose
     notify_mode wants per-image alerts:
       objects -> only when ``labels`` is non-empty (a real detection)

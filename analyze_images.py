@@ -363,7 +363,7 @@ def _recovery_text(key):
         return f"✅ {key[5:]}: storage back under budget."
     return f"✅ Recovered: {key}"
 
-def run_health_checks(watch_dirs, can_run_local, api_key):
+def run_health_checks(watch_dirs, api_key):
     """Evaluate pipeline / camera / storage health and push DEBOUNCED Slack
     alerts (plus recovery notices) through the integrations layer. Runs once
     per sweep; fully guarded so it can never break the pipeline."""
@@ -748,7 +748,7 @@ def main():
                             else os.path.join(image_dir, f)
                             for f in burst
                         ]
-                        notify_burst(burst_id, summary, frame_paths, image_dir=image_dir)
+                        notify_burst(burst_id, summary, frame_paths)
                     except Exception as e:
                         print(f"Integration notify failed: {e}")
 
@@ -795,7 +795,7 @@ def main():
 
     # Operational health alerts (debounced; pushed to Slack if configured)
     try:
-        run_health_checks(watch_dirs, can_run_local, api_key)
+        run_health_checks(watch_dirs, api_key)
     except Exception as e:
         print(f"Health check failed: {e}")
 

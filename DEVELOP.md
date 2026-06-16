@@ -209,6 +209,7 @@ images; partials precede backfill in the queue).
 | `model_local` | gemma4:12b | Ollama model tag (NOT "gemma-4:12b") |
 | `max_deep_passes` | 4 | LLM calls per camera per sweep (local+cloud) |
 | `fast_pass_engine` | yolo | `yolo` or `haar` (UI-selectable) |
+| `deep_passes_enabled` | true | master switch for ALL Gemma work (priority+backfill+bursts); false = detector-only, no LLM (UI-toggleable) |
 | `deep_backfill` | true | idle LLM verification of the archive (UI-toggleable) |
 | `gate_ignore_labels` | ["car"] | labels that alone don't trigger urgent deep passes |
 | `camera_offline_hours` | 12 | no frames in this long → a Slack "camera offline?" alert |
