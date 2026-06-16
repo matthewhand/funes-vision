@@ -2286,6 +2286,21 @@
       }
     }
 
+    // === pure:relativeTime ===
+    // Compact "Nm/h/d ago" from epoch seconds; '' for bad/future input.
+    // (tested in tests/test_relative_time.js)
+    function relativeTime(ts, now) {
+      const diff = now - ts;
+      if (!isFinite(diff) || diff < 0) return '';
+      if (diff < 45) return 'just now';
+      if (diff < 90) return '1m ago';
+      if (diff < 3600) return `${Math.round(diff / 60)}m ago`;
+      if (diff < 5400) return '1h ago';
+      if (diff < 86400) return `${Math.round(diff / 3600)}h ago`;
+      return `${Math.round(diff / 86400)}d ago`;
+    }
+    // === /pure:relativeTime ===
+
     // Caption for an analysis entry (Gemma's free-text description, if any)
     const entryCaption = (a) => (a && typeof a.description === 'string') ? a.description.trim() : '';
 
@@ -2379,6 +2394,8 @@
           ? `${v.start.meta.formattedTime} – ${v.end.meta.formattedTime}`
           : v.start.meta.formattedTime;
         const dur = v.ongoing ? 'ongoing' : visitDuration(v);
+        const endObj = (v.end.meta && v.end.meta.dateObj) ? v.end.meta.dateObj : null;
+        const ago = endObj ? relativeTime(endObj.getTime() / 1000, Date.now() / 1000) : '';
         const captionHtml = v.caption
           ? `<div style="font-size:0.75rem;color:var(--text-primary);font-style:italic;margin-top:2px;">&ldquo;${v.caption}&rdquo;</div>` : '';
         const row = document.createElement('div');
@@ -2388,7 +2405,7 @@
           <i data-lucide="${icon}" style="color:${v.ongoing ? '#f59e0b' : '#10b981'};width:20px;height:20px;flex-shrink:0;"></i>
           <div style="flex:1;min-width:0;">
             <div style="font-weight:600;"><span style="text-transform:capitalize;">${v.label}</span> visit ${v.ongoing ? '<span style="color:#f59e0b;">(ongoing)</span>' : ''}</div>
-            <div style="font-size:0.75rem;color:var(--text-secondary);">${v.start.meta.formattedDate} &middot; ${timeRange} &middot; ${dur} &middot; ${v.count} frame${v.count !== 1 ? 's' : ''}</div>
+            <div style="font-size:0.75rem;color:var(--text-secondary);">${v.start.meta.formattedDate} &middot; ${timeRange} &middot; ${dur} &middot; ${v.count} frame${v.count !== 1 ? 's' : ''}${ago ? ' &middot; ' + ago : ''}</div>
             ${captionHtml}
           </div>
           <i data-lucide="play-circle" style="width:22px;height:22px;color:var(--accent-color);flex-shrink:0;"></i>`;
