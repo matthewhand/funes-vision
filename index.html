@@ -2823,6 +2823,13 @@
       
       img.src = filename;
       title.textContent = `File Name: ${meta.original}`;
+
+      // Preload the neighbouring full-res frames so swipe/arrow nav is instant
+      const N = state.filteredImages.length;
+      if (N > 1) [index + 1, index - 1].forEach(i => {
+        const f = state.filteredImages[((i % N) + N) % N];
+        if (f && f !== filename) { const pre = new Image(); pre.src = f; }
+      });
       
       const analysis = state.analysis[filename];
       const burst = state.bursts[filename];
