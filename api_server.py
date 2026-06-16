@@ -157,6 +157,21 @@ def _inference_metrics(window_s=3600):
     }
 
 
+def _fs_stats():
+    """Free space on the filesystem hosting the images (shared with other
+    services, so worth watching independently of the per-camera budgets)."""
+    try:
+        target = WATCH_DIRS[0] if WATCH_DIRS else BASE_DIR
+        st = os.statvfs(target)
+        total = st.f_blocks * st.f_frsize
+        free = st.f_bavail * st.f_frsize
+        return {"free_gb": round(free / 1024 ** 3, 1),
+                "total_gb": round(total / 1024 ** 3, 1),
+                "used_pct": round(100 * (total - free) / total, 1) if total else None}
+    except OSError:
+        return None
+
+
 def _camera_stats(max_dir_gb):
     """Per-camera liveness + disk usage (one scandir per dir)."""
     now = time.time()
@@ -257,6 +272,7 @@ def pipeline_status():
     except OSError:
         status["trigger"]["last_sweep_age_s"] = None
     status["cameras"] = _camera_stats(settings.get("max_dir_gb", 4.0))
+    status["filesystem"] = _fs_stats()
     status["metrics"] = _inference_metrics()
     try:
         rlog = json.load(open(os.path.join(BASE_DIR, "retention_log.json")))
@@ -270,10 +286,12 @@ def health_summary():
     """Compact health for an external uptime monitor: ok | degraded."""
     s = pipeline_status()
     swept = s["trigger"].get("last_sweep_age_s")
+    fs = s.get("filesystem")
     checks = {
         "inotify": bool(s["trigger"]["inotify_active"]),
         "llm_reachable": bool(s["llm"]["reachable"]),
         "recent_sweep": swept is not None and swept < SWEEP_STALE_S,
+        "disk_space": bool(fs and fs.get("free_gb", 0) > 1.0),
     }
     return {
         "status": "ok" if all(checks.values()) else "degraded",

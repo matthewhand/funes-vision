@@ -3317,6 +3317,7 @@
               return `<div>${dot} <b>${c.name}</b>: last frame ${age} &middot; ${(c.bytes / 1e9).toFixed(1)}GB${pct} &middot; ${c.images} imgs</div>`;
             }).join('')}
             ${s.retention ? `<div style="color:var(--text-secondary);">Last cleanup: removed ${s.retention.count} img${s.retention.count !== 1 ? 's' : ''} (${(s.retention.bytes_freed / 1e6).toFixed(0)} MB) ${fmtDur(Math.max(0, Math.round(Date.now() / 1000 - s.retention.ts)))} ago</div>` : ''}
+            ${s.filesystem ? `<div style="color:${s.filesystem.free_gb < 1 ? '#ef4444' : 'var(--text-secondary)'};">Host disk: ${s.filesystem.free_gb} GB free of ${s.filesystem.total_gb} GB (${s.filesystem.used_pct}% used)</div>` : ''}
             <div style="margin-top:8px;font-weight:700;text-transform:uppercase;font-size:0.7rem;color:var(--text-secondary);border-bottom:1px solid var(--border-color);padding-bottom:3px;">Inference (last ${(s.metrics && s.metrics.window_min) || 60}m)</div>
             ${s.metrics && s.metrics.count ? `
               <div>${s.metrics.count} runs &middot; ${Math.round(s.metrics.success_rate * 100)}% ok${s.metrics.failures ? ` <span style="color:#ef4444;">(${s.metrics.failures} fail)</span>` : ''}</div>
