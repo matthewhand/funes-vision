@@ -54,8 +54,9 @@ An honest snapshot — verified against the code, not aspirational.
 - **Observability** — `/api/status`, `/api/health` (4 checks), a live inference
   audit trail, camera-liveness and disk stats.
 - **Live updates (partial)** — an SSE `/api/events` stream pushes
-  `new-detection` / `new-burst` to the open gallery (via a 3 s file-mtime
-  bridge), with graceful fallback to polling.
+  `new-detection` / `detection.preliminary` / `new-burst` to the open gallery
+  (via a 3 s file-mtime bridge), with graceful fallback to polling. Preliminary
+  (detector-only) hits surface live too — important when deep passes are off.
 - **Integrations** — Slack (image/animation + link-back, notify-mode
   context/objects/all) on a pluggable dispatcher; secrets isolated and never
   web-synced.
@@ -65,11 +66,10 @@ An honest snapshot — verified against the code, not aspirational.
 
 ### Remaining / in progress
 
-- **Live streaming, the headline pieces** — `image.new` and
-  `detection.preliminary` events, live **LLM token streaming** ("AI is looking
-  at this…" with the caption typing in), and a true pipeline→API push (today's
-  bridge is a 3 s mtime poll; the Ollama call is non-streaming). See
-  [ROADMAP.md](ROADMAP.md).
+- **Live streaming, the headline pieces** — `image.new` events, live **LLM
+  token streaming** ("AI is looking at this…" with the caption typing in), and
+  a true pipeline→API push (today's bridge is a 3 s mtime poll; the Ollama call
+  is non-streaming). `detection.preliminary` now ships; see [ROADMAP.md](ROADMAP.md).
 - **API spec** — no OpenAPI / event-schema doc yet.
 - **Browser/integration tests** — Playwright not yet incorporated (pure-logic
   helpers are covered; DOM behavior is proven via the deployed app).

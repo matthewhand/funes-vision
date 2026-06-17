@@ -17,16 +17,19 @@ piece and a true push bridge do not.
 
 - **Done.** An SSE endpoint `/api/events` (stdlib `BaseHTTPRequestHandler`,
   `text/event-stream`, `X-Accel-Buffering: no`, heartbeat) emits
-  **`new-detection`** and **`new-burst`**. The SPA subscribes once via
-  `EventSource` and falls back to polling when SSE is unsupported or the
-  connection can't be established.
+  **`new-detection`**, **`detection.preliminary`**, and **`new-burst`**. The SPA
+  subscribes once via `EventSource` and falls back to polling when SSE is
+  unsupported or the connection can't be established. (Preliminary detections
+  matter most while deep passes are off — they're the only live detections then,
+  since nothing reaches a verified verdict.)
 - **Not yet.** The bridge is a **3 s file-mtime poll** inside the API (it diffs
   `analysis.json` / `bursts.json` on change), not a pipeline→API push, so
   latency is ~3 s and there is no token-level streaming. Missing event types:
-  **`image.new`**, **`detection.preliminary`**, and the headline
-  **`analysis.llm`** live stream — the Ollama deep-pass call is currently
-  non-streaming, so surfacing "AI is looking at this…" with the caption typing
-  in remains a prerequisite sub-task.
+  **`image.new`** and the headline **`analysis.llm`** live stream — the Ollama
+  deep-pass call is currently non-streaming, so surfacing "AI is looking at
+  this…" with the caption typing in remains a prerequisite sub-task. The SPA
+  also still `loadData()`-refetches on each event rather than patching the DOM
+  incrementally.
 
 ### Why
 
@@ -65,8 +68,9 @@ just can't hear it yet.
 - [ ] New images and preliminary detections appear in the open gallery within
       ~1 s of the pipeline acting, with **no full-file refetch** (incremental
       DOM update; `analysis.json` reload becomes a fallback/reconcile, not the
-      hot path). *(Not yet: `new-detection` fires only for verified detections
-      via a ~3 s mtime bridge; no `image.new` / `detection.preliminary`.)*
+      hot path). *(Partial: `detection.preliminary` now fires (~3 s mtime
+      bridge) and wakes the gallery, but via a full `loadData()` refetch, not an
+      incremental DOM patch; `image.new` still missing.)*
 - [ ] The deep LLM pass surfaces live: start, streamed caption text, and final
       verdict — replacing the polled `inference_status.json` + the AI button's
       5 s `renderSystemPanel` poll. *(Not started; needs a streaming Ollama

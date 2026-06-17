@@ -102,6 +102,33 @@ class TestInferenceMetrics(unittest.TestCase):
             self.assertEqual(m["local"], 2)
 
 
+class TestDetectionExtract(unittest.TestCase):
+    ANALYSIS = {
+        "a.jpg": {"car": True, "fast_pass": "partial"},          # preliminary (detector only)
+        "b.jpg": {"person": True},                                # verified (LLM verdict)
+        "c.jpg": {"person": False, "fast_pass": "negative"},      # preliminary record, no true label
+        "d.jpg": {"dog": True, "_yolo": ["dog"]},                 # verified, _yolo ignored
+        "e.jpg": {"person": True, "car": True, "fast_pass": "partial"},  # preliminary, 2 labels
+        "f.jpg": {"person": False, "dog": False},                 # verified-but-empty
+    }
+
+    def test_verified_only_true_verdicts(self):
+        h = api_server.Handler
+        self.assertEqual(h._verified_detections(self.ANALYSIS),
+                         {"b.jpg": ["person"], "d.jpg": ["dog"]})
+
+    def test_preliminary_detector_only_with_labels(self):
+        h = api_server.Handler
+        self.assertEqual(h._preliminary_detections(self.ANALYSIS),
+                         {"a.jpg": ["car"], "e.jpg": ["car", "person"]})
+
+    def test_verified_and_preliminary_are_disjoint(self):
+        h = api_server.Handler
+        v = set(h._verified_detections(self.ANALYSIS))
+        p = set(h._preliminary_detections(self.ANALYSIS))
+        self.assertEqual(v & p, set())
+
+
 class TestResolveTimezone(unittest.TestCase):
     def test_env_overrides_settings(self):
         self.assertEqual(api_server.resolve_timezone("UTC", "Australia/Sydney"), "UTC")
