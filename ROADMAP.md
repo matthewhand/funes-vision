@@ -1,6 +1,7 @@
 # Roadmap
 
-Planned work for the Webcam AI Gallery. Architecture/ops reference: [DEVELOP.md](DEVELOP.md).
+Planned work for the Webcam AI Gallery. Architecture/ops reference:
+[DEVELOP.md](DEVELOP.md) · evolution & current design: [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ---
 
@@ -8,6 +9,24 @@ Planned work for the Webcam AI Gallery. Architecture/ops reference: [DEVELOP.md]
 
 **Goal.** Replace the UI's polling loop with a server→client event stream so the
 gallery updates *as things happen* — no waiting on the next sweep/poll tick.
+
+### Status (2026-06-17): partially built
+
+The transport and the first two event types exist; the headline LLM-streaming
+piece and a true push bridge do not.
+
+- **Done.** An SSE endpoint `/api/events` (stdlib `BaseHTTPRequestHandler`,
+  `text/event-stream`, `X-Accel-Buffering: no`, heartbeat) emits
+  **`new-detection`** and **`new-burst`**. The SPA subscribes once via
+  `EventSource` and falls back to polling when SSE is unsupported or the
+  connection can't be established.
+- **Not yet.** The bridge is a **3 s file-mtime poll** inside the API (it diffs
+  `analysis.json` / `bursts.json` on change), not a pipeline→API push, so
+  latency is ~3 s and there is no token-level streaming. Missing event types:
+  **`image.new`**, **`detection.preliminary`**, and the headline
+  **`analysis.llm`** live stream — the Ollama deep-pass call is currently
+  non-streaming, so surfacing "AI is looking at this…" with the caption typing
+  in remains a prerequisite sub-task.
 
 ### Why
 
@@ -40,22 +59,25 @@ just can't hear it yet.
 
 ### Acceptance criteria
 
-- [ ] A persistent stream endpoint on the host API; a client subscribes once
-      and receives all three event types with no polling.
+- [x] A persistent stream endpoint on the host API; a client subscribes once.
+      *(Done for `new-detection` / `new-burst`; still only 2 of the 3 event
+      types, and the SPA keeps polling for everything else.)*
 - [ ] New images and preliminary detections appear in the open gallery within
       ~1 s of the pipeline acting, with **no full-file refetch** (incremental
       DOM update; `analysis.json` reload becomes a fallback/reconcile, not the
-      hot path).
+      hot path). *(Not yet: `new-detection` fires only for verified detections
+      via a ~3 s mtime bridge; no `image.new` / `detection.preliminary`.)*
 - [ ] The deep LLM pass surfaces live: start, streamed caption text, and final
       verdict — replacing the polled `inference_status.json` + the AI button's
-      5 s `renderSystemPanel` poll.
-- [ ] Graceful degradation: if the stream drops or the browser lacks support,
-      the existing poll path still works (don't delete it — demote it to
-      reconnect/fallback). The ℹ status panel shows stream connected/degraded,
-      mirroring how it already reports inotify live vs. polling.
-- [ ] Survives the multi-process reality: the pipeline
+      5 s `renderSystemPanel` poll. *(Not started; needs a streaming Ollama
+      call first.)*
+- [x] Graceful degradation: if the stream drops or the browser lacks support,
+      the existing poll path still works (kept as the fallback). *(The ℹ panel
+      doesn't yet surface a distinct stream connected/degraded indicator.)*
+- [x] Survives the multi-process reality: the pipeline
       (`webcam-pipeline@`), the API (`webcam-api`), and the browser are three
-      separate processes — events must cross from pipeline → API → client.
+      separate processes. *(Satisfied via the file-based bridge — the API reads
+      the JSON files the pipeline writes; a push-based bus is still the goal.)*
 
 ### Implementation notes (decide during design)
 
