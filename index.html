@@ -2103,10 +2103,17 @@
     const effectiveLabels = (analysis) => visibleLabels(analysis, state.labelAliases, labelOpts());
 
     // --- Object filter helpers (multi-select, "match ANY") ---
+    // === pure:labelsMatchFilter ===
+    // "Match ANY": an empty/absent filter matches everything; otherwise the
+    // label set must contain at least one selected filter label. Both are Sets.
+    function labelsMatchFilter(labelsSet, filterSet) {
+      if (!filterSet || filterSet.size === 0) return true;
+      for (const l of filterSet) if (labelsSet.has(l)) return true;
+      return false;
+    }
+    // === /pure:labelsMatchFilter ===
     const objectFilterActive = () => state.objectFilters.size > 0;
-    const labelsMatchObjectFilter = (labelsSet) =>
-      state.objectFilters.size === 0 ||
-      Array.from(state.objectFilters).some(l => labelsSet.has(l));
+    const labelsMatchObjectFilter = (labelsSet) => labelsMatchFilter(labelsSet, state.objectFilters);
 
     function renderObjectFilters() {
       const detectedSet = new Set();

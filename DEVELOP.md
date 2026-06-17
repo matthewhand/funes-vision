@@ -362,8 +362,8 @@ node tests/*.js                          # SPA pure helpers (one file each)
   test extracts that block by regex and `eval`s it, so there's exactly one copy
   of the function (it ships in the page *and* is unit-tested). Covered today:
   `relativeTime`, `dayLabel`, `resolveDisplayTz`, `zonedTimeToUtc`,
-  `computeLabelStates`, `visibleLabels`, `smoothFlicker`, `formatDuration`,
-  `streamStatusText`.
+  `computeLabelStates`, `visibleLabels`, `labelsMatchFilter`, `smoothFlicker`,
+  `formatDuration`, `streamStatusText`.
 - **Inline JS sanity:** extract each `<script>` body and `node --check` it
   before deploying (catches syntax errors the single-file SPA would otherwise
   only reveal in a browser).
