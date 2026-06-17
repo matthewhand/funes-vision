@@ -129,6 +129,24 @@ class TestDetectionExtract(unittest.TestCase):
         self.assertEqual(v & p, set())
 
 
+class TestNewEntries(unittest.TestCase):
+    def test_returns_new_preserving_cur_order(self):
+        self.assertEqual(api_server.Handler._new_entries(["a", "b"], ["b", "c", "d"]), ["c", "d"])
+
+    def test_empty_prev_returns_all(self):
+        self.assertEqual(api_server.Handler._new_entries([], ["x", "y"]), ["x", "y"])
+
+    def test_no_new_returns_empty(self):
+        self.assertEqual(api_server.Handler._new_entries(["a", "b"], ["a", "b"]), [])
+
+    def test_accepts_dicts_and_sets_as_prev(self):
+        self.assertEqual(api_server.Handler._new_entries({"a": 1}, ["a", "b"]), ["b"])
+        self.assertEqual(api_server.Handler._new_entries({"a", "b"}, ["b", "c"]), ["c"])
+
+    def test_interleaved_new_keep_order(self):
+        self.assertEqual(api_server.Handler._new_entries(["a"], ["b", "a", "c"]), ["b", "c"])
+
+
 class TestResolveTimezone(unittest.TestCase):
     def test_env_overrides_settings(self):
         self.assertEqual(api_server.resolve_timezone("UTC", "Australia/Sydney"), "UTC")

@@ -3171,6 +3171,15 @@
       // Detector-only hits, before (or without) an LLM verdict — the only
       // live detections when deep passes are off. Same handling as verified.
       es.addEventListener('detection.preliminary', onDetection);
+      // A new frame was recorded (even with no detection). Refresh the grid so
+      // the All/Timeline view stays live; coalesce bursts of captures into one
+      // refresh rather than refetching per frame. No activity-pill bump — that
+      // counter is for detections, not every motion snapshot.
+      let imgRefreshTimer = null;
+      es.addEventListener('image.new', () => {
+        if (imgRefreshTimer) return;
+        imgRefreshTimer = setTimeout(() => { imgRefreshTimer = null; loadData(true); }, 1500);
+      });
       es.addEventListener('new-burst', () => {
         bumpActivity('sequence');
         loadData(true);

@@ -26,9 +26,10 @@ JSON files. Nothing talks to the internet by default.
                     Integrations (Slack…) on burst/contextual events
                                   │
  Browser ◀── index.html (SPA) ◀── api_server.py (:8190)  ── REST: pins/settings/status/health
-                          ▲           │                     SSE:  /api/events (new-detection/new-burst)
-                          └───────────┘  SSE: new-detection/detection.preliminary/new-burst
-                                          same-origin /api proxy (nginx, basic-auth, TLS)
+                          ▲           │                     SSE /api/events:
+                          │           │                       image.new / new-detection /
+                          │           │                       detection.preliminary / new-burst
+                          └───────────┘  same-origin /api proxy (nginx, basic-auth, TLS)
 ```
 
 ### The pieces
@@ -120,8 +121,8 @@ The presentation shifted from a grid of frames to a **Timeline of visits**
 (contiguous presence runs, Gemma captions, flipbook playback), made the default
 view. An **inference audit trail** and live pipeline status were added for
 observability. **SSE** (`/api/events`) began pushing
-new-detection / detection.preliminary / new-burst events to the open gallery,
+image.new / new-detection / detection.preliminary / new-burst events to the open gallery,
 and a **pluggable integrations module** (Slack first) was introduced. This is
 the current era; the remaining live-streaming work (per-image LLM token
-streaming, `image.new` events, a true pipeline→API push, incremental DOM
+streaming, a true pipeline→API push, incremental DOM
 patching) is tracked in [ROADMAP.md](ROADMAP.md).

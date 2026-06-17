@@ -15,7 +15,7 @@ Endpoints (JSON unless noted):
   GET  /api/status                -> pipeline/camera/disk/metrics snapshot
   GET  /api/health                -> {ok|degraded} for uptime monitors (200/503)
   GET  /api/inference_log         -> recent LLM audit trail
-  GET  /api/events                -> SSE stream: new-detection / detection.preliminary / new-burst
+  GET  /api/events                -> SSE stream: image.new / new-detection / detection.preliminary / new-burst
 """
 import json
 import os
@@ -366,6 +366,13 @@ class Handler(BaseHTTPRequestHandler):
 
     # --- Server-Sent Events: push new detections / bursts to the UI ---
     @staticmethod
+    def _new_entries(prev, cur):
+        """Items in `cur` not in `prev`, preserving `cur`'s order. `prev` may be
+        any container that supports `in` (list/set/dict)."""
+        prev_set = set(prev)
+        return [x for x in cur if x not in prev_set]
+
+    @staticmethod
     def _verified_detections(analysis):
         """Files carrying a final LLM verdict with at least one true label."""
         out = {}
@@ -413,6 +420,7 @@ class Handler(BaseHTTPRequestHandler):
         analysis_path = os.path.join(BASE_DIR, "analysis.json")
         bursts_path = os.path.join(BASE_DIR, "bursts.json")
         seen_det, seen_prelim, seen_bursts = {}, {}, set()
+        seen_files = set()
         a_mtime = b_mtime = -1.0
         seeded = False
         try:
@@ -429,7 +437,13 @@ class Handler(BaseHTTPRequestHandler):
                         data = {}
                     cur = self._verified_detections(data)
                     prelim = self._preliminary_detections(data)
+                    # A frame first appearing in analysis.json (right after the
+                    # fast pass) is the earliest new-frame signal the API has —
+                    # the raw inotify ingest lives in the pipeline process.
+                    new_files = self._new_entries(seen_files, list(data.keys()))
                     if seeded:
+                        for f in new_files:
+                            self._sse("image.new", {"file": f})
                         for f in cur.keys() - seen_det.keys():
                             self._sse("new-detection", {"file": f, "labels": cur[f]})
                         # Detector-only hits, surfaced before (or without) an LLM
@@ -438,6 +452,7 @@ class Handler(BaseHTTPRequestHandler):
                             self._sse("detection.preliminary", {"file": f, "labels": prelim[f]})
                     seen_det = cur
                     seen_prelim = prelim
+                    seen_files = set(data.keys())
 
                 try:
                     bmt = os.path.getmtime(bursts_path)
