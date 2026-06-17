@@ -114,3 +114,32 @@ just can't hear it yet.
 
 Authentication on the stream, multi-client backpressure tuning, and historical
 event replay — note them, defer them.
+
+---
+
+## Considered: XDG Base Directory paths (not scheduled)
+
+**Goal.** Move the server-side **control plane** off the repo checkout and onto
+XDG conventions, so secrets and mutable state aren't interleaved with source.
+
+**Scope.** Control plane only — config (`settings.json`, `integrations.json`) →
+`$XDG_CONFIG_HOME/webcam/`; server-only state (`inference_log.json`,
+`inference_status.json`, `retention_log.json`, `alert_state.json`,
+`integrations_state.json`) → `$XDG_STATE_HOME/webcam/`; `/tmp` markers →
+`$XDG_RUNTIME_DIR/webcam/`. The **data plane** (`images.json`, `analysis.json`,
+`bursts.json`, `pins.json`, `thumbs/`, JPEGs) stays in the nginx web roots —
+it's web-served and belongs with the camera data, so XDG doesn't apply.
+
+**Approach.** A shared path resolver (`env override → XDG dir → legacy
+`BASE_DIR` fallback`) imported by all three entry points (`api_server.py`,
+`analyze_images.py`, `integrations/__init__.py`) — default behaviour unchanged
+unless `XDG_*`/env is set. Then relocate config + state behind it.
+
+**Why it's only "considered".** On a single-box homelab the payoff is modest
+(mainly: secrets/state out of the checkout). The cost is real: it touches three
+processes, needs consistent env in the two systemd units, and a one-time file
+migration. It also moves `integrations.json` (secrets) and edits systemd
+(sudo), so it's a deliberate, reviewed change — not autonomous-loop work.
+`pins.json` is dual-purpose (server state **and** a web-served copy) and would
+keep a synced web-root copy. Step 1 (the resolver with legacy fallback, no
+files moved) is fully reversible and could land first.

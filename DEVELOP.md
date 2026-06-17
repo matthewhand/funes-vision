@@ -103,41 +103,25 @@ Thumbnails are deleted alongside.
 > other users' crontabs first.
 
 ### api_server.py (port 8190)
-Stdlib-only HTTP server, the single write channel (nginx mounts are ro).
-- `GET  /api/pins` → pinned filenames
-- `POST /api/pin` `{filename, pinned}` → updates pins.json (synced to
-  both web roots immediately)
-- `POST /api/delete` `{filename}` → removes image + thumbnail; filename
-  validated against the camera dirs (no path traversal)
-- `GET/POST /api/settings` → restricted to `MUTABLE_SETTINGS`
-  (`fast_pass_engine`, `deep_backfill`, `deep_passes_enabled`,
-  `idle_sweep_seconds`) with value validation
-- `GET /api/integrations` → **redacted** integration config (presence of
-  tokens, never their values; plus `last_delivery`); `POST /api/integrations`
-  → merge into `integrations.json` (blank token fields preserve the stored
-  secret); `POST /api/integrations/test` → send a Slack test message. See
-  [Integrations](#integrations).
-- `GET /api/status` → live snapshot: trigger/LLM/queue **plus** per-camera
-  liveness (`last_frame_age_s`, `stale`) + disk (`bytes`, `budget_pct`),
-  `trigger.last_sweep_age_s`, an inference `metrics` rollup (success rate,
-  failures, local/cloud, avg + p95 latency), and last `retention` event.
-- `GET /api/health` → compact `{status: ok|degraded, checks, cameras}` for an
-  external uptime monitor (200 when ok, 503 when degraded).
-- `GET /api/events` → **SSE** stream (`text/event-stream`) emitting
-  `image.new` / `detection.preliminary` / `new-detection` / `new-burst`; sets
-  `X-Accel-Buffering: no` so it streams through the `/api/` proxy without a
-  config change. The UI consumes it via EventSource (banner + instant refresh),
-  falling back to polling.
+Stdlib-only HTTP server, the single write channel (nginx mounts are ro). It
+exposes 9 routes — `pins`, `pin`, `delete`, `settings` (GET/POST), `integrations`
+(GET/POST + `/test`), `status`, `health`, `inference_log`, and the `events` SSE
+stream (`image.new` / `detection.preliminary` / `new-detection` / `new-burst`;
+`X-Accel-Buffering: no` so it survives the proxy unbuffered).
 
-Full request/response payloads and the SSE event schema live in
-[API.md](API.md).
+**Methods, request/response payloads, status codes, and the SSE event schema
+are documented once in [API.md](API.md)** — the source of truth; keep it in
+sync with the code. Two things worth repeating here: the only settings
+`POST /api/settings` will accept are `fast_pass_engine`, `deep_backfill`,
+`deep_passes_enabled`, `idle_sweep_seconds`; and `GET /api/integrations` is
+always **redacted** (token presence, never values — see [Integrations](#integrations)).
+
 API origin: the UI calls the API **same-origin at `/api/`** so there's no
-second port to expose publicly — the fronting reverse proxy maps `/api/`
-to `localhost:8190` behind its basic-auth (see Deployment). It falls back
-to `http://<host>:8190` only when the page is opened **directly** on a
-camera container (`:8180`/`:8280`, i.e. LAN/dev), where `:8190` is
-reachable. CORS is left open (harmless; same-origin needs none). Restart
-after editing: `sudo systemctl restart webcam-api`.
+second port to expose publicly — the reverse proxy maps `/api/` to
+`localhost:8190` behind its basic-auth (see Deployment), falling back to
+`http://<host>:8190` only when a page is opened **directly** on a camera
+container (`:8180`/`:8280`, i.e. LAN/dev). Restart after editing:
+`sudo systemctl restart webcam-api`.
 
 ### index.html (single-file SPA)
 No build step. Key state lives in the `state` object; persisted bits in
@@ -195,9 +179,12 @@ localStorage: `webcam_ai_blacklist` (hidden labels) and
 | `pins.json` | api_server | filenames protected from retention |
 | `images.json` | create-index.sh | per-camera newest-first listing (web root only) |
 | `settings.json` | human or api_server | pipeline tunables |
+| `inference_log.json` | pipeline | LLM audit trail (served via `/api/inference_log`); gitignored, local-only |
+| `inference_status.json` | pipeline | live "analyzing now" state; gitignored, local-only |
 | `retention_log.json` | pipeline | deletion audit (count + bytes); gitignored, local-only |
 | `integrations_state.json` | pipeline | last Slack delivery result; gitignored, local-only |
 | `alert_state.json` | pipeline | health-alert debounce/recovery state; gitignored, local-only |
+| `integrations.json` | api_server | Slack secrets; gitignored, mode 600 (see [Integrations](#integrations)) |
 
 `analysis.json` entry states:
 - `{"fast_pass": "negative"}` — detector saw nothing; LLM hasn't looked.
@@ -209,6 +196,34 @@ localStorage: `webcam_ai_blacklist` (hidden labels) and
 Flipping a verified entry back to `"fast_pass": "partial"` re-queues it
 for priority LLM re-scan (used for the one-off re-scan of mislabeled
 images; partials precede backfill in the queue).
+
+### Paths & XDG
+
+All paths today are computed relative to the script dir (`BASE_DIR =
+dirname(__file__)`, i.e. the repo checkout) or the per-camera web roots; there
+is **no** XDG Base Directory support yet. The files split into two planes:
+
+- **Data plane (browser-facing)** — `images.json`, `analysis.json`,
+  `bursts.json`, `pins.json`, `thumbs/`, and the JPEGs live in the nginx web
+  roots (`/mnt/models/Webcam2{1,2}`) because the read-only nginx containers
+  serve them straight to the SPA. These belong with the camera data, **not** a
+  user-home dir.
+- **Control plane (server-side)** — config (`settings.json`,
+  `integrations.json`) and runtime state (`inference_log.json`,
+  `inference_status.json`, `retention_log.json`, `alert_state.json`,
+  `integrations_state.json`) currently sit in the repo dir, interleaved with
+  source. Ephemeral markers (`/tmp/webcam_analysis.{lock,lastrun}`) live in `/tmp`.
+
+**XDG (considered, not scheduled).** Adopting XDG would map cleanly onto the
+*control plane only*: config → `$XDG_CONFIG_HOME/webcam/`, server-only state →
+`$XDG_STATE_HOME/webcam/`, the `/tmp` markers → `$XDG_RUNTIME_DIR/webcam/`. The
+data plane stays put. The main payoff is getting secrets + mutable state out of
+the checkout; the cost is a shared path resolver (env override → XDG → legacy
+`BASE_DIR` fallback) imported by all three entry points (`api_server.py`,
+`analyze_images.py`, `integrations/__init__.py`), consistent `XDG_*`/env in the
+two systemd units, and a one-time migration. `pins.json` is dual-purpose (server
+state **and** a web-served copy), so it would keep a synced web-root copy.
+Tracked in [ROADMAP.md](ROADMAP.md).
 
 ## settings.json reference
 
