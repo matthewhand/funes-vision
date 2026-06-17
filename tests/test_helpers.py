@@ -102,5 +102,20 @@ class TestInferenceMetrics(unittest.TestCase):
             self.assertEqual(m["local"], 2)
 
 
+class TestResolveTimezone(unittest.TestCase):
+    def test_env_overrides_settings(self):
+        self.assertEqual(api_server.resolve_timezone("UTC", "Australia/Sydney"), "UTC")
+
+    def test_settings_used_without_env(self):
+        self.assertEqual(api_server.resolve_timezone(None, "Europe/London"), "Europe/London")
+
+    def test_default_when_neither(self):
+        self.assertEqual(api_server.resolve_timezone(None, None), "Australia/Sydney")
+
+    def test_blank_values_ignored(self):
+        self.assertEqual(api_server.resolve_timezone("", "  "), "Australia/Sydney")
+        self.assertEqual(api_server.resolve_timezone("  ", "America/New_York"), "America/New_York")
+
+
 if __name__ == "__main__":
     unittest.main()

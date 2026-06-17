@@ -48,6 +48,15 @@ MUTABLE_SETTINGS = {
     "idle_sweep_seconds": {"min": 15, "max": 3600},
 }
 
+def resolve_timezone(env_val=None, settings_val=None):
+    """Display timezone resolution: WEBCAM_TZ env > settings.json `timezone`
+    > "Australia/Sydney". Blank/whitespace values are ignored."""
+    for v in (env_val, settings_val):
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    return "Australia/Sydney"
+
+
 def setting_valid(key, value):
     spec = MUTABLE_SETTINGS[key]
     if "choices" in spec:
@@ -281,6 +290,7 @@ def pipeline_status():
         status["trigger"]["last_sweep_age_s"] = None
     status["cameras"] = _camera_stats(settings.get("max_dir_gb", 4.0))
     status["filesystem"] = _fs_stats()
+    status["timezone"] = resolve_timezone(os.getenv("WEBCAM_TZ"), settings.get("timezone"))
     status["metrics"] = _inference_metrics()
     try:
         rlog = json.load(open(os.path.join(BASE_DIR, "retention_log.json")))
