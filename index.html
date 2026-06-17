@@ -2362,6 +2362,21 @@
     // Caption for an analysis entry (Gemma's free-text description, if any)
     const entryCaption = (a) => (a && typeof a.description === 'string') ? a.description.trim() : '';
 
+    // === pure:smoothFlicker ===
+    // Debounce single-frame flickers in a boolean presence series (both
+    // directions): a lone frame whose neighbours agree with each other is
+    // flipped to match them. Endpoints (first/last) are left untouched —
+    // they have only one neighbour. Mutates and returns the array.
+    function smoothFlicker(present) {
+      for (let i = 1; i < present.length - 1; i++) {
+        if (present[i] !== present[i - 1] && present[i] !== present[i + 1]) {
+          present[i] = present[i - 1];
+        }
+      }
+      return present;
+    }
+    // === /pure:smoothFlicker ===
+
     // Group each object's presence into VISITS: a contiguous run where the
     // label is present becomes one visit (start, end, duration, frames,
     // caption). Single-frame flickers are smoothed out.
@@ -2378,13 +2393,7 @@
 
       const visits = [];
       labels.forEach(label => {
-        const present = items.map(x => effectiveLabels(x.a).has(label));
-        // Debounce single-frame flickers (both directions)
-        for (let i = 1; i < present.length - 1; i++) {
-          if (present[i] !== present[i - 1] && present[i] !== present[i + 1]) {
-            present[i] = present[i - 1];
-          }
-        }
+        const present = smoothFlicker(items.map(x => effectiveLabels(x.a).has(label)));
         let i = 0;
         while (i < present.length) {
           if (!present[i]) { i++; continue; }
