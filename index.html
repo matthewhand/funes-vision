@@ -2011,25 +2011,25 @@
 
     // Render dynamic object filter buttons based on what's in analysis.json
     // Resolve a raw AI label to its canonical UI label
-    const canonicalLabel = (key) => state.labelAliases[key] || key;
-
-    // Labels the fast detector can corroborate (consensus only applies
-    // where YOLO could actually have seen the object)
-    const YOLO_CAPABLE = new Set(['person', 'car', 'cat', 'dog']);
-
-    // Detection lifecycle, per canonical label:
+    // === pure:labelStates ===
+    // Detection lifecycle, per canonical label (pure: analysis + alias map):
     //   preliminary - only the fast detector has run (awaiting Gemma)
     //   verified    - Gemma confirmed it (or the label is beyond YOLO's
     //                 classes, so consensus is impossible)
     //   disputed    - one model saw it and the other ruled it out
-    const labelStates = (analysis) => {
+    // YOLO_CAPABLE must mirror the backend's YOLO_CLASSES (analyze_images.py:
+    // person, car, bird, cat, dog) — consensus only applies where the fast
+    // detector could actually have seen the object.
+    function computeLabelStates(analysis, aliases) {
+      const YOLO_CAPABLE = new Set(['person', 'car', 'bird', 'cat', 'dog']);
+      const canon = (key) => (aliases && aliases[key]) || key;
       const states = new Map();
       if (!analysis) return states;
       const hasVerdict = !('fast_pass' in analysis); // Gemma has ruled
-      const yoloSaw = new Set((analysis._yolo || []).map(canonicalLabel));
+      const yoloSaw = new Set((analysis._yolo || []).map(canon));
       Object.entries(analysis).forEach(([key, val]) => {
         if (val !== true || key === 'fast_pass') return;
-        const label = canonicalLabel(key);
+        const label = canon(key);
         if (!hasVerdict) {
           states.set(label, 'preliminary');
         } else if (YOLO_CAPABLE.has(label) && !yoloSaw.has(label)) {
@@ -2045,7 +2045,10 @@
         });
       }
       return states;
-    };
+    }
+    // === /pure:labelStates ===
+
+    const labelStates = (analysis) => computeLabelStates(analysis, state.labelAliases);
 
     // Canonical labels visible under current settings: verified and
     // preliminary always; disputed only with "show unconfirmed" on
