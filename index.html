@@ -2050,15 +2050,31 @@
 
     const labelStates = (analysis) => computeLabelStates(analysis, state.labelAliases);
 
-    // Canonical labels visible under current settings: verified and
-    // preliminary always; disputed only with "show unconfirmed" on
-    const effectiveLabels = (analysis) => {
+    // === pure:visibleLabels ===
+    // Disputed-hiding is a PRECISION-MODE feature: 'disputed' means the two
+    // models disagreed, which only happens when Gemma deep passes run. With
+    // deep passes OFF (not precision mode) we aren't verifying, so we show
+    // every label from every inference pass. With deep passes ON, disputed
+    // labels stay hidden unless the user opts into "show unconfirmed".
+    function showDisputedLabels(opts) {
+      opts = opts || {};
+      return !opts.precisionMode || !!opts.showUnconfirmed;
+    }
+    // Canonical labels visible under current settings (verified + preliminary
+    // always; disputed per showDisputedLabels()).
+    function visibleLabels(analysis, aliases, opts) {
+      const showDisp = showDisputedLabels(opts);
       const out = new Set();
-      labelStates(analysis).forEach((st, label) => {
-        if (st !== 'disputed' || state.showUnconfirmed) out.add(label);
+      computeLabelStates(analysis, aliases).forEach((st, label) => {
+        if (st !== 'disputed' || showDisp) out.add(label);
       });
       return out;
-    };
+    }
+    // === /pure:visibleLabels ===
+
+    // Current label-visibility options from app state.
+    const labelOpts = () => ({ precisionMode: deepPassesOn, showUnconfirmed: state.showUnconfirmed });
+    const effectiveLabels = (analysis) => visibleLabels(analysis, state.labelAliases, labelOpts());
 
     // --- Object filter helpers (multi-select, "match ANY") ---
     const objectFilterActive = () => state.objectFilters.size > 0;
@@ -2588,7 +2604,7 @@
         // disputed = struck-through (only with "show unconfirmed" on)
         labelStates(analysis).forEach((st, label) => {
           if (state.blacklist.includes(label)) return;
-          if (st === 'disputed' && !state.showUnconfirmed) return;
+          if (st === 'disputed' && !showDisputedLabels(labelOpts())) return;
           let icon = 'eye';
           if (label === 'person') icon = 'user';
           if (label === 'dog') icon = 'dog';
