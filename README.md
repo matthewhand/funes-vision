@@ -63,7 +63,9 @@ An honest snapshot — verified against the code, not aspirational.
   web-synced.
 - **Configurable display timezone** — `WEBCAM_TZ` env > `settings.json` >
   `Australia/Sydney`; filename timestamps parsed **DST-aware**.
-- **Test harness** — 13 Python `unittest` + 7 Node pure-helper suites.
+- **Test harness** — stdlib Python `unittest` for backend helpers + Node
+  assert suites for the SPA's pure helpers, no third-party deps
+  (see [DEVELOP.md](DEVELOP.md#testing)).
 
 ### Remaining / in progress
 

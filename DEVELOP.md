@@ -342,6 +342,37 @@ flipbook player so they ignore the active tab/filters):
 points at one camera's gallery — per-camera URL mapping is a future
 enhancement.
 
+## Testing
+
+No third-party test deps and no build step — the same constraints as the app.
+Run both suites from the repo root:
+
+```sh
+python3 -m unittest discover -s tests   # backend pure helpers
+node tests/*.js                          # SPA pure helpers (one file each)
+```
+
+- **Python** (`tests/test_helpers.py`) imports `api_server` + the `integrations`
+  package and covers the pure logic: settings validation, timezone resolution,
+  the SSE detection/new-entry extractors, inference-metric rollups, Slack
+  error-friendliness, media sampling, delivery recording.
+- **Node** suites cover the SPA's pure helpers **without** a headless browser.
+  Each function the browser uses is wrapped in sentinel comments in
+  `index.html` — `// === pure:NAME ===` … `// === /pure:NAME ===` — and the
+  test extracts that block by regex and `eval`s it, so there's exactly one copy
+  of the function (it ships in the page *and* is unit-tested). Covered today:
+  `relativeTime`, `dayLabel`, `resolveDisplayTz`, `zonedTimeToUtc`,
+  `computeLabelStates`, `visibleLabels`, `smoothFlicker`, `formatDuration`,
+  `streamStatusText`.
+- **Inline JS sanity:** extract each `<script>` body and `node --check` it
+  before deploying (catches syntax errors the single-file SPA would otherwise
+  only reveal in a browser).
+
+**Workflow (TDD):** write/extend a failing test first (confirm RED), implement
+minimally (confirm GREEN), run both suites, then deploy/commit. DOM behaviour
+that can't be reduced to a pure helper is proven via the deployed app;
+Playwright is [considered but not yet incorporated](ROADMAP.md).
+
 ## Services & infrastructure
 
 Box-specific: paths, units, hosting, Ollama/YOLO install locations, and
