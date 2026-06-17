@@ -1725,6 +1725,27 @@
       };
     };
 
+    // Display timezone for rendering capture/inference times. The API resolves
+    // the source of truth (WEBCAM_TZ env > settings.json `timezone` > default);
+    // resolveDisplayTz() just validates the value it hands us and falls back to
+    // Australia/Sydney if absent/invalid. NOTE: filenames are always stamped in
+    // AEST (+10:00) by the cameras, so parseFilename keeps the fixed +10:00
+    // construction below; only the *display* timezone is configurable.
+    // === pure:resolveDisplayTz ===
+    function resolveDisplayTz(apiTz) {
+      const FALLBACK = 'Australia/Sydney';
+      if (typeof apiTz !== 'string' || !apiTz.trim()) return FALLBACK;
+      const tz = apiTz.trim();
+      try {
+        new Intl.DateTimeFormat('en-AU', { timeZone: tz });
+        return tz;
+      } catch (e) {
+        return FALLBACK;
+      }
+    }
+    // === /pure:resolveDisplayTz ===
+    let DISPLAY_TZ = 'Australia/Sydney';
+
     // Parse filename details - Assuming AEST (UTC+10)
     const parseFilename = (filename) => {
       const match = filename.match(/(\d+\.\d+\.\d+\.\d+)_(\d+)_(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})(\d{3})_(MOTDEC|GENERIC|.*)\.(jpg|jpeg|png|gif)/i);
@@ -1743,8 +1764,8 @@
           dateStr: `${year}-${month}-${day}`,
           timeStr: `${hour}:${min}:${sec}`,
           // Display in AEST
-          formattedDate: dateObj.toLocaleDateString('en-AU', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'Australia/Sydney' }),
-          formattedTime: dateObj.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Australia/Sydney' }),
+          formattedDate: dateObj.toLocaleDateString('en-AU', { month: 'short', day: 'numeric', year: 'numeric', timeZone: DISPLAY_TZ }),
+          formattedTime: dateObj.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: DISPLAY_TZ }),
           eventType: eventType === 'MOTDEC' ? 'Motion Detected' : eventType,
           original: filename
         };
@@ -1843,7 +1864,7 @@
       sidebarList.appendChild(allItem);
       
       // Sort and list dates ("Today"/"Yesterday" prefix for the recent ones)
-      const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Australia/Sydney' });
+      const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: DISPLAY_TZ });
       const sortedDates = Object.keys(dateCounts).sort().reverse();
       sortedDates.forEach(dateStr => {
         const item = document.createElement('div');
@@ -2685,6 +2706,21 @@
         renderDeepPassesToggle();
       } catch (e) { /* API offline/timeout; controls show defaults */ }
     })();
+
+    // Resolve the display timezone from the API (WEBCAM_TZ env > settings >
+    // default). Defaults match current behaviour, so a late/failed fetch is
+    // harmless; if it resolves to something other than the default and the
+    // timeline has already rendered, re-render so times reflect the new TZ.
+    (async () => {
+      try {
+        const st = await apiFetch('/api/status', { timeout: 4000 });
+        const tz = resolveDisplayTz(st && st.timezone);
+        if (tz !== DISPLAY_TZ) {
+          DISPLAY_TZ = tz;
+          if (state.allImages.length > 0) applyFiltersAndSearch();
+        }
+      } catch (e) { /* API offline/timeout; keep Australia/Sydney default */ }
+    })();
     deepPassesToggle.onclick = async () => {
       try {
         await apiPost('/api/settings', { deep_passes_enabled: !deepPassesOn });
@@ -3354,7 +3390,7 @@
 
           // Audit trail (last 15)
           const trail = log.slice(0, 15).map(r => {
-            const t = new Date(r.started * 1000).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', timeZone: 'Australia/Sydney' });
+            const t = new Date(r.started * 1000).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', timeZone: DISPLAY_TZ });
             const labels = r.labels.length ? r.labels.join(', ') : (r.ok ? 'clear' : '<span style="color:#ef4444;">failed</span>');
             return `<div style="padding:2px 0;border-bottom:1px solid var(--border-color);">
               ${t} &middot; <b>${labels}</b> &middot; ${fmtDur(r.duration_s)} &middot; ${r.trigger}<br>
