@@ -77,8 +77,9 @@ just can't hear it yet.
       5 s `renderSystemPanel` poll. *(Not started; needs a streaming Ollama
       call first.)*
 - [x] Graceful degradation: if the stream drops or the browser lacks support,
-      the existing poll path still works (kept as the fallback). *(The ℹ panel
-      doesn't yet surface a distinct stream connected/degraded indicator.)*
+      the existing poll path still works (kept as the fallback). The ℹ status
+      panel now shows a **Live updates: live (SSE connected) / polling (stream
+      offline)** indicator next to the inotify trigger line.
 - [x] Survives the multi-process reality: the pipeline
       (`webcam-pipeline@`), the API (`webcam-api`), and the browser are three
       separate processes. *(Satisfied via the file-based bridge — the API reads

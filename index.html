@@ -1691,6 +1691,7 @@
       showUnconfirmed: JSON.parse(localStorage.getItem('webcam_show_unconfirmed') || 'false'),
       isLive: true,         // auto-polling switch
       pollingInterval: null,
+      streamConnected: false, // SSE live? (false until 'open'; reset on error)
       lightboxIndex: -1,    // index in filteredImages
       slideshowInterval: null,
       isSlideshowPlaying: false,
@@ -3162,6 +3163,16 @@
     // the full-refetch poll to a backstop cadence. Degrades gracefully: if
     // EventSource is unsupported or the stream can't connect (e.g. a buffering
     // proxy), the regular 6s poll keeps the gallery fresh.
+    // === pure:streamStatusText ===
+    // Status-panel label for the SSE stream. Anything other than a true
+    // connection reads as degraded (we fall back to polling).
+    function streamStatusText(connected) {
+      return connected === true
+        ? { label: 'live (SSE connected)', ok: true }
+        : { label: 'polling (stream offline)', ok: false };
+    }
+    // === /pure:streamStatusText ===
+
     function startEventStream() {
       if (!window.EventSource) return;
       let es;
@@ -3170,6 +3181,7 @@
 
       es.addEventListener('open', () => {
         // SSE live -> slow the poll to a backstop (SSE handles immediacy)
+        state.streamConnected = true;
         if (state.pollingInterval) clearInterval(state.pollingInterval);
         state.pollingInterval = setInterval(() => loadData(true), 30000);
       });
@@ -3198,6 +3210,7 @@
       });
       es.onerror = () => {
         // Auto-reconnects; meanwhile make sure the responsive poll is running
+        state.streamConnected = false;
         if (!state.pollingInterval) startPolling();
       };
     }
@@ -3482,6 +3495,7 @@
           el.innerHTML = `
             <div style="margin-bottom:6px;">${inferHtml}</div>
             <div><b>New-image trigger:</b> inotify ${ok(s.trigger.inotify_active)}${s.trigger.inotify_active ? ' (instant)' : ' <span style="color:#ef4444;">not running!</span>'}</div>
+            <div><b>Live updates:</b> ${(() => { const st = streamStatusText(state.streamConnected); return `${ok(st.ok)} ${st.label}`; })()}</div>
             <div><b>Idle sweep:</b> every ${s.trigger.idle_sweep_seconds}s</div>
             <div><b>Fast detector:</b> ${(s.settings.fast_pass_engine || 'yolo').toUpperCase()}</div>
             <div><b>LLM:</b> ${s.llm.model || '?'} ${ok(s.llm.reachable)} ${s.llm.allow_cloud ? '(+cloud)' : '(local only)'}</div>
