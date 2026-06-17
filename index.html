@@ -1728,9 +1728,7 @@
     // Display timezone for rendering capture/inference times. The API resolves
     // the source of truth (WEBCAM_TZ env > settings.json `timezone` > default);
     // resolveDisplayTz() just validates the value it hands us and falls back to
-    // Australia/Sydney if absent/invalid. NOTE: filenames are always stamped in
-    // AEST (+10:00) by the cameras, so parseFilename keeps the fixed +10:00
-    // construction below; only the *display* timezone is configurable.
+    // Australia/Sydney if absent/invalid.
     // === pure:resolveDisplayTz ===
     function resolveDisplayTz(apiTz) {
       const FALLBACK = 'Australia/Sydney';
@@ -1746,14 +1744,41 @@
     // === /pure:resolveDisplayTz ===
     let DISPLAY_TZ = 'Australia/Sydney';
 
-    // Parse filename details - Assuming AEST (UTC+10)
+    // Cameras stamp filenames with their LOCAL (Sydney) wall-clock time. Sydney
+    // observes DST (AEDT +11 Oct–Apr, AEST +10 Apr–Oct), so a fixed +10:00
+    // offset drifts +1h in summer. SOURCE_TZ + zonedTimeToUtc() resolve the
+    // true UTC instant DST-aware; display then happens in DISPLAY_TZ.
+    const SOURCE_TZ = 'Australia/Sydney';
+
+    // === pure:zonedTimeToUtc ===
+    // Epoch ms for a wall-clock time (y, 1-indexed mo, d, h, mi, s) interpreted
+    // in IANA zone `tz`, DST-aware. Two-pass: guess the instant as if UTC, see
+    // what local parts that yields in tz, and correct by the resulting offset.
+    function zonedTimeToUtc(y, mo, d, h, mi, s, tz) {
+      const asUTC = Date.UTC(y, mo - 1, d, h, mi, s);
+      const dtf = new Intl.DateTimeFormat('en-US', {
+        timeZone: tz, hour12: false,
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit'
+      });
+      const p = {};
+      for (const part of dtf.formatToParts(new Date(asUTC))) p[part.type] = part.value;
+      let hr = parseInt(p.hour, 10);
+      if (hr === 24) hr = 0; // some engines render midnight as 24
+      const localAsUTC = Date.UTC(+p.year, +p.month - 1, +p.day, hr, +p.minute, +p.second);
+      return asUTC - (localAsUTC - asUTC); // subtract the zone offset at that instant
+    }
+    // === /pure:zonedTimeToUtc ===
+
+    // Parse filename details - source wall-clock is SOURCE_TZ (DST-aware)
     const parseFilename = (filename) => {
       const match = filename.match(/(\d+\.\d+\.\d+\.\d+)_(\d+)_(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})(\d{3})_(MOTDEC|GENERIC|.*)\.(jpg|jpeg|png|gif)/i);
       
       if (match) {
         const [_, ip, channel, year, month, day, hour, min, sec, ms, eventType, ext] = match;
-        // Construct ISO string forced to AEST (+10:00)
-        const dateObj = new Date(`${year}-${month}-${day}T${hour}:${min}:${sec}+10:00`);
+        // Resolve the true instant from the camera's local (SOURCE_TZ) wall-clock,
+        // DST-aware (fixes the old fixed +10:00 summer drift).
+        const dateObj = new Date(zonedTimeToUtc(+year, +month, +day, +hour, +min, +sec, SOURCE_TZ));
         const intHour = parseInt(hour, 10);
         
         return {

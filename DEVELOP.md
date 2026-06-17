@@ -153,9 +153,18 @@ localStorage: `webcam_ai_blacklist` (hidden labels) and
   time-of-day) + hourly histogram (red overlay = matching share).
 - Grid lazy-loads `thumbs/<file>` with onerror fallback to full res;
   lightbox and downloads always use full res.
-- Filenames are parsed as AEST (+10:00) and displayed in
-  Australia/Sydney. If the cameras follow DST this is off by 1h in
-  summer (parse offset is fixed).
+- Timezones: filenames carry the camera's **local wall-clock** time.
+  `SOURCE_TZ` (the camera location, `Australia/Sydney`) is the zone those
+  digits are in; `zonedTimeToUtc()` resolves the true instant **DST-aware**
+  (AEDT +11 Oct–Apr, AEST +10 Apr–Oct), so there is no longer a fixed-offset
+  summer drift. Display happens in `DISPLAY_TZ`, resolved from `/api/status`
+  → `WEBCAM_TZ` env > settings.json `timezone` > `Australia/Sydney`
+  (`resolveDisplayTz()`). With the default, displayed time equals the filename
+  digits year-round. Date grouping (`dateStr`) still uses the raw filename
+  digits, i.e. always SOURCE_TZ. To pin the zone on the API service, set
+  `WEBCAM_TZ=Australia/Sydney` in the `webcam-api` systemd unit
+  (`Environment=WEBCAM_TZ=Australia/Sydney`); until then the settings.json
+  default applies.
 
 **UI interactions (keyboard / gestures / live):**
 - Lightbox: `←`/`→` navigate, `Esc` close, `Space` slideshow, `+`/`-` zoom,
