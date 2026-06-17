@@ -2450,11 +2450,23 @@
     }
 
     // Human duration between two parsed items (same-day assumption per frame mtimes)
+    // === pure:formatDuration ===
+    // Human visit length from a span (ms) and frame count. A single frame or a
+    // non-positive span reads as "momentary"; under an hour as "N min"; an hour
+    // or more as "Xh Ym", dropping the minutes when they're zero ("2h", not
+    // "2h 0m").
+    function formatDuration(ms, count) {
+      const mins = Math.round(ms / 60000);
+      if (count <= 1 || mins <= 0) return 'momentary';
+      if (mins < 60) return `${mins} min`;
+      const h = Math.floor(mins / 60), m = mins % 60;
+      return m ? `${h}h ${m}m` : `${h}h`;
+    }
+    // === /pure:formatDuration ===
+
     const visitDuration = (v) => {
       const ms = v.end.meta.dateObj && v.start.meta.dateObj ? (v.end.meta.dateObj - v.start.meta.dateObj) : 0;
-      const mins = Math.round(ms / 60000);
-      if (v.count <= 1 || mins <= 0) return 'momentary';
-      return mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : `${mins} min`;
+      return formatDuration(ms, v.count);
     };
 
     function renderEventsView() {
