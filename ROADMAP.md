@@ -104,9 +104,10 @@ just can't hear it yet.
 - **LLM streaming.** Getting `analysis.token` requires calling Ollama with
   `stream: true` and forwarding chunks; if the current call is non-streaming,
   that's a prerequisite sub-task.
-- **API contract.** Since there's no OpenAPI spec today and this adds a
-  long-lived endpoint + an event schema, document the event types + payloads
-  (and ideally backfill the 6 existing REST endpoints into the same doc).
+- **API contract.** ✅ Done — [API.md](API.md) documents every REST endpoint's
+  request/response payloads plus the SSE event schema (event names + JSON
+  payloads + when each fires). New event types (`analysis.llm`) should be added
+  there as they ship. (A formal OpenAPI spec is still optional/deferred.)
 
 ### Out of scope (this milestone)
 

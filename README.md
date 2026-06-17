@@ -132,5 +132,6 @@ An honest snapshot — verified against the code, not aspirational.
 
 - **[ROADMAP.md](ROADMAP.md)** — what remains, in detail (the live-streaming milestone).
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** — how it fits together today, and how earlier versions looked.
+- **[API.md](API.md)** — REST endpoints + the SSE event schema (request/response payloads).
 - **[DEVELOP.md](DEVELOP.md)** — architecture, configuration, and operations reference.
 - **[DEPLOYMENT.md](DEPLOYMENT.md)** — host/service/proxy setup.

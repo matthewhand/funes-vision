@@ -110,7 +110,8 @@ Stdlib-only HTTP server, the single write channel (nginx mounts are ro).
 - `POST /api/delete` `{filename}` → removes image + thumbnail; filename
   validated against the camera dirs (no path traversal)
 - `GET/POST /api/settings` → restricted to `MUTABLE_SETTINGS`
-  (currently `fast_pass_engine`, `deep_backfill`) with value validation
+  (`fast_pass_engine`, `deep_backfill`, `deep_passes_enabled`,
+  `idle_sweep_seconds`) with value validation
 - `GET /api/integrations` → **redacted** integration config (presence of
   tokens, never their values; plus `last_delivery`); `POST /api/integrations`
   → merge into `integrations.json` (blank token fields preserve the stored
@@ -123,9 +124,13 @@ Stdlib-only HTTP server, the single write channel (nginx mounts are ro).
 - `GET /api/health` → compact `{status: ok|degraded, checks, cameras}` for an
   external uptime monitor (200 when ok, 503 when degraded).
 - `GET /api/events` → **SSE** stream (`text/event-stream`) emitting
-  `new-detection` / `new-burst`; sets `X-Accel-Buffering: no` so it streams
-  through the `/api/` proxy without a config change. The UI consumes it via
-  EventSource (banner + instant refresh), falling back to polling.
+  `image.new` / `detection.preliminary` / `new-detection` / `new-burst`; sets
+  `X-Accel-Buffering: no` so it streams through the `/api/` proxy without a
+  config change. The UI consumes it via EventSource (banner + instant refresh),
+  falling back to polling.
+
+Full request/response payloads and the SSE event schema live in
+[API.md](API.md).
 API origin: the UI calls the API **same-origin at `/api/`** so there's no
 second port to expose publicly — the fronting reverse proxy maps `/api/`
 to `localhost:8190` behind its basic-auth (see Deployment). It falls back
