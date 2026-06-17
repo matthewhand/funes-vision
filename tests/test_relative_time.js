@@ -16,6 +16,11 @@ assert.strictEqual(relativeTime(1000, 1000 + 300), '5m ago');
 assert.strictEqual(relativeTime(1000, 1000 + 3600), '1h ago');
 assert.strictEqual(relativeTime(1000, 1000 + 7200), '2h ago');
 assert.strictEqual(relativeTime(1000, 1000 + 86400 * 2), '2d ago');
+// Boundary: 23.5h–24h must NOT render the nonsensical "24h ago" — it should
+// roll over to "1d ago" (Math.round(diff/3600) hits 24 in this window).
+assert.strictEqual(relativeTime(1000, 1000 + 85000), '1d ago');   // ~23.6h
+assert.strictEqual(relativeTime(1000, 1000 + 86399), '1d ago');   // 1s shy of a day
+assert.strictEqual(relativeTime(1000, 1000 + 82800), '23h ago');  // 23h still reads in hours
 assert.strictEqual(relativeTime(NaN, 1000), '');     // bad input -> empty
 assert.strictEqual(relativeTime(2000, 1000), '');    // future -> empty (no negatives)
 
