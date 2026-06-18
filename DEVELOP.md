@@ -371,7 +371,7 @@ node tests/*.js                          # SPA pure helpers (one file each)
 **Workflow (TDD):** write/extend a failing test first (confirm RED), implement
 minimally (confirm GREEN), run both suites, then deploy/commit. DOM behaviour
 that can't be reduced to a pure helper is proven via the deployed app;
-Playwright is [considered but not yet incorporated](ROADMAP.md).
+Playwright is [considered but deferred](ROADMAP.md) (no-deps ethos + disk).
 
 ## Services & infrastructure
 

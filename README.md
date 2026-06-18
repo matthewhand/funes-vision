@@ -74,9 +74,11 @@ An honest snapshot — verified against the code, not aspirational.
   and incremental DOM updates (today's bridge is a 3 s mtime poll that triggers
   a full refetch; the Ollama call is non-streaming). `image.new` /
   `detection.preliminary` now ship; see [ROADMAP.md](ROADMAP.md).
-- **API spec** — no OpenAPI / event-schema doc yet.
-- **Browser/integration tests** — Playwright not yet incorporated (pure-logic
-  helpers are covered; DOM behavior is proven via the deployed app).
+- **API spec** — endpoints + the SSE event schema are documented in
+  [API.md](API.md); a formal OpenAPI spec is still optional/deferred.
+- **Browser/integration tests** — Playwright **deferred** (the SPA's logic is
+  covered via extracted pure helpers; DOM behavior is proven via the deployed
+  app). Rationale in [ROADMAP.md](ROADMAP.md).
 - **`WEBCAM_TZ` in the systemd unit** — not yet pinned (needs sudo); the
   `settings.json` default covers it meanwhile.
 - **Deferred by design** — stream authentication, multi-client backpressure,

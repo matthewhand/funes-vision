@@ -143,3 +143,28 @@ migration. It also moves `integrations.json` (secrets) and edits systemd
 `pins.json` is dual-purpose (server state **and** a web-served copy) and would
 keep a synced web-root copy. Step 1 (the resolver with legacy fallback, no
 files moved) is fully reversible and could land first.
+
+---
+
+## Considered: Playwright browser tests (deferred)
+
+**Goal.** Add real DOM/integration coverage that the current harness can't give
+(it tests pure helpers, not rendering, events, or navigation).
+
+**Decision: deferred.** It would add value in principle, but the cost outweighs
+it for this project right now:
+
+- **Breaks the stack's ethos.** The app and its tests are deliberately
+  dependency-free and build-free (stdlib Python + `node` asserts, no
+  `package.json`/`node_modules`). Playwright pulls in a node dependency tree +
+  a browser binary — a different maintenance model.
+- **Disk.** Playwright + a browser binary is ~0.5–1 GB, installed under the
+  user home on the **root** disk, which runs tight (it has hit ~88–96% used).
+- **Marginal added coverage.** The SPA's risky logic (timezone/DST parsing,
+  detection lifecycle, filtering, all the time/duration formatters) is already
+  extracted into pure helpers with node-assert coverage; what's left for a
+  browser is mostly layout/wiring, lower-risk and visually obvious.
+
+**Revisit when** DOM-level regressions actually bite, the project grows past one
+box, or the no-deps constraint is relaxed. Until then the harness stays
+node-assert + `unittest` + `node --check` on the inline scripts.
