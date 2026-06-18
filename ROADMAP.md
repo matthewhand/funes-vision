@@ -144,6 +144,33 @@ migration. It also moves `integrations.json` (secrets) and edits systemd
 keep a synced web-root copy. Step 1 (the resolver with legacy fallback, no
 files moved) is fully reversible and could land first.
 
+**Migration plan (prepared — do NOT execute without owner sign-off).** Concrete
+steps, in safe order:
+
+1. *Resolver (code, reversible, no files move).* Add `paths.py` exporting
+   `config_dir()` / `state_dir()` / `runtime_dir()`, each `env override → XDG
+   dir → legacy BASE_DIR`. Replace the three independent roots —
+   `api_server.py:27` and `analyze_images.py:22` (`BASE_DIR`) and
+   `integrations/__init__.py:21` (`ROOT`) — with calls to it. With no `XDG_*`
+   set, every path is byte-identical to today, so this can ship and bake first.
+2. *systemd env (needs sudo).* In `systemd/webcam-api.service` and
+   `systemd/webcam-pipeline@.service`, add under `[Service]`:
+   `Environment=XDG_CONFIG_HOME=/home/user/.config`
+   `Environment=XDG_STATE_HOME=/home/user/.local/state`
+   (or app-specific dirs). Both units must agree — they share the files.
+   `WEBCAM_TZ=Australia/Sydney` can land in the same edit.
+3. *One-time migration (touches secrets — owner runs).* `mkdir -p
+   $XDG_CONFIG_HOME/webcam $XDG_STATE_HOME/webcam`; move **config**
+   (`settings.json`, `integrations.json` — mode 600) and **state**
+   (`inference_log.json`, `inference_status.json`, `retention_log.json`,
+   `alert_state.json`, `integrations_state.json`); leave the **data plane**
+   (`analysis/bursts/images/pins.json`, `thumbs/`, JPEGs) in the web roots.
+   `pins.json` keeps its canonical copy in state **and** the synced web-root
+   copy. `/tmp/webcam_analysis.{lock,lastrun}` → `$XDG_RUNTIME_DIR/webcam/`.
+4. *Verify.* `GET /api/status` + `/api/health` unchanged; Slack secrets still
+   load; a sweep still writes state to the new dir. Roll back by clearing the
+   `XDG_*` env (resolver falls back to `BASE_DIR`).
+
 ---
 
 ## Considered: Playwright browser tests (deferred)

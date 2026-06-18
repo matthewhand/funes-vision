@@ -223,7 +223,8 @@ the checkout; the cost is a shared path resolver (env override → XDG → legac
 `analyze_images.py`, `integrations/__init__.py`), consistent `XDG_*`/env in the
 two systemd units, and a one-time migration. `pins.json` is dual-purpose (server
 state **and** a web-served copy), so it would keep a synced web-root copy.
-Tracked in [ROADMAP.md](ROADMAP.md).
+A concrete, owner-gated migration plan (resolver → systemd env → one-time file
+move → verify) lives in [ROADMAP.md](ROADMAP.md).
 
 ## settings.json reference
 
