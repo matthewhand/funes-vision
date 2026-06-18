@@ -275,19 +275,22 @@ analyze_images.py  (new burst summary)
 integrations/__init__.py   reads integrations.json, dispatches to each
         │                  enabled integration; fully guarded (a failing
         │                  notifier never escapes into the locked sweep)
-        ├─ integrations/slack.py    builds a clip + posts via Slack
+        ├─ integrations/slack.py    builds a clip + posts via Slack (uploads image)
+        ├─ integrations/ntfy.py     pushes text + a click-through link via ntfy
         └─ integrations/media.py    frames → looping GIF, MP4 fallback
 ```
 
 ### The contract (for new integrations)
-Expose `post_burst(cfg, burst_id, summary, frame_paths)` from a module in
-`integrations/`, returning `(ok, detail)` and **never raising**; then add
-an `enabled` dispatch block in `notify_burst`. `frame_paths` are local
-thumbnail paths (full-res fallback) for the burst's frames; `cfg` is that
-integration's block of `integrations.json`. **New integrations are welcome
-but must come in via PR** — keep the guard discipline (no exception may
-reach the pipeline, which holds the global lock) and the secret-handling
-rules below.
+Expose `post_burst(cfg, burst_id, summary, frame_paths)`, `post_image(cfg,
+filename, labels, caption, image_path)`, `send_message(cfg, text)` and
+`send_test_message(cfg)` from a module in `integrations/`, each returning
+`(ok, detail)` and **never raising**; then add the module name to the
+`PROVIDERS` tuple in `integrations/__init__.py` — dispatch (and per-provider
+delivery recording) is then automatic across burst/image/alert. `frame_paths`
+are local thumbnail paths (full-res fallback); `cfg` is that integration's
+block of `integrations.json`. **New integrations are welcome but must come in
+via PR** — keep the guard discipline (no exception may reach the pipeline,
+which holds the global lock) and the secret-handling rules below.
 
 ### integrations.json (secrets — NOT a synced data file)
 Lives at the repo root, **gitignored**, written `0600` by `api_server.py`,
@@ -304,9 +307,21 @@ view. Schema:
     "channel_id": "C0123ABCD",
     "public_base_url": "https://dogcam.example.org",
     "notify_mode": "context"
+  },
+  "ntfy": {
+    "enabled": false,
+    "server_url": "https://ntfy.sh",   "topic": "my-secret-topic",
+    "token": "tk_… (optional, for protected topics)",
+    "public_base_url": "https://dogcam.example.org",
+    "notify_mode": "context"
   }
 }
 ```
+
+ntfy is config-file-driven (no UI panel yet): it pushes the summary/caption as
+the message body with a **Click** link back into the gallery (needs
+`public_base_url`); unlike Slack it does **not** upload the frame. Enable by
+adding the block above and setting `enabled: true`.
 
 `notify_mode` (per integration) controls *what* triggers a post:
 - `context` (default, quietest) — only burst/sequence summaries

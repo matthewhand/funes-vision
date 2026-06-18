@@ -58,9 +58,9 @@ An honest snapshot — verified against the code, not aspirational.
   open gallery (via a 3 s file-mtime bridge), with graceful fallback to polling.
   New frames and detector-only hits surface live too — important when deep
   passes are off.
-- **Integrations** — Slack (image/animation + link-back, notify-mode
-  context/objects/all) on a pluggable dispatcher; secrets isolated and never
-  web-synced.
+- **Integrations** — Slack (image/animation + link-back) and ntfy (push +
+  click-through link) on a pluggable dispatcher (notify-mode
+  context/objects/all); secrets isolated and never web-synced.
 - **Configurable display timezone** — `WEBCAM_TZ` env > `settings.json` >
   `Australia/Sydney`; filename timestamps parsed **DST-aware**.
 - **Installable PWA** — a web app manifest makes the gallery "Add to Home

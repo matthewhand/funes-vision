@@ -15,7 +15,7 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import api_server
-from integrations import slack, media
+from integrations import slack, media, ntfy
 import integrations as intg
 
 
@@ -32,6 +32,39 @@ class TestSettingValid(unittest.TestCase):
         self.assertFalse(api_server.setting_valid("idle_sweep_seconds", 5))    # below min
         self.assertFalse(api_server.setting_valid("idle_sweep_seconds", 9999))  # above max
         self.assertFalse(api_server.setting_valid("idle_sweep_seconds", True))  # bool rejected
+
+
+class TestNtfy(unittest.TestCase):
+    def test_endpoint_default_server(self):
+        self.assertEqual(ntfy._endpoint({"topic": "home"}), "https://ntfy.sh/home")
+
+    def test_endpoint_custom_server_strips_slashes(self):
+        self.assertEqual(
+            ntfy._endpoint({"server_url": "https://n.example.com/", "topic": "/cams/"}),
+            "https://n.example.com/cams")
+
+    def test_endpoint_requires_topic(self):
+        self.assertEqual(ntfy._endpoint({}), "")
+        self.assertEqual(ntfy._endpoint({"topic": "  "}), "")
+
+    def test_deep_link(self):
+        self.assertEqual(
+            ntfy._deep_link({"public_base_url": "https://w.example/"}, "event", "b1"),
+            "https://w.example/?event=b1")
+
+    def test_deep_link_blank_without_base_or_ident(self):
+        self.assertEqual(ntfy._deep_link({}, "event", "b1"), "")
+        self.assertEqual(ntfy._deep_link({"public_base_url": "https://w.example"}, "event", ""), "")
+
+    def test_headers_compose(self):
+        h = ntfy._headers({"token": "tk"}, title="T", click="C", tags=["a", "b"])
+        self.assertEqual(h["Title"], "T")
+        self.assertEqual(h["Click"], "C")
+        self.assertEqual(h["Tags"], "a,b")
+        self.assertEqual(h["Authorization"], "Bearer tk")
+
+    def test_headers_minimal(self):
+        self.assertEqual(ntfy._headers({}), {})
 
 
 class TestFriendly(unittest.TestCase):

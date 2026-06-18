@@ -60,6 +60,20 @@ def _record_delivery(name, kind, ok, detail):
 # backfill of the historical archive (that would be a flood).
 DEFAULT_NOTIFY_MODE = "context"
 
+# Registered providers (each is a module exposing post_burst / post_image /
+# send_message / send_test_message returning (ok, detail)). Add a module here
+# and it fans out everywhere — see DEVELOP.md "The contract".
+PROVIDERS = ("slack", "ntfy")
+
+
+def _provider(name):
+    from importlib import import_module
+    return import_module(f".{name}", __package__)
+
+
+def _enabled_providers(cfg):
+    return [(n, cfg.get(n) or {}) for n in PROVIDERS if (cfg.get(n) or {}).get("enabled")]
+
 
 def notify_burst(burst_id, summary, frame_paths):
     """Fan a new burst summary out to enabled integrations in "context" mode.
@@ -70,36 +84,32 @@ def notify_burst(burst_id, summary, frame_paths):
     """
     if not summary:
         return
-    cfg = load_config()
-
-    slack = cfg.get("slack") or {}
-    if slack.get("enabled") and slack.get("notify_mode", DEFAULT_NOTIFY_MODE) == "context":
+    for name, c in _enabled_providers(load_config()):
+        if c.get("notify_mode", DEFAULT_NOTIFY_MODE) != "context":
+            continue
         try:
-            from . import slack as slack_mod
-            ok, detail = slack_mod.post_burst(slack, burst_id, summary, frame_paths)
-            _record_delivery("slack", "burst", ok, detail)
-            print(f"[integrations] slack: {detail}")
+            ok, detail = _provider(name).post_burst(c, burst_id, summary, frame_paths)
+            _record_delivery(name, "burst", ok, detail)
+            print(f"[integrations] {name}: {detail}")
         except Exception as e:
-            _record_delivery("slack", "burst", False, str(e))
-            print(f"[integrations] slack failed: {e}")
+            _record_delivery(name, "burst", False, str(e))
+            print(f"[integrations] {name} failed: {e}")
 
 
 def notify_alert(message):
     """Push an operational health alert (text-only) to enabled integrations.
     Independent of notify_mode - alerts are about the pipeline, not detections.
     Returns True if any integration accepted it."""
-    slack = load_config().get("slack") or {}
-    if not slack.get("enabled"):
-        return False
-    try:
-        from . import slack as slack_mod
-        ok, detail = slack_mod.send_message(slack, message)
-        _record_delivery("slack", "alert", ok, detail)
-        return ok
-    except Exception as e:
-        _record_delivery("slack", "alert", False, str(e))
-        print(f"[integrations] alert failed: {e}")
-        return False
+    any_ok = False
+    for name, c in _enabled_providers(load_config()):
+        try:
+            ok, detail = _provider(name).send_message(c, message)
+            _record_delivery(name, "alert", ok, detail)
+            any_ok = any_ok or ok
+        except Exception as e:
+            _record_delivery(name, "alert", False, str(e))
+            print(f"[integrations] {name} alert failed: {e}")
+    return any_ok
 
 
 def notify_image(filename, labels, caption, image_path):
@@ -110,20 +120,16 @@ def notify_image(filename, labels, caption, image_path):
     "context" mode skips per-image alerts (it uses burst summaries instead).
     Fully guarded; never raises into the pipeline.
     """
-    cfg = load_config()
-    slack = cfg.get("slack") or {}
-    if not slack.get("enabled"):
-        return
-    mode = slack.get("notify_mode", DEFAULT_NOTIFY_MODE)
-    if mode not in ("objects", "all"):
-        return
-    if mode == "objects" and not labels:
-        return
-    try:
-        from . import slack as slack_mod
-        ok, detail = slack_mod.post_image(slack, filename, labels, caption, image_path)
-        _record_delivery("slack", "image", ok, detail)
-        print(f"[integrations] slack image: {detail}")
-    except Exception as e:
-        _record_delivery("slack", "image", False, str(e))
-        print(f"[integrations] slack image failed: {e}")
+    for name, c in _enabled_providers(load_config()):
+        mode = c.get("notify_mode", DEFAULT_NOTIFY_MODE)
+        if mode not in ("objects", "all"):
+            continue
+        if mode == "objects" and not labels:
+            continue
+        try:
+            ok, detail = _provider(name).post_image(c, filename, labels, caption, image_path)
+            _record_delivery(name, "image", ok, detail)
+            print(f"[integrations] {name} image: {detail}")
+        except Exception as e:
+            _record_delivery(name, "image", False, str(e))
+            print(f"[integrations] {name} image failed: {e}")
