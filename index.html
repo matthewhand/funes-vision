@@ -2630,6 +2630,7 @@
         <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;">
           <button class="btn" id="evp-toggle" aria-label="Play or pause">Pause</button>
           <a class="btn" id="evp-full" target="_blank" aria-label="Open full resolution image">Full res</a>
+          ${frames.length > 1 ? '<button class="btn" id="evp-download" aria-label="Download this sequence as an animated GIF">Download GIF</button>' : ''}
           <button class="btn" id="evp-share" aria-label="Copy a shareable link to this frame">Copy link</button>
           <button class="btn" id="evp-close" aria-label="Close player">Close</button>
         </div>`;
@@ -2677,6 +2678,31 @@
       const close = () => { pause(); document.removeEventListener('keydown', onKey); overlay.remove(); };
       document.addEventListener('keydown', onKey);
       overlay.querySelector('#evp-close').onclick = close;
+      // Download the whole sequence as a clip (server builds it from the frames
+      // via media.py; works for any multi-frame visit). Only present when >1 frame.
+      const dlBtn = overlay.querySelector('#evp-download');
+      if (dlBtn) dlBtn.onclick = async () => {
+        const orig = dlBtn.textContent;
+        dlBtn.textContent = 'Building…'; dlBtn.disabled = true;
+        try {
+          const resp = await fetch(`${API_BASE}/api/clip`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ files: frames, format: 'gif' })
+          });
+          if (!resp.ok) throw new Error('clip ' + resp.status);
+          const blob = await resp.blob();
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = (ev.label || 'visit').toLowerCase().replace(/\s+/g, '-') + '.gif';
+          document.body.appendChild(a); a.click(); a.remove();
+          setTimeout(() => URL.revokeObjectURL(url), 4000);
+          dlBtn.textContent = orig;
+        } catch (e) {
+          dlBtn.textContent = orig;
+          showToast('Clip build failed — is the API up (and PIL installed)?');
+        } finally { dlBtn.disabled = false; }
+      };
       // Share the exact frame being viewed (same deep link Slack posts use)
       overlay.querySelector('#evp-share').onclick = () => shareLink('?image=' + frames[idx]);
       overlay.onclick = (e) => { if (e.target === overlay) close(); };

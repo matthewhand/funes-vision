@@ -71,6 +71,8 @@ An honest snapshot — verified against the code, not aspirational.
 - **Saved searches** — name the current filters (tab + objects + search +
   date + time range) and recall them as one-tap chips in the sidebar
   (localStorage, per-device).
+- **Clip export** — download any visit as an animated GIF (or MP4) from the
+  flipbook player; the server builds it on demand from the frames.
 - **Test harness** — stdlib Python `unittest` for backend helpers + Node
   assert suites for the SPA's pure helpers, no third-party deps
   (see [DEVELOP.md](DEVELOP.md#testing)).

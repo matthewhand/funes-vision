@@ -96,6 +96,18 @@ Compact health for an external uptime monitor.
 The 50 most recent LLM audit entries, newest first.
 - **200** → `[{started, ok, duration_s, model, ...}, ...]`
 
+### `POST /api/clip`
+Build and download a visit/sequence as an animated clip, on the fly (reuses the
+`integrations/media.py` builders). Read-only: each filename is validated against
+the camera dirs (no traversal) and capped at 300; the builder samples ≤24 frames.
+- **Body** `{"files": ["<name>", ...], "format": "gif" | "mp4"}` (default `gif`)
+- **200** → the clip bytes, `Content-Type: image/gif` or `video/mp4`,
+  `Content-Disposition: attachment; filename="visit.gif"`
+- **400** → `{"error": "files[] required"}`
+- **404** → `{"error": "no valid frames for that selection"}`
+- **500** → `{"error": "<fmt> build failed (ffmpeg/PIL available?)"}` (mp4 needs
+  ffmpeg; gif needs Pillow)
+
 ---
 
 ## SSE event stream

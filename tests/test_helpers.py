@@ -180,6 +180,31 @@ class TestNewEntries(unittest.TestCase):
         self.assertEqual(api_server.Handler._new_entries(["a"], ["b", "a", "c"]), ["b", "c"])
 
 
+class TestClip(unittest.TestCase):
+    def test_meta(self):
+        self.assertEqual(api_server.Handler._clip_meta("mp4"), ("mp4", "video/mp4"))
+        self.assertEqual(api_server.Handler._clip_meta("gif"), ("gif", "image/gif"))
+        self.assertEqual(api_server.Handler._clip_meta("GIF"), ("gif", "image/gif"))
+        self.assertEqual(api_server.Handler._clip_meta(None), ("gif", "image/gif"))   # default
+        self.assertEqual(api_server.Handler._clip_meta("webm"), ("gif", "image/gif")) # unknown -> gif
+
+    def test_resolve_validates_and_joins(self):
+        resolve = lambda n: "/cam" if n in ("a.jpg", "b.jpg") else None
+        self.assertEqual(
+            api_server.Handler._clip_resolve(["a.jpg", "bad.jpg", "b.jpg"], resolve),
+            ["/cam/a.jpg", "/cam/b.jpg"])
+        self.assertEqual(api_server.Handler._clip_resolve([], resolve), [])
+
+    def test_resolve_caps_count(self):
+        resolve = lambda n: "/c"
+        out = api_server.Handler._clip_resolve(["f%d.jpg" % i for i in range(500)], resolve, cap=300)
+        self.assertEqual(len(out), 300)
+
+    def test_filename_sanitised(self):
+        self.assertEqual(api_server.Handler._clip_filename("visit", "gif"), "visit.gif")
+        self.assertEqual(api_server.Handler._clip_filename("a b/c", "mp4"), "a_b_c.mp4")
+
+
 class TestResolveTimezone(unittest.TestCase):
     def test_env_overrides_settings(self):
         self.assertEqual(api_server.resolve_timezone("UTC", "Australia/Sydney"), "UTC")

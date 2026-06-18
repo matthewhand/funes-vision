@@ -19,6 +19,7 @@ Endpoints (JSON unless noted):
 """
 import json
 import os
+import re
 import subprocess
 import time
 import urllib.request
@@ -372,6 +373,71 @@ class Handler(BaseHTTPRequestHandler):
         prev_set = set(prev)
         return [x for x in cur if x not in prev_set]
 
+    # --- Clip export (download a visit as GIF/MP4) ---
+    @staticmethod
+    def _clip_meta(fmt):
+        """(extension, content-type) for the requested format; default GIF."""
+        return ("mp4", "video/mp4") if str(fmt or "").lower() == "mp4" else ("gif", "image/gif")
+
+    @staticmethod
+    def _clip_resolve(files, resolve, cap=300):
+        """Map requested filenames to existing on-disk paths via `resolve`
+        (find_image-like: name -> dir or None). Drops anything that doesn't
+        resolve (rejects path traversal / missing), preserves order, caps count."""
+        out = []
+        for name in (files or [])[:cap]:
+            d = resolve(name)
+            if d:
+                out.append(os.path.join(d, name))
+        return out
+
+    @staticmethod
+    def _clip_filename(stem, ext):
+        """Safe download filename: visit-style stem sanitised to [A-Za-z0-9_.-]."""
+        safe = re.sub(r"[^A-Za-z0-9_.-]", "_", str(stem))[:60] or "visit"
+        return f"{safe}.{ext}"
+
+    def _serve_clip(self, payload):
+        """POST /api/clip {files:[name,...], format:"gif"|"mp4"} -> the assembled
+        clip as a download. Read-only: filenames are validated against the camera
+        dirs (no traversal) and the bytes are built on the fly via media.py."""
+        files = payload.get("files") if isinstance(payload, dict) else None
+        if not isinstance(files, list) or not files:
+            self._send(400, {"error": "files[] required"})
+            return
+        ext, ctype = self._clip_meta(payload.get("format"))
+        frames = self._clip_resolve(files, find_image)
+        if not frames:
+            self._send(404, {"error": "no valid frames for that selection"})
+            return
+        import tempfile
+        from integrations import media
+        tmp = tempfile.NamedTemporaryFile(suffix="." + ext, delete=False)
+        tmp.close()
+        try:
+            built = (media.build_mp4(frames, tmp.name) if ext == "mp4"
+                     else media.build_gif(frames, tmp.name))
+            if not built or not os.path.exists(tmp.name) or os.path.getsize(tmp.name) == 0:
+                self._send(500, {"error": f"{ext} build failed (ffmpeg/PIL available?)"})
+                return
+            with open(tmp.name, "rb") as fh:
+                body = fh.read()
+            self.send_response(200)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Content-Disposition",
+                             f'attachment; filename="{self._clip_filename("visit", ext)}"')
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(body)
+        except Exception as e:
+            self._send(500, {"error": str(e)})
+        finally:
+            try:
+                os.remove(tmp.name)
+            except OSError:
+                pass
+
     @staticmethod
     def _verified_detections(analysis):
         """Files carrying a final LLM verdict with at least one true label."""
@@ -484,6 +550,10 @@ class Handler(BaseHTTPRequestHandler):
             filename = payload.get("filename", "")
         except (ValueError, json.JSONDecodeError):
             self._send(400, {"error": "bad request"})
+            return
+
+        if self.path == "/api/clip":
+            self._serve_clip(payload)
             return
 
         if self.path == "/api/settings":
