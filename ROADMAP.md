@@ -202,3 +202,104 @@ it for this project right now:
 **Revisit when** DOM-level regressions actually bite, the project grows past one
 box, or the no-deps constraint is relaxed. Until then the harness stays
 node-assert + `unittest` + `node --check` on the inline scripts.
+
+---
+
+## Live event streaming milestone — status (2026-06-18)
+
+Substantially complete. **Done:** SSE `/api/events` (image.new / detection.preliminary
+/ new-detection / new-burst), graceful fallback + a connected/degraded indicator,
+**incremental in-memory updates with no full-file refetch** (A1), and **streamed
+LLM context captions** surfaced live in the ℹ panel (A2 plumbing). **Deferred:**
+A3 (true pipeline→API push to replace the 3 s mtime bridge) — the mtime poll
+works and a thread-safe pub/sub rewrite of the live core isn't cleanly/safely
+testable autonomously; revisit when sub-second latency is actually needed.
+**Owner-gated:** live token validation + `analysis.token` SSE push need deep
+passes ON with a vision model.
+
+---
+
+## UX / Quality backlog (from the 2026-06-18 multi-agent critique)
+
+Concrete, prioritized findings from a parallel review of every surface. P1 =
+bug / broken / misleading / security; P2 = notable UX or a11y friction; P3 =
+polish. All fixes are additive, no-dep, vanilla JS/CSS. Built items are checked off.
+
+### P1 — correctness / security / blocking a11y
+- [ ] **HTML-escape all server/model strings rendered via `innerHTML`** — the ℹ
+      panel and player interpolate `inference.image`, the streamed `inference.partial`
+      caption (raw model output!), `r.image`, `r.labels`, `c.name`, visit labels
+      etc. unescaped → layout-break + stored-XSS. Add one `escapeHtml()` helper and
+      wrap every interpolated server value.
+- [ ] **Keyboard-operate the gallery** — image cards are click-only `<div>`s
+      (no `tabindex`/`role`/Enter-Space); the entire gallery is unreachable by
+      keyboard/SR. Make cards `role="button" tabindex="0"` + key handler + aria-label.
+- [ ] **Keyboard-operate the custom controls** — sidebar date items, chart bars,
+      blacklist/alias/Slack toggles, the Live toggle are click-only `<div>`s. Add
+      `role`/`tabindex`/`aria-*` + Enter-Space handlers (or convert to `<button>`).
+- [ ] **Dialog semantics + focus management** for the lightbox and flipbook player
+      — add `role="dialog" aria-modal`, move focus in on open, trap Tab, restore
+      focus to the trigger on close (currently focus escapes behind the overlay).
+- [ ] **Mobile touch targets** — card action buttons (28px) and toggle rows are
+      below the 44px minimum; bump via `@media (pointer:coarse)`.
+- [ ] **`ongoing` visit is misleading** — `end === present.length-1` marks the
+      single most-recent visit "ongoing" (amber) even if it's hours/days old. Gate
+      on recency (`now - endTs < ~10min`), else show duration + the done icon.
+- [ ] **"Show all images" doesn't clear all filters** — `empty-show-all` only
+      flips the tab; object/date/time/search stay set, so it can still show an empty
+      grid. Reset every filter + resync the controls.
+- [ ] **Player robustness** — fetch/`onerror` stale-frame closure (capture `idx`),
+      GIF-download race after close (AbortController + `overlay.isConnected` guard),
+      Space double-toggle when a button is focused.
+- [ ] **Detection badges encode meaning by colour only** — disputed/potential use
+      line-through + colour with no text equivalent; add `aria-label`/visually-hidden
+      text and verify contrast.
+
+### P2 — notable UX / a11y / correctness
+- [ ] **Cross-midnight visits** mislabel to the start date and silently cap at 60
+      frames; show both dates + a "(first 60 frames)" note.
+- [ ] **Insights stats are "loaded frames", not totals** — label them so they don't
+      contradict the on-disk count; same for busiest-hour/sparkline.
+- [ ] **Backfill bar excludes `unanalyzed`** — bar can read 100% while the Queue
+      line shows hundreds "new"; fold in or relabel.
+- [ ] **Stream "live" never goes stale** — `streamConnected` only flips on
+      open/onerror; track `lastEventTs` and show "stale (no events Ns)".
+- [ ] **Search predicate diverges** — activity charts match filename only while the
+      grid matches date/time/type/caption; extract one `matchesSearch()` for both.
+- [ ] **Reduced-motion**: the flipbook auto-plays on open regardless; gate initial
+      `play()` behind `prefers-reduced-motion`.
+- [ ] **Hidden-but-active filters** — hiding filter chips while a chip is active
+      leaves an invisible applied filter with no clear affordance; show an inline
+      "N active ✕".
+- [ ] **Object chips lack counts/contrast** — add per-label frequency counts.
+- [ ] **Search placeholder undersells** caption/label search — reword.
+- [ ] **Status panel re-renders every 5s** destroying audit-trail scroll/focus;
+      skip refresh while scrolled/hovered, or diff-update.
+- [ ] **Focus-visible** ring missing on all the custom controls (and removed on the
+      search input); add a global `:focus-visible` rule.
+- [ ] **Lightbox/player control bars overflow on phones** — allow wrap / hide
+      redundant zoom buttons under 768px.
+- [ ] **300-visit / list-view caps** silently truncate with no "showing first N"
+      notice; `stats-label` goes stale on the Timeline tab.
+- [ ] **`<img alt>` is the raw filename** everywhere — derive a human alt from
+      parsed metadata.
+
+### P3 — polish / design system
+- [ ] **Design tokens**: unify radii, a 4px spacing scale, one accent (three blues
+      today), and one badge recipe (tinted bg + bordered, like disputed/potential)
+      — replace ad-hoc per-element values with `:root` vars.
+- [ ] **`#stats-label` has no CSS rule** (renders at body default, louder than the
+      toolbar); make it `0.78rem` secondary + tabular-nums.
+- [ ] **Toast looks like a primary CTA** (solid accent); restyle as a surface
+      notification, reserve accent for the icon.
+- [ ] **`fmtDur`/`formatSeconds` cap at minutes** — emit `Hh Mm` past 3600s for
+      ages/long inferences.
+- [ ] **Status numbers** lack locale grouping; sub-1GB cameras show "0.0GB".
+- [ ] **Empty-state polish**: distinct "Analyzing…" vs "no visits" vs error; "no
+      data yet" placeholder for the all-zero sparkline; reserve red for real faults
+      (the activity pill is alarming-red for benign events).
+- [ ] **Elevation hierarchy inverted** — cards lift dramatically on hover while
+      their container panels are flat; add a subtle resting shadow, soften hover.
+
+*Build order: P1 security/correctness first (HTML-escape, ongoing, show-all), then
+the a11y cluster, then P2/P3. Each ships TDD + squash-merged.*
