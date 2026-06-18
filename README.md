@@ -65,6 +65,9 @@ An honest snapshot — verified against the code, not aspirational.
   `Australia/Sydney`; filename timestamps parsed **DST-aware**.
 - **Installable PWA** — a web app manifest makes the gallery "Add to Home
   Screen"-able (standalone, themed); no service worker, so no stale-cache risk.
+- **Insights** — the ℹ status panel shows content stats over all analysed
+  frames: total, busiest hour, a 24-hour activity sparkline, and most-seen
+  objects.
 - **Test harness** — stdlib Python `unittest` for backend helpers + Node
   assert suites for the SPA's pure helpers, no third-party deps
   (see [DEVELOP.md](DEVELOP.md#testing)).

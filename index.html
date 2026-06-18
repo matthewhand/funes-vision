@@ -3507,7 +3507,47 @@
       // === /pure:formatSeconds ===
       const fmtDur = (s) => formatSeconds(s);
 
-      // === pure:backfillProgress ===
+        // === pure:bucketByHour ===
+      // Count occurrences per hour-of-day from an array of hour ints; ignores
+      // anything outside 0..23 (e.g. -1 for unparseable). Returns length-24 array.
+      function bucketByHour(hours) {
+        const out = new Array(24).fill(0);
+        if (!Array.isArray(hours)) return out;
+        for (const h of hours) if (Number.isInteger(h) && h >= 0 && h < 24) out[h]++;
+        return out;
+      }
+      // === /pure:bucketByHour ===
+
+      // === pure:labelCounts ===
+      // Tally labels across images. Input: array of iterables (Set/array) of
+      // labels. Returns [{label, count}] sorted by count desc, then label asc.
+      function labelCounts(labelSets) {
+        const m = new Map();
+        if (Array.isArray(labelSets)) {
+          for (const set of labelSets) {
+            if (!set) continue;
+            for (const l of set) m.set(l, (m.get(l) || 0) + 1);
+          }
+        }
+        return [...m.entries()].map(([label, count]) => ({ label, count }))
+          .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+      }
+      // === /pure:labelCounts ===
+
+      // === pure:busiestHour ===
+      // Index (0-23) of the peak hour in a 24-bucket array; -1 if all zero or
+      // empty. Ties resolve to the earliest hour.
+      function busiestHour(buckets) {
+        if (!Array.isArray(buckets)) return -1;
+        let best = -1, bestV = 0;
+        for (let h = 0; h < buckets.length; h++) {
+          if (buckets[h] > bestV) { bestV = buckets[h]; best = h; }
+        }
+        return best;
+      }
+      // === /pure:busiestHour ===
+
+    // === pure:backfillProgress ===
       // Summarise the deep-analysis backlog from /api/status .queue. analyzed =
       // LLM-verified frames; pending = detector-only partials + the backfill
       // queue still awaiting a verdict. pct = analyzed/(analyzed+pending),
@@ -3550,6 +3590,22 @@
             </div>`;
           }).join('') || '<div style="color:var(--text-secondary);">No inferences logged yet.</div>';
 
+          // Insights — content aggregates over all analysed frames (cheap; uses
+          // already-loaded state). Hours come from the filename (source TZ).
+          const insHours = state.allImages.map(f => parseFilename(f).hour);
+          const insBuckets = bucketByHour(insHours);
+          const insPeak = busiestHour(insBuckets);
+          const insTotal = insHours.filter(h => h >= 0).length;
+          const insTop = labelCounts(Object.values(state.analysis).map(a => effectiveLabels(a))).slice(0, 5);
+          const insMax = Math.max(1, ...insBuckets);
+          // 24-bar hour sparkline (tallest = busiest); current behaviour-free.
+          const insSpark = insBuckets.map((c, h) =>
+            `<span title="${String(h).padStart(2, '0')}:00 — ${c}" style="display:inline-block;width:3px;margin-right:1px;height:${Math.round(2 + (c / insMax) * 16)}px;background:${h === insPeak ? '#10b981' : 'var(--border-color)'};vertical-align:bottom;"></span>`
+          ).join('');
+          const insTopHtml = insTop.length
+            ? insTop.map(t => `${t.label} ${t.count}`).join(' &middot; ')
+            : 'no detections yet';
+
           el.innerHTML = `
             <div style="margin-bottom:6px;">${inferHtml}</div>
             <div><b>New-image trigger:</b> inotify ${ok(s.trigger.inotify_active)}${s.trigger.inotify_active ? ' (instant)' : ' <span style="color:#ef4444;">not running!</span>'}</div>
@@ -3583,6 +3639,10 @@
             }).join('')}
             ${s.retention ? `<div style="color:var(--text-secondary);">Last cleanup: removed ${s.retention.count} img${s.retention.count !== 1 ? 's' : ''} (${(s.retention.bytes_freed / 1e6).toFixed(0)} MB) ${fmtDur(Math.max(0, Math.round(Date.now() / 1000 - s.retention.ts)))} ago</div>` : ''}
             ${s.filesystem ? `<div style="color:${s.filesystem.free_gb < 1 ? '#ef4444' : 'var(--text-secondary)'};">Host disk: ${s.filesystem.free_gb} GB free of ${s.filesystem.total_gb} GB (${s.filesystem.used_pct}% used)</div>` : ''}
+            <div style="margin-top:8px;font-weight:700;text-transform:uppercase;font-size:0.7rem;color:var(--text-secondary);border-bottom:1px solid var(--border-color);padding-bottom:3px;">Insights</div>
+            <div>${insTotal.toLocaleString()} frames${insPeak >= 0 ? ` &middot; busiest ${String(insPeak).padStart(2, '0')}:00` : ''}</div>
+            <div style="margin:3px 0;line-height:0;">${insSpark}</div>
+            <div><b>Most seen:</b> ${insTopHtml}</div>
             <div style="margin-top:8px;font-weight:700;text-transform:uppercase;font-size:0.7rem;color:var(--text-secondary);border-bottom:1px solid var(--border-color);padding-bottom:3px;">Inference (last ${(s.metrics && s.metrics.window_min) || 60}m)</div>
             ${s.metrics && s.metrics.count ? `
               <div>${s.metrics.count} runs &middot; ${Math.round(s.metrics.success_rate * 100)}% ok${s.metrics.failures ? ` <span style="color:#ef4444;">(${s.metrics.failures} fail)</span>` : ''}</div>
