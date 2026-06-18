@@ -1771,43 +1771,67 @@
     }
     // === /pure:zonedTimeToUtc ===
 
-    // Parse filename details - source wall-clock is SOURCE_TZ (DST-aware)
-    const parseFilename = (filename) => {
-      const match = filename.match(/(\d+\.\d+\.\d+\.\d+)_(\d+)_(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})(\d{3})_(MOTDEC|GENERIC|.*)\.(jpg|jpeg|png|gif)/i);
-      
+    // === pure:parseFilenameFields ===
+    // Pure parse of a camera filename into its fields — no Date/timezone work.
+    // Matched names yield {matched:true, ip, channel, hour, dateStr, timeStr,
+    // eventType, original, parts:[y,mo,d,h,mi,s]} (parts are numbers for the
+    // caller to resolve the instant); non-conforming names get the
+    // Unknown/Snapshot fallback (matched:false, parts:null).
+    function parseFilenameFields(filename) {
+      const match = String(filename).match(/(\d+\.\d+\.\d+\.\d+)_(\d+)_(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})(\d{3})_(MOTDEC|GENERIC|.*)\.(jpg|jpeg|png|gif)/i);
       if (match) {
-        const [_, ip, channel, year, month, day, hour, min, sec, ms, eventType, ext] = match;
-        // Resolve the true instant from the camera's local (SOURCE_TZ) wall-clock,
-        // DST-aware (fixes the old fixed +10:00 summer drift).
-        const dateObj = new Date(zonedTimeToUtc(+year, +month, +day, +hour, +min, +sec, SOURCE_TZ));
-        const intHour = parseInt(hour, 10);
-        
+        const [_, ip, channel, year, month, day, hour, min, sec, ms, eventType] = match;
         return {
+          matched: true,
           ip,
           channel,
-          dateObj,
-          hour: intHour,
+          hour: parseInt(hour, 10),
           dateStr: `${year}-${month}-${day}`,
           timeStr: `${hour}:${min}:${sec}`,
-          // Display in AEST
-          formattedDate: dateObj.toLocaleDateString('en-AU', { month: 'short', day: 'numeric', year: 'numeric', timeZone: DISPLAY_TZ }),
-          formattedTime: dateObj.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: DISPLAY_TZ }),
           eventType: eventType === 'MOTDEC' ? 'Motion Detected' : eventType,
-          original: filename
+          original: filename,
+          parts: [+year, +month, +day, +hour, +min, +sec],
         };
       }
-      
       return {
+        matched: false,
         ip: 'Unknown',
         channel: '--',
-        dateObj: null,
         hour: -1,
         dateStr: 'Unknown',
         timeStr: 'Unknown',
-        formattedDate: 'Unknown Date',
-        formattedTime: 'Unknown Time',
         eventType: 'Snapshot',
-        original: filename
+        original: filename,
+        parts: null,
+      };
+    }
+    // === /pure:parseFilenameFields ===
+
+    // Parse filename details - source wall-clock is SOURCE_TZ (DST-aware)
+    const parseFilename = (filename) => {
+      const f = parseFilenameFields(filename);
+      if (!f.matched) {
+        return {
+          ip: f.ip, channel: f.channel, dateObj: null, hour: f.hour,
+          dateStr: f.dateStr, timeStr: f.timeStr,
+          formattedDate: 'Unknown Date', formattedTime: 'Unknown Time',
+          eventType: f.eventType, original: f.original,
+        };
+      }
+      // Resolve the true instant from the camera's local (SOURCE_TZ) wall-clock,
+      // DST-aware (fixes the old fixed +10:00 summer drift); display in DISPLAY_TZ.
+      const dateObj = new Date(zonedTimeToUtc(f.parts[0], f.parts[1], f.parts[2], f.parts[3], f.parts[4], f.parts[5], SOURCE_TZ));
+      return {
+        ip: f.ip,
+        channel: f.channel,
+        dateObj,
+        hour: f.hour,
+        dateStr: f.dateStr,
+        timeStr: f.timeStr,
+        formattedDate: dateObj.toLocaleDateString('en-AU', { month: 'short', day: 'numeric', year: 'numeric', timeZone: DISPLAY_TZ }),
+        formattedTime: dateObj.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: DISPLAY_TZ }),
+        eventType: f.eventType,
+        original: f.original,
       };
     };
 
