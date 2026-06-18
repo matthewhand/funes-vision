@@ -279,6 +279,47 @@ def _ollama_chat(payload, timeout):
     raise RateLimited("LLM throttled")  # defensive; loop above normally returns/raises
 
 
+def parse_chat_chunk(line):
+    """Parse one NDJSON line of an Ollama streaming chat response into
+    (text_delta, done). Pure; a malformed line yields ("", False)."""
+    try:
+        d = json.loads(line)
+    except (ValueError, TypeError):
+        return ("", False)
+    text = (d.get("message") or {}).get("content", "") or ""
+    return (text, bool(d.get("done")))
+
+
+def _ollama_chat_stream(payload, on_delta, timeout):
+    """Stream /api/chat (stream:true), accumulating the content. Calls
+    on_delta(delta, accumulated) per chunk; returns the full text. Shares the
+    429/503 backoff + RateLimited semantics of _ollama_chat."""
+    payload = {**payload, "stream": True}
+    for attempt in range(LLM_MAX_RETRIES):
+        resp = requests.post(f"{OLLAMA_URL}/api/chat", json=payload, timeout=timeout, stream=True)
+        if resp.status_code in (429, 503):
+            if attempt == LLM_MAX_RETRIES - 1:
+                raise RateLimited(f"LLM throttled (HTTP {resp.status_code})")
+            ra = resp.headers.get("Retry-After")
+            wait = float(ra) if (ra and ra.isdigit()) else backoff_delay(attempt)
+            time.sleep(min(LLM_BACKOFF_CAP, wait) * (0.8 + 0.4 * random.random()))
+            continue
+        resp.raise_for_status()
+        full = ""
+        for line in resp.iter_lines():
+            if not line:
+                continue
+            text, done = parse_chat_chunk(line.decode("utf-8") if isinstance(line, bytes) else line)
+            if text:
+                full += text
+                if on_delta:
+                    on_delta(text, full)
+            if done:
+                break
+        return full
+    raise RateLimited("LLM throttled")  # defensive
+
+
 def analyze_image_local(image_path):
     """Vision inference via the Ollama server (local or a :cloud model)."""
     global RATE_LIMITED
@@ -308,8 +349,10 @@ def analyze_image_local(image_path):
 
 BURST_PROMPT = "These webcam frames were taken in sequence. Describe what happens across them - any people, animals, birds, vehicles, or notable changes in the scene (lighting, objects moving). Don't assume a person is the subject. If nothing meaningfully changes, say so in one sentence."
 
-def analyze_burst_local(image_paths):
-    """Burst (context) summary via the Ollama server (multi-image message)."""
+def analyze_burst_local(image_paths, on_progress=None):
+    """Burst (context) summary via the Ollama server (multi-image message),
+    STREAMED. on_progress(accumulated_text) fires as the caption builds so the
+    UI can show it live ("AI is looking at this…"). Returns the full text."""
     global RATE_LIMITED
     try:
         payload = {
@@ -319,10 +362,11 @@ def analyze_burst_local(image_paths):
                 "content": BURST_PROMPT,
                 "images": [encode_image(p) for p in image_paths],
             }],
-            "stream": False,
         }
-        response = _ollama_chat(payload, timeout=900)
-        return response.json()["message"]["content"].strip()
+        full = _ollama_chat_stream(payload,
+                                   (lambda delta, acc: on_progress(acc)) if on_progress else None,
+                                   timeout=900)
+        return full.strip() if full else None
     except RateLimited as e:
         RATE_LIMITED = True
         print(f"LLM rate-limited on burst; backing off for this sweep: {e}")
@@ -775,13 +819,18 @@ def main():
                 print(f"Analyzing burst ending at {burst_id}...")
                 full_paths = [os.path.join(image_dir, f) for f in burst[-3:]] # Take last 3 max
                 started = time.time()
-                set_inference_status({"image": burst_id, "model": MODEL_LOCAL if can_run_local else MODEL_CLOUD,
-                                      "trigger": "burst", "started": started})
+                status_base = {"image": burst_id, "model": MODEL_LOCAL if can_run_local else MODEL_CLOUD,
+                               "trigger": "burst", "started": started}
+                set_inference_status(status_base)
                 summary = None
                 used = None
                 if can_run_local and not RATE_LIMITED:
                     used = MODEL_LOCAL
-                    summary = analyze_burst_local(full_paths)
+                    # Stream the caption into inference_status.json so the UI sees
+                    # it build live (surfaced via /api/status .inference.partial).
+                    summary = analyze_burst_local(
+                        full_paths,
+                        on_progress=lambda acc: set_inference_status({**status_base, "partial": acc}))
                 if not summary and ALLOW_CLOUD and api_key:
                     used = MODEL_CLOUD
                     summary = analyze_burst_openrouter(full_paths, api_key)

@@ -74,10 +74,15 @@ just can't hear it yet.
       fallback. *(Re-renders from state rather than per-node DOM diffing — the
       costly network refetch is gone; finer node-level patching is a possible
       future optimisation.)*
-- [ ] The deep LLM pass surfaces live: start, streamed caption text, and final
-      verdict — replacing the polled `inference_status.json` + the AI button's
-      5 s `renderSystemPanel` poll. *(Not started; needs a streaming Ollama
-      call first.)*
+- [~] The deep LLM pass surfaces live: start, streamed caption text, and final
+      verdict. *(Plumbing built: the burst/context call now **streams** via
+      `_ollama_chat_stream` (stream:true), writing the building caption into
+      `inference_status.json.partial`, which `/api/status` exposes and the ℹ
+      panel shows live ("Analyzing now …" + the caption in progress). Still
+      polled at the panel's cadence, not pushed as `analysis.token` SSE events;
+      and **live validation is owner-gated** — deep passes are OFF, so this runs
+      only once Gemma/a vision model is enabled. Pure parts (`parse_chat_chunk`,
+      stream accumulation) are unit-tested against a mock.)*
 - [x] Graceful degradation: if the stream drops or the browser lacks support,
       the existing poll path still works (kept as the fallback). The ℹ status
       panel now shows a **Live updates: live (SSE connected) / polling (stream

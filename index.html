@@ -3765,6 +3765,10 @@
           if (s.inference && s.inference.started) {
             inferHtml = `<span style="color:#f59e0b;">&#9679;</span> <b>Analyzing now:</b> ${s.inference.image}<br>
               &nbsp;&nbsp;${s.inference.model} &middot; ${s.inference.trigger} &middot; running ${fmtDur(s.inference.running_for_s)}`;
+            // Live caption building as the LLM streams it ("AI is looking at this…")
+            if (s.inference.partial) {
+              inferHtml += `<br>&nbsp;&nbsp;<span style="color:var(--text-secondary);font-style:italic;">“${s.inference.partial}”</span>`;
+            }
           } else {
             inferHtml = `<span style="color:#10b981;">&#9679;</span> <b>Inference:</b> idle`;
           }

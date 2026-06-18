@@ -49,6 +49,38 @@ class TestBackoff(unittest.TestCase):
         self.assertGreaterEqual(analyze_images.backoff_delay(0), 0.0)
 
 
+class TestChatStream(unittest.TestCase):
+    def test_parse_chat_chunk(self):
+        self.assertEqual(analyze_images.parse_chat_chunk('{"message":{"content":"Hi"},"done":false}'), ("Hi", False))
+        self.assertEqual(analyze_images.parse_chat_chunk('{"message":{"content":" there"},"done":true}'), (" there", True))
+        self.assertEqual(analyze_images.parse_chat_chunk('{"done":true}'), ("", True))
+        self.assertEqual(analyze_images.parse_chat_chunk('not json'), ("", False))
+        self.assertEqual(analyze_images.parse_chat_chunk('{}'), ("", False))
+
+    def test_stream_accumulates_and_calls_back(self):
+        ai = analyze_images
+        lines = [b'{"message":{"content":"Hello"},"done":false}',
+                 b'{"message":{"content":" world"},"done":false}',
+                 b'',  # blank line ignored
+                 b'{"message":{"content":"!"},"done":true}']
+
+        class FakeResp:
+            status_code = 200
+            def raise_for_status(self): pass
+            def iter_lines(self): return iter(lines)
+
+        orig = ai.requests.post
+        ai.requests.post = lambda *a, **k: FakeResp()
+        deltas = []
+        try:
+            full = ai._ollama_chat_stream({"model": "x", "messages": []},
+                                          lambda d, acc: deltas.append(d), timeout=5)
+        finally:
+            ai.requests.post = orig
+        self.assertEqual(full, "Hello world!")
+        self.assertEqual(deltas, ["Hello", " world", "!"])
+
+
 class TestNtfy(unittest.TestCase):
     def test_endpoint_default_server(self):
         self.assertEqual(ntfy._endpoint({"topic": "home"}), "https://ntfy.sh/home")
