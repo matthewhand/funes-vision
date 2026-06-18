@@ -367,7 +367,8 @@ node tests/*.js                          # SPA pure helpers (one file each)
   `parseFilenameFields`, `relativeTime`, `dayLabel`, `resolveDisplayTz`,
   `zonedTimeToUtc`, `computeLabelStates`, `visibleLabels`, `labelsMatchFilter`,
   `smoothFlicker`, `formatDuration`, `formatSeconds`, `backfillProgress`,
-  `bucketByHour`, `labelCounts`, `busiestHour`, `streamStatusText`.
+  `bucketByHour`, `labelCounts`, `busiestHour`, `filterSnapshot`,
+  `upsertSearch`, `removeSearch`, `streamStatusText`.
 - **Inline JS sanity:** extract each `<script>` body and `node --check` it
   before deploying (catches syntax errors the single-file SPA would otherwise
   only reveal in a browser).

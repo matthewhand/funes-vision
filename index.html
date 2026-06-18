@@ -1344,6 +1344,21 @@
         scroll-behavior: auto !important;
       }
     }
+    /* Saved searches */
+    .saved-list { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+    .saved-list:empty::after { content: "No saved views yet."; color: var(--text-secondary); font-size: 0.75rem; }
+    .saved-chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 6px 3px 9px;
+      border: 1px solid var(--border-color); border-radius: 999px; background: rgba(59,130,246,0.10);
+      font-size: 0.75rem; cursor: pointer; color: var(--text-primary); }
+    .saved-chip:hover { background: rgba(59,130,246,0.20); }
+    .saved-chip .saved-del { border: none; background: none; color: var(--text-secondary); cursor: pointer;
+      font-size: 0.85rem; line-height: 1; padding: 0 1px; }
+    .saved-chip .saved-del:hover { color: #ef4444; }
+    .saved-add { width: 100%; padding: 5px; border: 1px dashed var(--border-color); border-radius: 6px;
+      background: none; color: var(--text-secondary); font-size: 0.75rem; cursor: pointer;
+      display: inline-flex; align-items: center; justify-content: center; gap: 4px; }
+    .saved-add:hover { color: var(--text-primary); border-color: var(--text-secondary); }
+    .saved-add i { width: 13px; height: 13px; }
   </style>
 </head>
 <body>
@@ -1416,6 +1431,15 @@
             <span>6 PM</span>
             <span>11 PM</span>
           </div>
+        </div>
+
+        <!-- Saved searches: named snapshots of the current filters -->
+        <div class="sidebar-section">
+          <h3><i data-lucide="bookmark"></i> Saved Searches</h3>
+          <div class="saved-list" id="saved-list"></div>
+          <button id="btn-save-search" class="saved-add" title="Save the current filters as a named view">
+            <i data-lucide="plus"></i> Save current view
+          </button>
         </div>
       </aside>
 
@@ -2127,6 +2151,43 @@
     // Current label-visibility options from app state.
     const labelOpts = () => ({ precisionMode: deepPassesOn, showUnconfirmed: state.showUnconfirmed });
     const effectiveLabels = (analysis) => visibleLabels(analysis, state.labelAliases, labelOpts());
+
+    // --- Saved searches (named filter snapshots, localStorage-backed) ---
+    // === pure:filterSnapshot ===
+    // Capture the filter/search fields from a state-like object into a plain,
+    // JSON-serialisable snapshot (objectFilters Set -> sorted array).
+    function filterSnapshot(st) {
+      st = st || {};
+      return {
+        searchQuery: st.searchQuery || '',
+        activeFilter: st.activeFilter || 'events',
+        objectFilters: st.objectFilters ? [...st.objectFilters].sort() : [],
+        activeDateFilter: st.activeDateFilter || 'all',
+        timeStart: Number.isInteger(st.timeStart) ? st.timeStart : 0,
+        timeEnd: Number.isInteger(st.timeEnd) ? st.timeEnd : 23,
+        activeHourChartFilter: (st.activeHourChartFilter == null ? null : st.activeHourChartFilter),
+      };
+    }
+    // === /pure:filterSnapshot ===
+
+    // === pure:upsertSearch ===
+    // Add/replace a named saved search: newest first, dedup by name, capped at
+    // maxN (default 12). Blank names are ignored. Returns a new list.
+    function upsertSearch(list, name, snapshot, maxN) {
+      maxN = maxN || 12;
+      name = String(name == null ? '' : name).trim();
+      const cur = Array.isArray(list) ? list : [];
+      if (!name) return cur.slice();
+      const rest = cur.filter(s => s.name !== name);
+      return [{ name, filters: snapshot }, ...rest].slice(0, maxN);
+    }
+    // === /pure:upsertSearch ===
+
+    // === pure:removeSearch ===
+    function removeSearch(list, name) {
+      return (Array.isArray(list) ? list : []).filter(s => s.name !== name);
+    }
+    // === /pure:removeSearch ===
 
     // --- Object filter helpers (multi-select, "match ANY") ---
     // === pure:labelsMatchFilter ===
@@ -3335,6 +3396,63 @@
           applyFiltersAndSearch();
         }, 300);
       });
+
+      // --- Saved searches (named filter snapshots in localStorage) ---
+      const SAVED_KEY = 'webcam_saved_searches';
+      const loadSaved = () => { try { return JSON.parse(localStorage.getItem(SAVED_KEY)) || []; } catch (_) { return []; } };
+      const persistSaved = (l) => { try { localStorage.setItem(SAVED_KEY, JSON.stringify(l)); } catch (_) {} };
+
+      function applySavedSearch(f) {
+        if (!f) return;
+        state.searchQuery = f.searchQuery || '';
+        state.activeFilter = f.activeFilter || 'events';
+        state.objectFilters = new Set(f.objectFilters || []);
+        state.activeDateFilter = f.activeDateFilter || 'all';
+        state.timeStart = Number.isInteger(f.timeStart) ? f.timeStart : 0;
+        state.timeEnd = Number.isInteger(f.timeEnd) ? f.timeEnd : 23;
+        state.activeHourChartFilter = (f.activeHourChartFilter == null ? null : f.activeHourChartFilter);
+        // Sync DOM controls to the restored state.
+        const si = document.getElementById('search-input'); if (si) si.value = state.searchQuery;
+        const ss = document.getElementById('time-start'), se = document.getElementById('time-end');
+        if (ss) ss.value = state.timeStart; if (se) se.value = state.timeEnd;
+        if (typeof updateSliderLabel === 'function') updateSliderLabel();
+        document.querySelectorAll('#filter-tabs .tab-btn').forEach(btn =>
+          btn.classList.toggle('active', btn.dataset.filter === state.activeFilter));
+        renderObjectFilters();
+        renderDateSidebar();
+        applyFiltersAndSearch();
+      }
+
+      function renderSavedSearches() {
+        const el = document.getElementById('saved-list');
+        if (!el) return;
+        const list = loadSaved();
+        el.innerHTML = '';
+        list.forEach(s => {
+          const chip = document.createElement('span');
+          chip.className = 'saved-chip';
+          const label = document.createElement('span');
+          label.textContent = s.name;
+          label.title = 'Apply "' + s.name + '"';
+          label.onclick = () => applySavedSearch(s.filters);
+          const del = document.createElement('button');
+          del.className = 'saved-del'; del.textContent = '×';
+          del.title = 'Delete "' + s.name + '"';
+          del.onclick = (e) => { e.stopPropagation(); persistSaved(removeSearch(loadSaved(), s.name)); renderSavedSearches(); };
+          chip.append(label, del);
+          el.appendChild(chip);
+        });
+      }
+
+      document.getElementById('btn-save-search').addEventListener('click', () => {
+        const name = (prompt('Name this view:') || '').trim();
+        if (!name) return;
+        persistSaved(upsertSearch(loadSaved(), name, filterSnapshot(state)));
+        renderSavedSearches();
+        showToast('Saved view "' + name + '"');
+      });
+
+      renderSavedSearches();
 
       // Category Event Tabs
       document.getElementById('filter-tabs').addEventListener('click', (e) => {

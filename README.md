@@ -68,6 +68,9 @@ An honest snapshot — verified against the code, not aspirational.
 - **Insights** — the ℹ status panel shows content stats over all analysed
   frames: total, busiest hour, a 24-hour activity sparkline, and most-seen
   objects.
+- **Saved searches** — name the current filters (tab + objects + search +
+  date + time range) and recall them as one-tap chips in the sidebar
+  (localStorage, per-device).
 - **Test harness** — stdlib Python `unittest` for backend helpers + Node
   assert suites for the SPA's pure helpers, no third-party deps
   (see [DEVELOP.md](DEVELOP.md#testing)).
