@@ -3505,6 +3505,21 @@
       // === /pure:formatSeconds ===
       const fmtDur = (s) => formatSeconds(s);
 
+      // === pure:backfillProgress ===
+      // Summarise the deep-analysis backlog from /api/status .queue. analyzed =
+      // LLM-verified frames; pending = detector-only partials + the backfill
+      // queue still awaiting a verdict. pct = analyzed/(analyzed+pending),
+      // 0..100 (100 when nothing is pending, and safe on an empty queue).
+      function backfillProgress(q) {
+        q = q || {};
+        const analyzed = q.llm_verified || 0;
+        const pending = (q.awaiting_backfill || 0) + (q.unverified_partials || 0);
+        const total = analyzed + pending;
+        const pct = total ? Math.round((analyzed / total) * 100) : 100;
+        return { analyzed, pending, total, pct };
+      }
+      // === /pure:backfillProgress ===
+
       async function renderSystemPanel() {
         const el = document.getElementById('system-status-content');
         try {
@@ -3546,6 +3561,13 @@
               ${s.queue.unanalyzed} new &middot; ${s.queue.unverified_partials} priority &middot;
               ${s.queue.awaiting_backfill} backfill &middot; ${s.queue.llm_verified} verified
               (${s.queue.images_on_disk} on disk)</div>
+            ${(() => {
+              const b = backfillProgress(s.queue);
+              const paused = s.settings && s.settings.deep_passes_enabled === false;
+              const bar = `<span style="display:inline-block;width:80px;height:6px;border-radius:3px;background:var(--border-color);vertical-align:middle;overflow:hidden;"><span style="display:inline-block;height:6px;width:${b.pct}%;background:${paused ? '#f59e0b' : '#10b981'};"></span></span>`;
+              return `<div><b>Deep analysis:</b> ${bar} ${b.pct}% &middot;
+                ${b.analyzed.toLocaleString()} verified, ${b.pending.toLocaleString()} pending${paused ? ' <span style="color:#f59e0b;">(paused — deep passes off)</span>' : ''}</div>`;
+            })()}
             <div><b>Last sweep:</b> ${s.trigger.last_sweep_age_s == null
               ? '<span style="color:#ef4444;">unknown</span>'
               : (s.trigger.last_sweep_age_s < 1800 ? fmtDur(s.trigger.last_sweep_age_s) + ' ago'

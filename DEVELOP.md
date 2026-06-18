@@ -365,7 +365,8 @@ node tests/*.js                          # SPA pure helpers (one file each)
   of the function (it ships in the page *and* is unit-tested). Covered today:
   `parseFilenameFields`, `relativeTime`, `dayLabel`, `resolveDisplayTz`,
   `zonedTimeToUtc`, `computeLabelStates`, `visibleLabels`, `labelsMatchFilter`,
-  `smoothFlicker`, `formatDuration`, `formatSeconds`, `streamStatusText`.
+  `smoothFlicker`, `formatDuration`, `formatSeconds`, `backfillProgress`,
+  `streamStatusText`.
 - **Inline JS sanity:** extract each `<script>` body and `node --check` it
   before deploying (catches syntax errors the single-file SPA would otherwise
   only reveal in a browser).
