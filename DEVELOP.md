@@ -41,8 +41,8 @@ FTP user but world-writable, so the pipeline (user `user`) can write.
 Watcher + orchestrator, one instance per camera (`webcam-pipeline@.service`).
 - Regenerates `images.json` (newest-first file listing).
 - Sources `~/.litellm/.env` for `OPENROUTER_API_KEY` (cloud fallback only).
-- Runs `analyze_images.py`, then syncs `index.html` + JSON artifacts into
-  the camera web root.
+- Runs `analyze_images.py`, then syncs `index.html`, the PWA assets
+  (`manifest.json`, `icon.svg`), and JSON artifacts into the camera web root.
 - Triggers: startup, every new image (inotify, 5s debounce), and a 60s
   idle loop ("catch-up sweep").
 - **Global lock** `/tmp/webcam_analysis.lock` (flock, 1h timeout): the

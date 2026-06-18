@@ -1,0 +1,14 @@
+{
+  "name": "Webcam AI Gallery",
+  "short_name": "Webcam",
+  "description": "Local AI gallery for home cameras — a queryable timeline of who/what was here.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#080c14",
+  "theme_color": "#080c14",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

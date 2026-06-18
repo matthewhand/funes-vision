@@ -63,6 +63,8 @@ An honest snapshot — verified against the code, not aspirational.
   web-synced.
 - **Configurable display timezone** — `WEBCAM_TZ` env > `settings.json` >
   `Australia/Sydney`; filename timestamps parsed **DST-aware**.
+- **Installable PWA** — a web app manifest makes the gallery "Add to Home
+  Screen"-able (standalone, themed); no service worker, so no stale-cache risk.
 - **Test harness** — stdlib Python `unittest` for backend helpers + Node
   assert suites for the SPA's pure helpers, no third-party deps
   (see [DEVELOP.md](DEVELOP.md#testing)).

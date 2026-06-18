@@ -40,6 +40,9 @@ run_analysis() {
         
         # 3. Sync template and results to web root
         cp "$BASE_DIR/index.html" "$IMAGE_DIR/index.html"
+        # PWA static assets (installable; no service worker)
+        [ -f "$BASE_DIR/manifest.json" ] && cp "$BASE_DIR/manifest.json" "$IMAGE_DIR/manifest.json"
+        [ -f "$BASE_DIR/icon.svg" ] && cp "$BASE_DIR/icon.svg" "$IMAGE_DIR/icon.svg"
         [ -f "$BASE_DIR/analysis.json" ] && cp "$BASE_DIR/analysis.json" "$IMAGE_DIR/analysis.json"
         [ -f "$BASE_DIR/bursts.json" ] && cp "$BASE_DIR/bursts.json" "$IMAGE_DIR/bursts.json"
         [ -f "$BASE_DIR/pins.json" ] && cp "$BASE_DIR/pins.json" "$IMAGE_DIR/pins.json"
