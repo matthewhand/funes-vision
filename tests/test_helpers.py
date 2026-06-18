@@ -15,6 +15,7 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import api_server
+import analyze_images
 from integrations import slack, media, ntfy
 import integrations as intg
 
@@ -32,6 +33,20 @@ class TestSettingValid(unittest.TestCase):
         self.assertFalse(api_server.setting_valid("idle_sweep_seconds", 5))    # below min
         self.assertFalse(api_server.setting_valid("idle_sweep_seconds", 9999))  # above max
         self.assertFalse(api_server.setting_valid("idle_sweep_seconds", True))  # bool rejected
+
+
+class TestBackoff(unittest.TestCase):
+    def test_exponential_capped(self):
+        self.assertEqual(analyze_images.backoff_delay(0, base=2.0, cap=60.0), 2.0)
+        self.assertEqual(analyze_images.backoff_delay(1, base=2.0, cap=60.0), 4.0)
+        self.assertEqual(analyze_images.backoff_delay(2, base=2.0, cap=60.0), 8.0)
+        self.assertEqual(analyze_images.backoff_delay(3, base=2.0, cap=60.0), 16.0)
+        self.assertEqual(analyze_images.backoff_delay(5, base=2.0, cap=60.0), 60.0)   # 64 -> cap
+        self.assertEqual(analyze_images.backoff_delay(20, base=2.0, cap=60.0), 60.0)  # cap holds
+
+    def test_never_negative_and_respects_base(self):
+        self.assertEqual(analyze_images.backoff_delay(0, base=1.0, cap=30.0), 1.0)
+        self.assertGreaterEqual(analyze_images.backoff_delay(0), 0.0)
 
 
 class TestNtfy(unittest.TestCase):

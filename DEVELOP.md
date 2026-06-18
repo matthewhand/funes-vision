@@ -64,11 +64,20 @@ no restarts needed). Per camera dir, in order:
    (auto, or via `fast_pass_engine`). YOLO = yolov4-tiny via OpenCV DNN,
    COCO classes mapped to person/car/bird/cat/dog, conf 0.45, ~0.2s/image.
    Haar = legacy frontal-face/fullbody/frontalcatface cascades.
-5. **Deep pass** — gemma4:12b through local Ollama (`analyze_image_local`,
-   /api/chat with `format: json`); falls back to OpenRouter only when
+5. **Deep pass** — the `model_local` vision model through Ollama
+   (`analyze_image_local`, /api/chat with `format: json`). `model_local` can be
+   a local tag *or* an Ollama `:cloud` model (e.g. `minimax-m3:cloud`) — same
+   `:11434` path either way. OpenRouter remains a separate fallback when
    `allow_cloud` is true. Budgeted: `max_deep_passes` per camera per sweep
    counts local AND cloud calls. **An LLM verdict replaces the entry
    wholesale — the LLM always trumps the fast-pass detector.**
+   - *Rate limiting*: every Ollama chat call goes through `_ollama_chat`, which
+     retries HTTP 429/503 with **exponential backoff + jitter** (`backoff_delay`,
+     capped at 30 s, honoring `Retry-After`). If still throttled after
+     `LLM_MAX_RETRIES`, it raises `RateLimited`, which sets a per-sweep
+     `RATE_LIMITED` flag — `run_deep_pass` and burst analysis then **stop for the
+     rest of that sweep** and resume on the next one (~60 s later). Cloud models
+     therefore never get hammered through a backlog.
    - *Urgency gate*: a fast-pass hit consisting only of
      `gate_ignore_labels` (default `["car"]` — a car parked in frame 24/7)
      is recorded as a partial but does NOT consume urgent budget.

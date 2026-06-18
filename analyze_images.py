@@ -6,6 +6,7 @@ import sys
 import cv2
 import numpy as np
 import time
+import random
 import bisect
 from datetime import datetime
 
@@ -194,6 +195,10 @@ def run_deep_pass(image_path, img_name, can_run_local, api_key, trigger, fp_labe
     detector's labels so the UI can require detector+LLM consensus.
     fp_labels=None means "run the detector fresh" (used for re-queued
     partials whose stored labels may be stale, and for backfill)."""
+    # Once the endpoint has throttled us this sweep, stop spending deep passes
+    # against it — resume on the next sweep (~60s later). No hammering.
+    if RATE_LIMITED:
+        return None
     started = time.time()
     model = MODEL_LOCAL if can_run_local else MODEL_CLOUD
     set_inference_status({"image": img_name, "model": model,
@@ -234,8 +239,49 @@ def ollama_available():
     except requests.exceptions.RequestException:
         return False
 
+# Rate-limit handling. The Ollama endpoint may be a cloud model (model tag
+# ending ":cloud") which can throttle; we must NOT hammer it. Strategy:
+#   - per call: retry a 429/503 a few times with EXPONENTIAL BACKOFF + jitter,
+#     capped so we never hold the sweep's global lock for long;
+#   - if still throttled, raise RateLimited so the sweep stops its remaining
+#     deep passes (RATE_LIMITED flag) and resumes on the next sweep (~60s).
+RATE_LIMITED = False          # set per-sweep when the LLM endpoint throttles us
+LLM_MAX_RETRIES = 4           # attempts before giving up a single call
+LLM_BACKOFF_BASE = 2.0        # seconds; doubles each retry
+LLM_BACKOFF_CAP = 30.0        # cap a single wait (sweep lock has a 1h timeout)
+
+
+class RateLimited(Exception):
+    """The LLM endpoint throttled us after exhausting backoff retries."""
+
+
+def backoff_delay(attempt, base=LLM_BACKOFF_BASE, cap=LLM_BACKOFF_CAP):
+    """Exponential backoff for retry `attempt` (0-based), capped. Pure."""
+    return min(cap, base * (2 ** attempt))
+
+
+def _ollama_chat(payload, timeout):
+    """POST /api/chat with exponential-backoff retry on 429/503. Returns the
+    response on success; raises RateLimited if still throttled after
+    LLM_MAX_RETRIES. Other request errors propagate to the caller."""
+    for attempt in range(LLM_MAX_RETRIES):
+        resp = requests.post(f"{OLLAMA_URL}/api/chat", json=payload, timeout=timeout)
+        if resp.status_code in (429, 503):
+            if attempt == LLM_MAX_RETRIES - 1:
+                raise RateLimited(f"LLM throttled (HTTP {resp.status_code})")
+            # honor Retry-After if present, else exponential backoff; ±20% jitter
+            ra = resp.headers.get("Retry-After")
+            wait = float(ra) if (ra and ra.isdigit()) else backoff_delay(attempt)
+            time.sleep(min(LLM_BACKOFF_CAP, wait) * (0.8 + 0.4 * random.random()))
+            continue
+        resp.raise_for_status()
+        return resp
+    raise RateLimited("LLM throttled")  # defensive; loop above normally returns/raises
+
+
 def analyze_image_local(image_path):
-    """Vision inference via a local Ollama server (if one is running)."""
+    """Vision inference via the Ollama server (local or a :cloud model)."""
+    global RATE_LIMITED
     try:
         payload = {
             "model": MODEL_LOCAL,
@@ -247,10 +293,13 @@ def analyze_image_local(image_path):
             "stream": False,
             "format": "json",
         }
-        response = requests.post(f"{OLLAMA_URL}/api/chat", json=payload, timeout=600)
-        response.raise_for_status()
+        response = _ollama_chat(payload, timeout=600)
         result = json.loads(response.json()["message"]["content"])
         return result if isinstance(result, dict) else None
+    except RateLimited as e:
+        RATE_LIMITED = True
+        print(f"LLM rate-limited; backing off for this sweep: {e}")
+        return None
     except requests.exceptions.ConnectionError:
         return None  # No Ollama server; fall through to cloud
     except Exception as e:
@@ -260,7 +309,8 @@ def analyze_image_local(image_path):
 BURST_PROMPT = "These webcam frames were taken in sequence. Describe what happens across them - any people, animals, birds, vehicles, or notable changes in the scene (lighting, objects moving). Don't assume a person is the subject. If nothing meaningfully changes, say so in one sentence."
 
 def analyze_burst_local(image_paths):
-    """Burst summary via local Ollama (multi-image message)."""
+    """Burst (context) summary via the Ollama server (multi-image message)."""
+    global RATE_LIMITED
     try:
         payload = {
             "model": MODEL_LOCAL,
@@ -271,9 +321,12 @@ def analyze_burst_local(image_paths):
             }],
             "stream": False,
         }
-        response = requests.post(f"{OLLAMA_URL}/api/chat", json=payload, timeout=900)
-        response.raise_for_status()
+        response = _ollama_chat(payload, timeout=900)
         return response.json()["message"]["content"].strip()
+    except RateLimited as e:
+        RATE_LIMITED = True
+        print(f"LLM rate-limited on burst; backing off for this sweep: {e}")
+        return None
     except Exception as e:
         print(f"Local burst analysis failed: {e}")
         return None
@@ -532,6 +585,8 @@ def generate_thumbnails(image_dir, images):
         print(f"Generated {made} thumbnails in {thumb_dir}")
 
 def main():
+    global RATE_LIMITED
+    RATE_LIMITED = False  # fresh budget each sweep; a throttle only pauses one sweep
     api_key = os.getenv("OPENROUTER_API_KEY")
     if not WATCH_DIRS:
         print("No watch_dirs configured in settings.json - nothing to do.")
@@ -724,7 +779,7 @@ def main():
                                       "trigger": "burst", "started": started})
                 summary = None
                 used = None
-                if can_run_local:
+                if can_run_local and not RATE_LIMITED:
                     used = MODEL_LOCAL
                     summary = analyze_burst_local(full_paths)
                 if not summary and ALLOW_CLOUD and api_key:
