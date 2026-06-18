@@ -226,11 +226,11 @@ bug / broken / misleading / security; P2 = notable UX or a11y friction; P3 =
 polish. All fixes are additive, no-dep, vanilla JS/CSS. Built items are checked off.
 
 ### P1 — correctness / security / blocking a11y
-- [ ] **HTML-escape all server/model strings rendered via `innerHTML`** — the ℹ
-      panel and player interpolate `inference.image`, the streamed `inference.partial`
-      caption (raw model output!), `r.image`, `r.labels`, `c.name`, visit labels
-      etc. unescaped → layout-break + stored-XSS. Add one `escapeHtml()` helper and
-      wrap every interpolated server value.
+- [x] **HTML-escape all server/model strings rendered via `innerHTML`** — added a
+      pure `escapeHtml()`; wrapped the streamed `inference.partial` caption, the
+      "Analyzing now" image/model/trigger, the audit-trail labels/trigger/image
+      (href via `encodeURI` + `rel=noopener`), camera names, and the player's
+      visit label/type. *(Shipped — feat/escape-html.)*
 - [ ] **Keyboard-operate the gallery** — image cards are click-only `<div>`s
       (no `tabindex`/`role`/Enter-Space); the entire gallery is unreachable by
       keyboard/SR. Make cards `role="button" tabindex="0"` + key handler + aria-label.

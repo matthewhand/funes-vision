@@ -2152,6 +2152,15 @@
     const labelOpts = () => ({ precisionMode: deepPassesOn, showUnconfirmed: state.showUnconfirmed });
     const effectiveLabels = (analysis) => visibleLabels(analysis, state.labelAliases, labelOpts());
 
+    // === pure:escapeHtml ===
+    // Escape a value for safe interpolation into innerHTML. Server/model
+    // strings (filenames, streamed captions, labels) are untrusted.
+    function escapeHtml(s) {
+      return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+        ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+    // === /pure:escapeHtml ===
+
     // --- Live SSE merge helpers (update in-memory state, no full refetch) ---
     // === pure:mergeNewImage ===
     // Insert a newly-arrived (newest) filename at the front of the newest-first
@@ -2677,7 +2686,7 @@
         imgEl.onerror = () => { imgEl.onerror = null; imgEl.src = frames[idx]; };
         imgEl.src = `thumbs/${frames[idx]}`;
         const meta = parseFilename(frames[idx]);
-        labelEl.innerHTML = `<span style="text-transform:capitalize;">${ev.label}</span> ${ev.type} &middot; frame ${idx + 1}/${frames.length}` +
+        labelEl.innerHTML = `<span style="text-transform:capitalize;">${escapeHtml(ev.label)}</span> ${escapeHtml(ev.type)} &middot; frame ${idx + 1}/${frames.length}` +
           (meta ? `<br>${meta.formattedDate} ${meta.formattedTime}` : '');
         fullEl.href = frames[idx];
         if (Number(scrubEl.value) !== idx) scrubEl.value = idx;
@@ -3763,11 +3772,12 @@
           // Live inference state
           let inferHtml;
           if (s.inference && s.inference.started) {
-            inferHtml = `<span style="color:#f59e0b;">&#9679;</span> <b>Analyzing now:</b> ${s.inference.image}<br>
-              &nbsp;&nbsp;${s.inference.model} &middot; ${s.inference.trigger} &middot; running ${fmtDur(s.inference.running_for_s)}`;
+            inferHtml = `<span style="color:#f59e0b;">&#9679;</span> <b>Analyzing now:</b> ${escapeHtml(s.inference.image)}<br>
+              &nbsp;&nbsp;${escapeHtml(s.inference.model)} &middot; ${escapeHtml(s.inference.trigger)} &middot; running ${fmtDur(s.inference.running_for_s)}`;
             // Live caption building as the LLM streams it ("AI is looking at this…")
+            // — raw model output, must be escaped before innerHTML.
             if (s.inference.partial) {
-              inferHtml += `<br>&nbsp;&nbsp;<span style="color:var(--text-secondary);font-style:italic;">“${s.inference.partial}”</span>`;
+              inferHtml += `<br>&nbsp;&nbsp;<span style="color:var(--text-secondary);font-style:italic;">“${escapeHtml(s.inference.partial)}”</span>`;
             }
           } else {
             inferHtml = `<span style="color:#10b981;">&#9679;</span> <b>Inference:</b> idle`;
@@ -3776,10 +3786,10 @@
           // Audit trail (last 15)
           const trail = log.slice(0, 15).map(r => {
             const t = new Date(r.started * 1000).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', timeZone: DISPLAY_TZ });
-            const labels = r.labels.length ? r.labels.join(', ') : (r.ok ? 'clear' : '<span style="color:#ef4444;">failed</span>');
+            const labels = r.labels.length ? escapeHtml(r.labels.join(', ')) : (r.ok ? 'clear' : '<span style="color:#ef4444;">failed</span>');
             return `<div style="padding:2px 0;border-bottom:1px solid var(--border-color);">
-              ${t} &middot; <b>${labels}</b> &middot; ${fmtDur(r.duration_s)} &middot; ${r.trigger}<br>
-              <a href="${r.image}" target="_blank" style="color:var(--text-secondary);font-size:0.7rem;text-decoration:none;">${r.image.slice(-40)}</a>
+              ${t} &middot; <b>${labels}</b> &middot; ${fmtDur(r.duration_s)} &middot; ${escapeHtml(r.trigger)}<br>
+              <a href="${encodeURI(r.image || '')}" target="_blank" rel="noopener" style="color:var(--text-secondary);font-size:0.7rem;text-decoration:none;">${escapeHtml(String(r.image || '').slice(-40))}</a>
             </div>`;
           }).join('') || '<div style="color:var(--text-secondary);">No inferences logged yet.</div>';
 
@@ -3828,7 +3838,7 @@
               const dot = c.stale ? '<span style="color:#ef4444;">&#9679;</span>' : '<span style="color:#10b981;">&#9679;</span>';
               const age = c.last_frame_age_s == null ? 'no frames' : fmtDur(c.last_frame_age_s) + ' ago';
               const pct = c.budget_pct == null ? '' : ` <span style="color:${c.budget_pct > 85 ? '#ef4444' : 'inherit'};">(${c.budget_pct}%)</span>`;
-              return `<div>${dot} <b>${c.name}</b>: last frame ${age} &middot; ${(c.bytes / 1e9).toFixed(1)}GB${pct} &middot; ${c.images} imgs</div>`;
+              return `<div>${dot} <b>${escapeHtml(c.name)}</b>: last frame ${age} &middot; ${(c.bytes / 1e9).toFixed(1)}GB${pct} &middot; ${c.images} imgs</div>`;
             }).join('')}
             ${s.retention ? `<div style="color:var(--text-secondary);">Last cleanup: removed ${s.retention.count} img${s.retention.count !== 1 ? 's' : ''} (${(s.retention.bytes_freed / 1e6).toFixed(0)} MB) ${fmtDur(Math.max(0, Math.round(Date.now() / 1000 - s.retention.ts)))} ago</div>` : ''}
             ${s.filesystem ? `<div style="color:${s.filesystem.free_gb < 1 ? '#ef4444' : 'var(--text-secondary)'};">Host disk: ${s.filesystem.free_gb} GB free of ${s.filesystem.total_gb} GB (${s.filesystem.used_pct}% used)</div>` : ''}
