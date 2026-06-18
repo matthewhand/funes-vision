@@ -62,7 +62,7 @@ no restarts needed). Per camera dir, in order:
    Priority: missing images newest-first, then partials.
 4. **Fast pass** (`fast_pass_dispatch`) — YOLO by default, Haar fallback
    (auto, or via `fast_pass_engine`). YOLO = yolov4-tiny via OpenCV DNN,
-   COCO classes mapped to person/car/cat/dog, conf 0.45, ~0.2s/image.
+   COCO classes mapped to person/car/bird/cat/dog, conf 0.45, ~0.2s/image.
    Haar = legacy frontal-face/fullbody/frontalcatface cascades.
 5. **Deep pass** — gemma4:12b through local Ollama (`analyze_image_local`,
    /api/chat with `format: json`); falls back to OpenRouter only when
@@ -230,8 +230,10 @@ Tracked in [ROADMAP.md](ROADMAP.md).
 | Key | Default | Meaning |
 |-----|---------|---------|
 | `burst_threshold_seconds` | 300 | max gap between burst frames |
+| `idle_sweep_seconds` | 60 | idle re-scan cadence (UI-settable, 15–3600) |
+| `timezone` | Australia/Sydney | display TZ; `WEBCAM_TZ` env overrides (see [Paths & XDG](#paths--xdg)) |
 | `max_age_days` | 30 | retention: age limit for no-detection images |
-| `max_dir_gb` | 6.0 | retention: per-camera disk budget |
+| `max_dir_gb` | 3.0 | retention: per-camera disk budget (code fallback 4.0) |
 | `min_mem_for_local_gb` | 6.0 | min free RAM to attempt local LLM |
 | `allow_cloud` | false | permit OpenRouter fallback |
 | `ollama_url` | http://localhost:11434 | local LLM endpoint |
@@ -241,7 +243,7 @@ Tracked in [ROADMAP.md](ROADMAP.md).
 | `deep_passes_enabled` | true | master switch for ALL Gemma work (priority+backfill+bursts); false = detector-only, no LLM (UI-toggleable) |
 | `deep_backfill` | true | idle LLM verification of the archive (UI-toggleable) |
 | `gate_ignore_labels` | ["car"] | labels that alone don't trigger urgent deep passes |
-| `camera_offline_hours` | 12 | no frames in this long → a Slack "camera offline?" alert |
+| `camera_offline_hours` | 24 | no frames in this long → a Slack "camera offline?" alert |
 
 ## Observability & health alerts
 
