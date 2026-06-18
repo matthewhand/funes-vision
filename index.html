@@ -3493,7 +3493,17 @@
       const systemDropdown = document.getElementById('system-dropdown');
       let systemRefreshTimer = null;
 
-      const fmtDur = (s) => s >= 60 ? `${Math.floor(s / 60)}m ${Math.round(s % 60)}s` : `${Math.round(s)}s`;
+      // === pure:formatSeconds ===
+      // Status-panel duration/age: "Ns" under a minute, else "Mm Ss". Round the
+      // total first so a rounded-up second component rolls into the minute
+      // ("2m 0s", never "1m 60s"; "1m 0s", never "60s").
+      function formatSeconds(s) {
+        const total = Math.round(s);
+        if (total < 60) return `${total}s`;
+        return `${Math.floor(total / 60)}m ${total % 60}s`;
+      }
+      // === /pure:formatSeconds ===
+      const fmtDur = (s) => formatSeconds(s);
 
       async function renderSystemPanel() {
         const el = document.getElementById('system-status-content');
