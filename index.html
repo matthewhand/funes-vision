@@ -2152,6 +2152,16 @@
     const labelOpts = () => ({ precisionMode: deepPassesOn, showUnconfirmed: state.showUnconfirmed });
     const effectiveLabels = (analysis) => visibleLabels(analysis, state.labelAliases, labelOpts());
 
+    // === pure:isRecent ===
+    // True if epoch-seconds `ts` is within `withinS` of `now` and not in the
+    // future. Gates the Timeline "ongoing" flag on actual recency.
+    function isRecent(ts, now, withinS) {
+      withinS = withinS || 600;
+      const age = now - ts;
+      return isFinite(age) && age >= 0 && age <= withinS;
+    }
+    // === /pure:isRecent ===
+
     // === pure:escapeHtml ===
     // Escape a value for safe interpolation into innerHTML. Server/model
     // strings (filenames, streamed captions, labels) are untrusted.
@@ -2575,7 +2585,11 @@
             frames,
             caption,
             count: end - start + 1,
-            ongoing: end === present.length - 1,
+            // "ongoing" only if this visit includes the newest frame AND that
+            // frame is actually recent — otherwise an hours/days-old last visit
+            // would falsely read "ongoing".
+            ongoing: end === present.length - 1 && !!items[end].meta.dateObj &&
+                     isRecent(items[end].meta.dateObj.getTime() / 1000, Date.now() / 1000),
             sortKey: `${items[start].meta.dateStr} ${items[start].meta.timeStr}`
           });
         }

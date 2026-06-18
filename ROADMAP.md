@@ -242,9 +242,9 @@ polish. All fixes are additive, no-dep, vanilla JS/CSS. Built items are checked 
       focus to the trigger on close (currently focus escapes behind the overlay).
 - [ ] **Mobile touch targets** — card action buttons (28px) and toggle rows are
       below the 44px minimum; bump via `@media (pointer:coarse)`.
-- [ ] **`ongoing` visit is misleading** — `end === present.length-1` marks the
-      single most-recent visit "ongoing" (amber) even if it's hours/days old. Gate
-      on recency (`now - endTs < ~10min`), else show duration + the done icon.
+- [x] **`ongoing` visit is misleading** — now gated on recency via pure
+      `isRecent()` (end frame within 10 min of now); older last visits show their
+      duration + the done icon. *(Shipped — feat/ongoing-recency.)*
 - [ ] **"Show all images" doesn't clear all filters** — `empty-show-all` only
       flips the tab; object/date/time/search stay set, so it can still show an empty
       grid. Reset every filter + resync the controls.
