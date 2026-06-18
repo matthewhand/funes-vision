@@ -66,12 +66,14 @@ just can't hear it yet.
 - [x] A persistent stream endpoint on the host API; a client subscribes once.
       *(Done for `new-detection` / `new-burst`; still only 2 of the 3 event
       types, and the SPA keeps polling for everything else.)*
-- [ ] New images and preliminary detections appear in the open gallery within
-      ~1 s of the pipeline acting, with **no full-file refetch** (incremental
-      DOM update; `analysis.json` reload becomes a fallback/reconcile, not the
-      hot path). *(Partial: `image.new` + `detection.preliminary` now fire (~3 s
-      mtime bridge) and wake the gallery, but via a full `loadData()` refetch
-      (coalesced), not an incremental DOM patch.)*
+- [x] New images and preliminary detections appear in the open gallery within
+      ~1 s of the pipeline acting, with **no full-file refetch**. SSE events now
+      patch in-memory state (`mergeNewImage` for `image.new`, `detectionEntry`
+      for detections — optimistic, reconciled) and re-render from it;
+      `analysis.json`/`images.json` reload is demoted to the 30 s poll + onerror
+      fallback. *(Re-renders from state rather than per-node DOM diffing — the
+      costly network refetch is gone; finer node-level patching is a possible
+      future optimisation.)*
 - [ ] The deep LLM pass surfaces live: start, streamed caption text, and final
       verdict — replacing the polled `inference_status.json` + the AI button's
       5 s `renderSystemPanel` poll. *(Not started; needs a streaming Ollama

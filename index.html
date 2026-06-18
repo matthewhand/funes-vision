@@ -2152,6 +2152,37 @@
     const labelOpts = () => ({ precisionMode: deepPassesOn, showUnconfirmed: state.showUnconfirmed });
     const effectiveLabels = (analysis) => visibleLabels(analysis, state.labelAliases, labelOpts());
 
+    // --- Live SSE merge helpers (update in-memory state, no full refetch) ---
+    // === pure:mergeNewImage ===
+    // Insert a newly-arrived (newest) filename at the front of the newest-first
+    // list, deduped. Returns a NEW array when changed, the SAME list otherwise.
+    function mergeNewImage(list, filename) {
+      list = Array.isArray(list) ? list : [];
+      if (!filename || list.indexOf(filename) !== -1) return list;
+      return [filename, ...list];
+    }
+    // === /pure:mergeNewImage ===
+
+    // === pure:detectionEntry ===
+    // Build an analysis.json-shaped entry from an SSE detection event: each
+    // label true; a preliminary (detector-only) hit also carries
+    // fast_pass:'partial', a verified verdict omits fast_pass — matching what
+    // computeLabelStates expects.
+    function detectionEntry(labels, preliminary) {
+      const e = {};
+      (labels || []).forEach(l => { e[l] = true; });
+      if (preliminary) {
+        e.fast_pass = 'partial';     // detector-only, awaiting verdict -> preliminary
+      } else {
+        // verified verdict: the event lacks the detector's _yolo set, so
+        // optimistically treat the labels as corroborated -> 'verified' (the
+        // common case); the 30s reconcile poll fixes any genuine disagreement.
+        e._yolo = (labels || []).slice();
+      }
+      return e;
+    }
+    // === /pure:detectionEntry ===
+
     // --- Saved searches (named filter snapshots, localStorage-backed) ---
     // === pure:filterSnapshot ===
     // Capture the filter/search fields from a state-like object into a plain,
@@ -3305,24 +3336,38 @@
         if (state.pollingInterval) clearInterval(state.pollingInterval);
         state.pollingInterval = setInterval(() => loadData(true), 30000);
       });
-      const onDetection = (e) => {
+      // Detection events patch in-memory state and re-render from it — NO
+      // full-file refetch (analysis.json reload is demoted to the 30s reconcile
+      // poll + the onerror fallback). preliminary => fast_pass:'partial'.
+      const onDetection = (preliminary) => (e) => {
         let d = {}; try { d = JSON.parse(e.data); } catch (_) {}
+        if (!d.file) return;
         const what = (d.labels && d.labels.length) ? d.labels.join(', ') : 'activity';
+        state.allImages = mergeNewImage(state.allImages, d.file);   // ensure it's listed
+        state.analysis[d.file] = detectionEntry(d.labels, preliminary);
         bumpActivity(what);
-        loadData(true);
+        applyFiltersAndSearch();
       };
-      es.addEventListener('new-detection', onDetection);
+      es.addEventListener('new-detection', onDetection(false));
       // Detector-only hits, before (or without) an LLM verdict — the only
-      // live detections when deep passes are off. Same handling as verified.
-      es.addEventListener('detection.preliminary', onDetection);
-      // A new frame was recorded (even with no detection). Refresh the grid so
-      // the All/Timeline view stays live; coalesce bursts of captures into one
-      // refresh rather than refetching per frame. No activity-pill bump — that
-      // counter is for detections, not every motion snapshot.
+      // live detections when deep passes are off.
+      es.addEventListener('detection.preliminary', onDetection(true));
+      // New frames (even with no detection): merge into the list and re-render
+      // from state, coalescing a capture burst into one render. No refetch, no
+      // activity-pill bump (that counter is for detections).
+      let pendingNew = [];
       let imgRefreshTimer = null;
-      es.addEventListener('image.new', () => {
+      es.addEventListener('image.new', (e) => {
+        let d = {}; try { d = JSON.parse(e.data); } catch (_) {}
+        if (d.file) pendingNew.push(d.file);
         if (imgRefreshTimer) return;
-        imgRefreshTimer = setTimeout(() => { imgRefreshTimer = null; loadData(true); }, 1500);
+        imgRefreshTimer = setTimeout(() => {
+          imgRefreshTimer = null;
+          const before = state.allImages.length;
+          pendingNew.forEach(f => { state.allImages = mergeNewImage(state.allImages, f); });
+          pendingNew = [];
+          if (state.allImages.length !== before) applyFiltersAndSearch();
+        }, 1500);
       });
       es.addEventListener('new-burst', () => {
         bumpActivity('sequence');
