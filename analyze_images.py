@@ -207,14 +207,14 @@ def run_deep_pass(image_path, img_name, can_run_local, api_key, trigger, fp_labe
     if RATE_LIMITED:
         return None
     started = time.time()
-    model = MODEL_LOCAL if can_run_local else MODEL_CLOUD
-    set_inference_status({"image": img_name, "model": model,
+    set_inference_status({"image": img_name, "model": MODEL_PRIMARY,
                           "trigger": trigger, "started": started})
     result = None
     used = None
     if can_run_local:
-        used = MODEL_LOCAL
         result = analyze_image_local(image_path)
+        if result is not None:
+            used = LAST_MODEL_USED   # the chain model that actually served
     if not result and ALLOW_CLOUD and api_key:
         used = MODEL_CLOUD
         result = analyze_image_openrouter(image_path, api_key)
@@ -253,6 +253,8 @@ def ollama_available():
 #   - if still throttled, raise RateLimited so the sweep stops its remaining
 #     deep passes (RATE_LIMITED flag) and resumes on the next sweep (~60s).
 RATE_LIMITED = False          # set per-sweep when the LLM endpoint throttles us
+LAST_MODEL_USED = None        # the chain model that actually served the last call
+                              # (so logs/status show real cloud-vs-local, not a guess)
 LLM_MAX_RETRIES = 4           # attempts before giving up a single call
 LLM_BACKOFF_BASE = 2.0        # seconds; doubles each retry
 LLM_BACKOFF_CAP = 30.0        # cap a single wait (sweep lock has a 1h timeout)
@@ -342,7 +344,7 @@ def analyze_image_local(image_path):
     """Vision inference via Ollama, walking the primary->fallback model chain.
     Falls through on rate-limit/error; only bails the sweep (RATE_LIMITED) if the
     WHOLE chain was throttled."""
-    global RATE_LIMITED
+    global RATE_LIMITED, LAST_MODEL_USED
     base = {
         "messages": [{
             "role": "user",
@@ -358,7 +360,10 @@ def analyze_image_local(image_path):
         try:
             response = _ollama_chat({**base, "model": model}, timeout=600)
             result = json.loads(response.json()["message"]["content"])
-            return result if isinstance(result, dict) else None
+            if isinstance(result, dict):
+                LAST_MODEL_USED = model   # record what actually served
+                return result
+            return None
         except RateLimited:
             continue  # try the next model in the chain
         except requests.exceptions.ConnectionError:
@@ -379,7 +384,7 @@ def analyze_burst_local(image_paths, on_progress=None):
     """Burst (context) summary via the Ollama server (multi-image message),
     STREAMED. on_progress(accumulated_text) fires as the caption builds so the
     UI can show it live ("AI is looking at this…"). Returns the full text."""
-    global RATE_LIMITED
+    global RATE_LIMITED, LAST_MODEL_USED
     base = {
         "messages": [{
             "role": "user",
@@ -393,7 +398,10 @@ def analyze_burst_local(image_paths, on_progress=None):
         tried += 1
         try:
             full = _ollama_chat_stream({**base, "model": model}, cb, timeout=900)
-            return full.strip() if full else None
+            if full:
+                LAST_MODEL_USED = model
+                return full.strip()
+            return None
         except RateLimited:
             continue
         except Exception as e:
@@ -849,18 +857,19 @@ def main():
                 print(f"Analyzing burst ending at {burst_id}...")
                 full_paths = [os.path.join(image_dir, f) for f in burst[-3:]] # Take last 3 max
                 started = time.time()
-                status_base = {"image": burst_id, "model": MODEL_LOCAL if can_run_local else MODEL_CLOUD,
+                status_base = {"image": burst_id, "model": MODEL_PRIMARY,
                                "trigger": "burst", "started": started}
                 set_inference_status(status_base)
                 summary = None
                 used = None
                 if can_run_local and not RATE_LIMITED:
-                    used = MODEL_LOCAL
                     # Stream the caption into inference_status.json so the UI sees
                     # it build live (surfaced via /api/status .inference.partial).
                     summary = analyze_burst_local(
                         full_paths,
                         on_progress=lambda acc: set_inference_status({**status_base, "partial": acc}))
+                    if summary:
+                        used = LAST_MODEL_USED   # the chain model that actually served
                 if not summary and ALLOW_CLOUD and api_key:
                     used = MODEL_CLOUD
                     summary = analyze_burst_openrouter(full_paths, api_key)

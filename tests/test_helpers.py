@@ -83,6 +83,7 @@ class TestModelFallback(unittest.TestCase):
         self.assertEqual(res, {"person": True})
         self.assertEqual(calls, ["primary:cloud", "local:e4b"])  # primary then fallback
         self.assertFalse(ai.RATE_LIMITED)  # fallback succeeded -> sweep not bailed
+        self.assertEqual(ai.LAST_MODEL_USED, "local:e4b")  # records the model that served
 
     def test_all_rate_limited_bails_sweep(self):
         ai = analyze_images
