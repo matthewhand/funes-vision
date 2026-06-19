@@ -1976,8 +1976,9 @@
         return Array.from(labels).some(l => !state.blacklist.includes(l));
       };
 
-      const searchOk = (filename) => !state.searchQuery ||
-        filename.toLowerCase().includes(state.searchQuery.toLowerCase());
+      // Same predicate as the grid (filename + date/time/type/caption), so the
+      // charts always agree with "Showing N of M".
+      const searchOk = (filename) => matchesSearch(state.searchQuery, searchFields(filename));
 
       const what = objectFilterActive() ? Array.from(state.objectFilters).join(' / ') : 'detection';
 
@@ -2474,16 +2475,9 @@
         if (state.activeHourChartFilter !== null && meta.hour !== state.activeHourChartFilter) return false;
 
         // 6. Text Search query
-        if (state.searchQuery) {
-          const q = state.searchQuery.toLowerCase();
-          const matchesFilename = filename.toLowerCase().includes(q);
-          const matchesDate = meta.formattedDate.toLowerCase().includes(q);
-          const matchesTime = meta.formattedTime.toLowerCase().includes(q);
-          const matchesType = meta.eventType.toLowerCase().includes(q);
-          const matchesCaption = entryCaption(analysis).toLowerCase().includes(q);
-
-          if (!matchesFilename && !matchesDate && !matchesTime && !matchesType && !matchesCaption) return false;
-        }
+        if (!matchesSearch(state.searchQuery, {
+              filename, formattedDate: meta.formattedDate, formattedTime: meta.formattedTime,
+              eventType: meta.eventType, caption: entryCaption(analysis) })) return false;
 
         return true;
       });
@@ -2569,6 +2563,26 @@
 
     // Caption for an analysis entry (Gemma's free-text description, if any)
     const entryCaption = (a) => (a && typeof a.description === 'string') ? a.description.trim() : '';
+
+    // === pure:matchesSearch ===
+    // The single search predicate (case-insensitive) shared by the grid AND the
+    // activity charts so they never disagree. Empty query matches everything.
+    // `fields` = {filename, formattedDate, formattedTime, eventType, caption}.
+    function matchesSearch(query, fields) {
+      if (!query) return true;
+      const q = String(query).toLowerCase();
+      fields = fields || {};
+      return ['filename', 'formattedDate', 'formattedTime', 'eventType', 'caption']
+        .some(k => String(fields[k] || '').toLowerCase().includes(q));
+    }
+    // === /pure:matchesSearch ===
+
+    // Build the searchable fields for one filename (parsed meta + Gemma caption).
+    const searchFields = (filename) => {
+      const meta = parseFilename(filename);
+      return { filename, formattedDate: meta.formattedDate, formattedTime: meta.formattedTime,
+               eventType: meta.eventType, caption: entryCaption(state.analysis[filename]) };
+    };
 
     // === pure:smoothFlicker ===
     // Debounce single-frame flickers in a boolean presence series (both

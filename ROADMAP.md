@@ -264,8 +264,9 @@ polish. All fixes are additive, no-dep, vanilla JS/CSS. Built items are checked 
       line shows hundreds "new"; fold in or relabel.
 - [ ] **Stream "live" never goes stale** — `streamConnected` only flips on
       open/onerror; track `lastEventTs` and show "stale (no events Ns)".
-- [ ] **Search predicate diverges** — activity charts match filename only while the
-      grid matches date/time/type/caption; extract one `matchesSearch()` for both.
+- [x] **Search predicate diverges** — unified into one pure `matchesSearch()`
+      (filename + date/time/type/caption) used by both the grid and the charts.
+      *(Shipped — feat/search-unify.)*
 - [ ] **Reduced-motion**: the flipbook auto-plays on open regardless; gate initial
       `play()` behind `prefers-reduced-motion`.
 - [ ] **Hidden-but-active filters** — hiding filter chips while a chip is active
