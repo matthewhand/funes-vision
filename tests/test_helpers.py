@@ -49,6 +49,59 @@ class TestBackoff(unittest.TestCase):
         self.assertGreaterEqual(analyze_images.backoff_delay(0), 0.0)
 
 
+class TestModelFallback(unittest.TestCase):
+    def test_model_chain(self):
+        mc = analyze_images.model_chain
+        self.assertEqual(mc("a", "b"), ["a", "b"])
+        self.assertEqual(mc("a", "a"), ["a"])          # dedup
+        self.assertEqual(mc(" a ", "b"), ["a", "b"])   # trimmed
+        self.assertEqual(mc("a", ""), ["a"])           # empty fallback dropped
+        self.assertEqual(mc(None, "b"), ["b"])
+        self.assertEqual(mc("", None), [])
+
+    def test_falls_back_on_rate_limit(self):
+        ai = analyze_images
+        ai.MODEL_PRIMARY, ai.MODEL_FALLBACK = "primary:cloud", "local:e4b"
+        ai.encode_image = lambda p: "x"
+        calls = []
+
+        class OK:
+            def json(self): return {"message": {"content": '{"person": true}'}}
+
+        def fake_chat(payload, timeout):
+            calls.append(payload["model"])
+            if payload["model"] == "primary:cloud":
+                raise ai.RateLimited("429")
+            return OK()
+
+        orig, ai._ollama_chat = ai._ollama_chat, fake_chat
+        ai.RATE_LIMITED = False
+        try:
+            res = ai.analyze_image_local("x.jpg")
+        finally:
+            ai._ollama_chat = orig
+        self.assertEqual(res, {"person": True})
+        self.assertEqual(calls, ["primary:cloud", "local:e4b"])  # primary then fallback
+        self.assertFalse(ai.RATE_LIMITED)  # fallback succeeded -> sweep not bailed
+
+    def test_all_rate_limited_bails_sweep(self):
+        ai = analyze_images
+        ai.MODEL_PRIMARY, ai.MODEL_FALLBACK = "p", "f"
+        ai.encode_image = lambda p: "x"
+
+        def fake_chat(payload, timeout):
+            raise ai.RateLimited("429")
+
+        orig, ai._ollama_chat = ai._ollama_chat, fake_chat
+        ai.RATE_LIMITED = False
+        try:
+            res = ai.analyze_image_local("x.jpg")
+        finally:
+            ai._ollama_chat = orig
+        self.assertIsNone(res)
+        self.assertTrue(ai.RATE_LIMITED)  # whole chain throttled -> bail this sweep
+
+
 class TestChatStream(unittest.TestCase):
     def test_parse_chat_chunk(self):
         self.assertEqual(analyze_images.parse_chat_chunk('{"message":{"content":"Hi"},"done":false}'), ("Hi", False))

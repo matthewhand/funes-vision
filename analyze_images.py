@@ -13,6 +13,11 @@ from datetime import datetime
 # CONFIGURATION (defaults; override in settings.json next to this script)
 MODEL_CLOUD = "google/gemma-4-31b-it"
 MODEL_LOCAL = "gemma4:12b"  # Ollama tag (verified; "gemma-4:12b" does not exist)
+# Primary/fallback inference, both via Ollama (:11434). The primary may be a
+# fast cloud model (e.g. minimax-m3:cloud); the fallback a local/private model
+# (e.g. gemma4:e4b). On failure or rate-limit the chain falls through.
+MODEL_PRIMARY = MODEL_LOCAL  # default; overridden by settings `model_primary`
+MODEL_FALLBACK = ""          # optional; settings `model_fallback`
 BURST_THRESHOLD_SECONDS = 300  # Group images within 5 mins
 MIN_MEM_FOR_LOCAL_GB = 16.0
 MAX_AGE_DAYS = 30   # retention: no-detection images older than this are removed
@@ -44,6 +49,8 @@ if os.path.exists(_settings_path):
         OLLAMA_URL = _s.get("ollama_url", OLLAMA_URL)
         MAX_DEEP_PASSES = _s.get("max_deep_passes", MAX_DEEP_PASSES)
         MODEL_LOCAL = _s.get("model_local", MODEL_LOCAL)
+        MODEL_PRIMARY = _s.get("model_primary", MODEL_LOCAL)  # default to model_local
+        MODEL_FALLBACK = _s.get("model_fallback", "")
         FAST_PASS_ENGINE = _s.get("fast_pass_engine", FAST_PASS_ENGINE)
         DEEP_BACKFILL = _s.get("deep_backfill", DEEP_BACKFILL)
         DEEP_PASSES_ENABLED = _s.get("deep_passes_enabled", DEEP_PASSES_ENABLED)
@@ -279,6 +286,17 @@ def _ollama_chat(payload, timeout):
     raise RateLimited("LLM throttled")  # defensive; loop above normally returns/raises
 
 
+def model_chain(primary, fallback):
+    """Ordered, de-duplicated, non-empty [primary, fallback] models to try. Pure."""
+    seen, out = set(), []
+    for m in (primary, fallback):
+        m = m.strip() if isinstance(m, str) else ""
+        if m and m not in seen:
+            seen.add(m)
+            out.append(m)
+    return out
+
+
 def parse_chat_chunk(line):
     """Parse one NDJSON line of an Ollama streaming chat response into
     (text_delta, done). Pure; a malformed line yields ("", False)."""
@@ -321,31 +339,39 @@ def _ollama_chat_stream(payload, on_delta, timeout):
 
 
 def analyze_image_local(image_path):
-    """Vision inference via the Ollama server (local or a :cloud model)."""
+    """Vision inference via Ollama, walking the primary->fallback model chain.
+    Falls through on rate-limit/error; only bails the sweep (RATE_LIMITED) if the
+    WHOLE chain was throttled."""
     global RATE_LIMITED
-    try:
-        payload = {
-            "model": MODEL_LOCAL,
-            "messages": [{
-                "role": "user",
-                "content": DETECT_PROMPT,
-                "images": [encode_image(image_path)],
-            }],
-            "stream": False,
-            "format": "json",
-        }
-        response = _ollama_chat(payload, timeout=600)
-        result = json.loads(response.json()["message"]["content"])
-        return result if isinstance(result, dict) else None
-    except RateLimited as e:
+    base = {
+        "messages": [{
+            "role": "user",
+            "content": DETECT_PROMPT,
+            "images": [encode_image(image_path)],
+        }],
+        "stream": False,
+        "format": "json",
+    }
+    rate_limited_all, tried = True, 0
+    for model in model_chain(MODEL_PRIMARY, MODEL_FALLBACK):
+        tried += 1
+        try:
+            response = _ollama_chat({**base, "model": model}, timeout=600)
+            result = json.loads(response.json()["message"]["content"])
+            return result if isinstance(result, dict) else None
+        except RateLimited:
+            continue  # try the next model in the chain
+        except requests.exceptions.ConnectionError:
+            rate_limited_all = False
+            return None  # Ollama itself is down; nothing in the chain will work
+        except Exception as e:
+            rate_limited_all = False
+            print(f"Inference failed on {model}: {e}")
+            continue
+    if tried and rate_limited_all:
         RATE_LIMITED = True
-        print(f"LLM rate-limited; backing off for this sweep: {e}")
-        return None
-    except requests.exceptions.ConnectionError:
-        return None  # No Ollama server; fall through to cloud
-    except Exception as e:
-        print(f"Local inference failed: {e}")
-        return None
+        print("LLM rate-limited across the model chain; backing off for this sweep")
+    return None
 
 BURST_PROMPT = "These webcam frames were taken in sequence. Describe what happens across them - any people, animals, birds, vehicles, or notable changes in the scene (lighting, objects moving). Don't assume a person is the subject. If nothing meaningfully changes, say so in one sentence."
 
@@ -354,26 +380,30 @@ def analyze_burst_local(image_paths, on_progress=None):
     STREAMED. on_progress(accumulated_text) fires as the caption builds so the
     UI can show it live ("AI is looking at this…"). Returns the full text."""
     global RATE_LIMITED
-    try:
-        payload = {
-            "model": MODEL_LOCAL,
-            "messages": [{
-                "role": "user",
-                "content": BURST_PROMPT,
-                "images": [encode_image(p) for p in image_paths],
-            }],
-        }
-        full = _ollama_chat_stream(payload,
-                                   (lambda delta, acc: on_progress(acc)) if on_progress else None,
-                                   timeout=900)
-        return full.strip() if full else None
-    except RateLimited as e:
+    base = {
+        "messages": [{
+            "role": "user",
+            "content": BURST_PROMPT,
+            "images": [encode_image(p) for p in image_paths],
+        }],
+    }
+    cb = (lambda delta, acc: on_progress(acc)) if on_progress else None
+    rate_limited_all, tried = True, 0
+    for model in model_chain(MODEL_PRIMARY, MODEL_FALLBACK):
+        tried += 1
+        try:
+            full = _ollama_chat_stream({**base, "model": model}, cb, timeout=900)
+            return full.strip() if full else None
+        except RateLimited:
+            continue
+        except Exception as e:
+            rate_limited_all = False
+            print(f"Burst analysis failed on {model}: {e}")
+            continue
+    if tried and rate_limited_all:
         RATE_LIMITED = True
-        print(f"LLM rate-limited on burst; backing off for this sweep: {e}")
-        return None
-    except Exception as e:
-        print(f"Local burst analysis failed: {e}")
-        return None
+        print("LLM rate-limited on burst across the model chain; backing off for this sweep")
+    return None
 
 def analyze_burst_openrouter(image_paths, api_key):
     """Analyze a sequence of images for a textual description."""

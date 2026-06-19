@@ -247,7 +247,9 @@ move → verify) lives in [ROADMAP.md](ROADMAP.md).
 | `min_mem_for_local_gb` | 6.0 | min free RAM to attempt local LLM |
 | `allow_cloud` | false | permit OpenRouter fallback |
 | `ollama_url` | http://localhost:11434 | local LLM endpoint |
-| `model_local` | gemma4:12b | Ollama model tag (NOT "gemma-4:12b") |
+| `model_local` | gemma4:12b | Ollama model tag (back-compat default for `model_primary`) |
+| `model_primary` | (=`model_local`) | primary inference model via Ollama (local tag or a `:cloud` model) |
+| `model_fallback` | "" | optional fallback tried when the primary errors/rate-limits |
 | `max_deep_passes` | 4 | LLM calls per camera per sweep (local+cloud) |
 | `fast_pass_engine` | yolo | `yolo` or `haar` (UI-selectable) |
 | `deep_passes_enabled` | true | master switch for ALL Gemma work (priority+backfill+bursts); false = detector-only, no LLM (UI-toggleable) |
