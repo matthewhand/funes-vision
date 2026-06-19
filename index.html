@@ -2203,6 +2203,36 @@
     // === /pure:detectionEntry ===
 
     // --- Saved searches (named filter snapshots, localStorage-backed) ---
+    // === pure:clearedFilters ===
+    // The canonical "no filters" state (objectFilters as []). Keys mirror
+    // filterSnapshot so a reset clears every dimension it can capture.
+    function clearedFilters() {
+      return { searchQuery: '', activeFilter: 'all', objectFilters: [],
+               activeDateFilter: 'all', timeStart: 0, timeEnd: 23, activeHourChartFilter: null };
+    }
+    // === /pure:clearedFilters ===
+
+    // Apply the cleared-filter state + sync DOM controls, then re-render. The
+    // canonical "escape" so "Show all / Clear all filters" never dead-ends.
+    function resetAllFilters() {
+      const f = clearedFilters();
+      state.searchQuery = f.searchQuery;
+      state.activeFilter = f.activeFilter;
+      state.objectFilters.clear();
+      state.activeDateFilter = f.activeDateFilter;
+      state.timeStart = f.timeStart; state.timeEnd = f.timeEnd;
+      state.activeHourChartFilter = f.activeHourChartFilter;
+      const si = document.getElementById('search-input'); if (si) si.value = '';
+      const ss = document.getElementById('time-start'), se = document.getElementById('time-end');
+      if (ss) ss.value = 0; if (se) se.value = 23;
+      if (typeof updateSliderLabel === 'function') updateSliderLabel();
+      document.querySelectorAll('#filter-tabs .tab-btn').forEach(btn =>
+        btn.classList.toggle('active', btn.dataset.filter === 'all'));
+      renderObjectFilters();
+      renderDateSidebar();
+      applyFiltersAndSearch();
+    }
+
     // === pure:filterSnapshot ===
     // Capture the filter/search fields from a state-like object into a plain,
     // JSON-serialisable snapshot (objectFilters Set -> sorted array).
@@ -2485,13 +2515,21 @@
         // Explain WHY it's empty and offer one-tap escapes
         let msg = 'No snapshots found matching the current timeline filter or search criteria.';
         let actions = '';
+        const filtersActive = state.searchQuery || state.objectFilters.size ||
+          state.activeDateFilter !== 'all' || state.timeStart !== 0 || state.timeEnd !== 23 ||
+          state.activeHourChartFilter !== null;
         if (state.activeFilter === 'objects') {
           msg = 'No images with AI detections match the current filters.';
           if (state.blacklist.length > 0) {
             msg += ` (${state.blacklist.length} label${state.blacklist.length !== 1 ? 's are' : ' is'} hidden via the Hidden menu.)`;
             actions += '<button class="btn" id="empty-unhide">Unhide all labels</button>';
           }
-          actions += '<button class="btn" id="empty-show-all">Show all images</button>';
+        }
+        // Always offer a real escape when any filter is narrowing the view, on
+        // any tab — clears EVERY filter (tab/objects/date/time/search), not just
+        // the tab, so it can never dead-end to an empty grid.
+        if (filtersActive || state.activeFilter === 'objects') {
+          actions += '<button class="btn" id="empty-reset">Clear all filters</button>';
         }
         showEmptyState(msg, actions);
       } else {
@@ -3096,14 +3134,8 @@
         renderObjectFilters();
         applyFiltersAndSearch();
       };
-      const showAllBtn = document.getElementById('empty-show-all');
-      if (showAllBtn) showAllBtn.onclick = () => {
-        state.activeFilter = 'all';
-        state.activeHourChartFilter = null;
-        document.querySelectorAll('#filter-tabs .tab-btn').forEach(btn =>
-          btn.classList.toggle('active', btn.dataset.filter === 'all'));
-        applyFiltersAndSearch();
-      };
+      const resetBtn = document.getElementById('empty-reset');
+      if (resetBtn) resetBtn.onclick = () => resetAllFilters();
 
       lucide.createIcons();
     }

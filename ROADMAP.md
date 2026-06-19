@@ -245,9 +245,9 @@ polish. All fixes are additive, no-dep, vanilla JS/CSS. Built items are checked 
 - [x] **`ongoing` visit is misleading** — now gated on recency via pure
       `isRecent()` (end frame within 10 min of now); older last visits show their
       duration + the done icon. *(Shipped — feat/ongoing-recency.)*
-- [ ] **"Show all images" doesn't clear all filters** — `empty-show-all` only
-      flips the tab; object/date/time/search stay set, so it can still show an empty
-      grid. Reset every filter + resync the controls.
+- [x] **"Show all images" doesn't clear all filters** — replaced with a "Clear
+      all filters" escape (shown whenever any filter is active, any tab) wired to
+      `resetAllFilters()` (pure `clearedFilters()` + DOM resync). *(Shipped — feat/show-all-reset.)*
 - [ ] **Player robustness** — fetch/`onerror` stale-frame closure (capture `idx`),
       GIF-download race after close (AbortController + `overlay.isConnected` guard),
       Space double-toggle when a button is focused.
