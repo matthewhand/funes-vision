@@ -265,8 +265,10 @@ polish. All fixes are additive, no-dep, vanilla JS/CSS. Built items are checked 
       contradict the on-disk count; same for busiest-hour/sparkline.
 - [ ] **Backfill bar excludes `unanalyzed`** — bar can read 100% while the Queue
       line shows hundreds "new"; fold in or relabel.
-- [ ] **Stream "live" never goes stale** — `streamConnected` only flips on
-      open/onerror; track `lastEventTs` and show "stale (no events Ns)".
+- [x] **Stream "live" never goes stale** — the heartbeat is now a named `ping`
+      SSE event the client tracks (`lastPingTs`); the panel shows "stale (no
+      signal)" when pings stop (a silent stall), distinct from a quiet period.
+      *(Shipped — feat/stream-stale.)*
 - [x] **Search predicate diverges** — unified into one pure `matchesSearch()`
       (filename + date/time/type/caption) used by both the grid and the charts.
       *(Shipped — feat/search-unify.)*

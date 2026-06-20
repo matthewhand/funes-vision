@@ -129,6 +129,7 @@ A `: ping` comment is sent each cycle as a heartbeat.
 | `image.new` | `{"file": "<name>"}` | A frame first appears in `analysis.json` (right after the fast pass) — the earliest new-frame signal the API has. |
 | `detection.preliminary` | `{"file": "<name>", "labels": ["car", ...]}` | A detector-only hit (a `fast_pass` record with a true label) appears, before/without an LLM verdict. Suppressed once promoted to verified. The only live detections while deep passes are off. |
 | `new-detection` | `{"file": "<name>", "labels": ["person", ...]}` | An image gains a final LLM verdict with ≥1 true label. |
+| `ping` | `{}` | Heartbeat every ~3 s; lets the client detect a silently-stalled connection (also keeps proxies unbuffered). |
 | `new-burst` | `{"id": "<burst-id>", "summary": "<text>"}` | A new burst/visit is written to `bursts.json`. |
 
 ### Not yet implemented

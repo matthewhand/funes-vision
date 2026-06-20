@@ -537,7 +537,10 @@ class Handler(BaseHTTPRequestHandler):
                     seen_bursts = set(bursts)
 
                 seeded = True
-                self.wfile.write(b": ping\n\n")  # heartbeat keeps the connection alive
+                # Named heartbeat (every ~3s) the client can observe to detect a
+                # silently-stalled connection (a bare ": ping" comment is invisible
+                # to EventSource); also keeps proxies from buffering.
+                self._sse("ping", {})
                 self.wfile.flush()
                 time.sleep(3)
         except (BrokenPipeError, ConnectionResetError, OSError):

@@ -24,4 +24,15 @@ assert.strictEqual(streamStatusText(undefined).ok, false);
 assert.strictEqual(streamStatusText(null).ok, false);
 assert.strictEqual(streamStatusText(0).ok, false);
 
+// Staleness: connected but no heartbeat ping within the window => stale.
+assert.strictEqual(streamStatusText(true, 1000, 1010, 15).ok, true);   // age 10 < 15 -> live
+assert.match(streamStatusText(true, 1000, 1010, 15).label, /live/i);
+assert.strictEqual(streamStatusText(true, 1000, 1040, 15).ok, false);  // age 30 > 15 -> stale
+assert.match(streamStatusText(true, 1000, 1040, 15).label, /stale/i);
+assert.strictEqual(streamStatusText(true, 1000, 1000, 15).ok, true);   // age 0
+// Backward-compatible: no ping data given => just live when connected.
+assert.strictEqual(streamStatusText(true).ok, true);
+// Not connected always wins over staleness.
+assert.strictEqual(streamStatusText(false, 1000, 9999, 15).ok, false);
+
 console.log('streamStatusText: all assertions passed');
