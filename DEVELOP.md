@@ -396,6 +396,10 @@ node tests/*.js                          # SPA pure helpers (one file each)
   `bucketByHour`, `labelCounts`, `busiestHour`, `filterSnapshot`,
   `upsertSearch`, `removeSearch`, `mergeNewImage`, `detectionEntry`,
   `escapeHtml`, `isRecent`, `clearedFilters`, `matchesSearch`, `cardAriaLabel`, `badgeLabel`, `visitDateLabel`, `visitsSummary`, `formatCount`, `tabWrap`, `streamStatusText`.
+- **Regression guard** (`tests/test_dom_refs.js`): cross-checks every
+  `getElementById('x')` the SPA relies on against an `id="x"` in the markup
+  (minus a tiny allowlist of runtime-created elements), catching a broken/renamed
+  DOM reference the pure-helper tests can't see.
 - **Inline JS sanity:** extract each `<script>` body and `node --check` it
   before deploying (catches syntax errors the single-file SPA would otherwise
   only reveal in a browser).
