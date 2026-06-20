@@ -259,8 +259,10 @@ polish. All fixes are additive, no-dep, vanilla JS/CSS. Built items are checked 
       `aria-hidden`. *(Shipped — feat/badge-a11y.)*
 
 ### P2 — notable UX / a11y / correctness
-- [ ] **Cross-midnight visits** mislabel to the start date and silently cap at 60
-      frames; show both dates + a "(first 60 frames)" note.
+- [x] **Cross-midnight visits** — visit rows now show "start – end" when a visit
+      spans midnight (pure `visitDateLabel`) + a "(first N shown)" note when the
+      frame count exceeds the 60-frame player cap; caption/label/thumb escaped.
+      *(Shipped — feat/visit-row.)*
 - [x] **Insights stats are "loaded frames", not totals** — relabeled "N loaded
       frames" (+ tooltip) so it no longer contradicts the on-disk count. *(Shipped — feat/panel-accuracy.)*
 - [x] **Backfill bar excludes `unanalyzed`** — `backfillProgress` now folds
