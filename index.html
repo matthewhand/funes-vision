@@ -2219,6 +2219,15 @@
       };
     }
 
+    // === pure:visitsSummary ===
+    // Timeline count label that reveals the render cap: "N visits detected", or
+    // "showing first <cap> of N visits" when the list is truncated.
+    function visitsSummary(total, cap) {
+      if (total > cap) return `showing first ${cap} of ${total} visits`;
+      return `${total} visit${total !== 1 ? 's' : ''} detected`;
+    }
+    // === /pure:visitsSummary ===
+
     // === pure:visitDateLabel ===
     // Visit-row date: a single date, or "start – end" when the visit crosses
     // midnight (so it isn't mislabeled to just the start date).
@@ -2769,8 +2778,8 @@
         visits = visits.filter(v => v.label.includes(q) || v.caption.toLowerCase().includes(q));
       }
 
-      document.getElementById('stats-label').textContent =
-        `${visits.length} visit${visits.length !== 1 ? 's' : ''} detected`;
+      const VISIT_CAP = 300;
+      document.getElementById('stats-label').textContent = visitsSummary(visits.length, VISIT_CAP);
 
       if (visits.length === 0) {
         showEmptyState('No object visits for the current filters yet. Visits build up as Gemma verifies images.');
@@ -2779,7 +2788,7 @@
 
       const list = document.createElement('div');
       list.style.cssText = 'display:flex;flex-direction:column;gap:8px;width:100%;grid-column:1/-1;';
-      visits.slice(0, 300).forEach(v => {
+      visits.slice(0, VISIT_CAP).forEach(v => {
         const icon = v.label === 'person' ? 'user' : v.label === 'dog' ? 'dog' : v.label === 'cat' ? 'cat' : v.label === 'bird' ? 'bird' : 'eye';
         const timeRange = v.count > 1
           ? `${v.start.meta.formattedTime} – ${v.end.meta.formattedTime}`
@@ -2806,6 +2815,12 @@
         row.onclick = () => openEventPlayer({ label: v.label, type: 'visit', x: v.start, frames: v.frames });
         list.appendChild(row);
       });
+      if (visits.length > VISIT_CAP) {
+        const more = document.createElement('div');
+        more.style.cssText = 'text-align:center;color:var(--text-secondary);font-size:0.75rem;padding:6px 0;';
+        more.textContent = `Showing the ${VISIT_CAP} most recent of ${visits.length} — narrow with a date, object, or search filter to reach older visits.`;
+        list.appendChild(more);
+      }
       grid.appendChild(list);
       lucide.createIcons();
     }

@@ -289,8 +289,9 @@ polish. All fixes are additive, no-dep, vanilla JS/CSS. Built items are checked 
       tabs, sidebar/blacklist items). *(Shipped — feat/a11y-css.)*
 - [ ] **Lightbox/player control bars overflow on phones** — allow wrap / hide
       redundant zoom buttons under 768px.
-- [ ] **300-visit / list-view caps** silently truncate with no "showing first N"
-      notice; `stats-label` goes stale on the Timeline tab.
+- [x] **300-visit cap** — the Timeline count now reads "showing first 300 of N
+      visits" (pure `visitsSummary`) + a footer note when truncated, so the cap
+      isn't silent. (stats-label already updates correctly on the tab.) *(Shipped — feat/visits-count.)*
 - [ ] **`<img alt>` is the raw filename** everywhere — derive a human alt from
       parsed metadata.
 
