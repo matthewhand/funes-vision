@@ -242,8 +242,8 @@ polish. All fixes are additive, no-dep, vanilla JS/CSS. Built items are checked 
       now `role="dialog" aria-modal`, move focus in on open, trap Tab within
       (pure `tabWrap` + `trapFocus`), and restore focus to the opener on close.
       *(Shipped — feat/dialog-focus.)*
-- [ ] **Mobile touch targets** — card action buttons (28px) and toggle rows are
-      below the 44px minimum; bump via `@media (pointer:coarse)`.
+- [x] **Mobile touch targets** — `@media (pointer:coarse)` bumps the card action
+      buttons, view toggles and toggle rows to >=44px. *(Shipped — feat/a11y-css.)*
 - [x] **`ongoing` visit is misleading** — now gated on recency via pure
       `isRecent()` (end frame within 10 min of now); older last visits show their
       duration + the done icon. *(Shipped — feat/ongoing-recency.)*
@@ -278,8 +278,9 @@ polish. All fixes are additive, no-dep, vanilla JS/CSS. Built items are checked 
 - [ ] **Search placeholder undersells** caption/label search — reword.
 - [ ] **Status panel re-renders every 5s** destroying audit-trail scroll/focus;
       skip refresh while scrolled/hovered, or diff-update.
-- [ ] **Focus-visible** ring missing on all the custom controls (and removed on the
-      search input); add a global `:focus-visible` rule.
+- [x] **Focus-visible** ring — global `:focus-visible` outline now covers all
+      interactive controls (buttons, links, inputs, role=button cards, chips,
+      tabs, sidebar/blacklist items). *(Shipped — feat/a11y-css.)*
 - [ ] **Lightbox/player control bars overflow on phones** — allow wrap / hide
       redundant zoom buttons under 768px.
 - [ ] **300-visit / list-view caps** silently truncate with no "showing first N"

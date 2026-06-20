@@ -1363,6 +1363,24 @@
       display: inline-flex; align-items: center; justify-content: center; gap: 4px; }
     .saved-add:hover { color: var(--text-primary); border-color: var(--text-secondary); }
     .saved-add i { width: 13px; height: 13px; }
+    /* A11y: visible keyboard focus on every interactive control (mouse clicks
+       stay ring-free thanks to :focus-visible). */
+    a:focus-visible, button:focus-visible, input:focus-visible,
+    select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible,
+    [role="button"]:focus-visible, .sidebar-item:focus-visible,
+    .blacklist-item:focus-visible, .saved-chip:focus-visible,
+    .tab-btn:focus-visible, .view-btn:focus-visible, .time-pill:focus-visible {
+      outline: 2px solid var(--accent-color);
+      outline-offset: 2px;
+    }
+    /* A11y: comfortable touch targets on coarse-pointer (touch) devices — the
+       small icon buttons and toggle rows otherwise fall below the 44px minimum. */
+    @media (pointer: coarse) {
+      .action-icon-btn { min-width: 44px; min-height: 44px; }
+      .view-btn { min-width: 44px; min-height: 44px; }
+      .blacklist-item { min-height: 44px; }
+      .saved-chip { min-height: 36px; }
+    }
   </style>
 </head>
 <body>
