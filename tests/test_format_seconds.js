@@ -22,7 +22,12 @@ assert.strictEqual(formatSeconds(125), '2m 5s');
 // Rounding must NOT produce a 60-second component — it rolls into the minute.
 assert.strictEqual(formatSeconds(119.6), '2m 0s');   // was "1m 60s"
 assert.strictEqual(formatSeconds(59.6), '1m 0s');    // was "60s"
-// No hours component (matches the original formatter): 3600 -> "60m 0s".
-assert.strictEqual(formatSeconds(3599.6), '60m 0s');
+// An hour or more reads as "Hh Mm" (drops seconds) — no more "73m 12s".
+assert.strictEqual(formatSeconds(3599), '59m 59s');   // just under an hour
+assert.strictEqual(formatSeconds(3599.6), '1h 0m');   // rounds up to 3600
+assert.strictEqual(formatSeconds(3600), '1h 0m');
+assert.strictEqual(formatSeconds(3661), '1h 1m');     // 1h 1m 1s -> "1h 1m"
+assert.strictEqual(formatSeconds(7325), '2h 2m');     // 2h 2m 5s
+assert.strictEqual(formatSeconds(86400), '24h 0m');
 
 console.log('formatSeconds: all assertions passed');
