@@ -841,6 +841,10 @@
       height: 74px;
     }
 
+    .image-card:focus-visible {
+      outline: 2px solid var(--accent-color);
+      outline-offset: 2px;
+    }
     .image-card:hover {
       transform: translateY(-3px);
       box-shadow: 0 10px 20px rgba(0, 0, 0, 0.4);
@@ -2163,6 +2167,17 @@
     }
     // === /pure:isRecent ===
 
+    // === pure:cardAriaLabel ===
+    // Human accessible name for a gallery card from parsed meta + visible
+    // labels (e.g. "Jun 18, 2026 06:45:25 am — person, car").
+    function cardAriaLabel(meta, labels) {
+      const when = (meta && meta.formattedDate && meta.formattedTime)
+        ? `${meta.formattedDate} ${meta.formattedTime}` : 'snapshot';
+      const what = (labels && labels.length) ? labels.join(', ') : 'no detections';
+      return `${when} — ${what}`;
+    }
+    // === /pure:cardAriaLabel ===
+
     // === pure:escapeHtml ===
     // Escape a value for safe interpolation into innerHTML. Server/model
     // strings (filenames, streamed captions, labels) are untrusted.
@@ -2869,6 +2884,13 @@
       const card = document.createElement('div');
       card.className = `image-card`;
       card.dataset.index = index;
+      // Keyboard-operable: behave like a button (Enter/Space opens the lightbox).
+      const cardLabels = analysis
+        ? [...effectiveLabels(analysis)].filter(l => !state.blacklist.includes(l)).sort()
+        : [];
+      card.setAttribute('role', 'button');
+      card.tabIndex = 0;
+      card.setAttribute('aria-label', cardAriaLabel(meta, cardLabels));
       
       // Build Detections Badges (replacing the redundant Motion tag)
       let detectionsHtml = '';
@@ -2889,7 +2911,7 @@
           detectionsHtml += `
             <span class="badge badge-ai tag-${label} ${cls}">
               <i data-lucide="${icon}"></i>
-              <span style="text-transform: capitalize;">${label}${suffix}</span>
+              <span style="text-transform: capitalize;">${escapeHtml(label)}${suffix}</span>
             </span>`;
         });
 
@@ -2900,11 +2922,11 @@
 
       const caption = entryCaption(analysis);
       const captionHtml = caption
-        ? `<div class="card-caption" title="${caption}">${caption}</div>` : '';
+        ? `<div class="card-caption" title="${escapeHtml(caption)}">${escapeHtml(caption)}</div>` : '';
 
       card.innerHTML = `
         <div class="card-img-wrapper">
-          <img class="card-img unloaded" data-src="thumbs/${filename}" data-full="${filename}" alt="${filename}">
+          <img class="card-img unloaded" data-src="thumbs/${encodeURIComponent(filename)}" data-full="${encodeURIComponent(filename)}" alt="${escapeHtml(cardAriaLabel(meta, cardLabels))}">
         </div>
         <div class="card-overlay">
           <div class="meta-info">
@@ -2929,6 +2951,13 @@
       card.querySelector('.pin-btn').onclick = () => togglePin(filename, card);
       card.querySelector('.del-btn').onclick = () => deleteImage(filename);
       card.addEventListener('click', () => openLightbox(index));
+      // Enter/Space activate the card like a button (Space would otherwise scroll).
+      card.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
+          e.preventDefault();
+          openLightbox(index);
+        }
+      });
       return card;
     }
 

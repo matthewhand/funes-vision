@@ -231,9 +231,10 @@ polish. All fixes are additive, no-dep, vanilla JS/CSS. Built items are checked 
       "Analyzing now" image/model/trigger, the audit-trail labels/trigger/image
       (href via `encodeURI` + `rel=noopener`), camera names, and the player's
       visit label/type. *(Shipped — feat/escape-html.)*
-- [ ] **Keyboard-operate the gallery** — image cards are click-only `<div>`s
-      (no `tabindex`/`role`/Enter-Space); the entire gallery is unreachable by
-      keyboard/SR. Make cards `role="button" tabindex="0"` + key handler + aria-label.
+- [x] **Keyboard-operate the gallery** — cards are now `role="button"`,
+      `tabindex=0`, Enter/Space opens the lightbox, with a human `aria-label`
+      (`cardAriaLabel`) + a `:focus-visible` ring. Card alt/caption/labels are now
+      escaped too. *(Shipped — feat/card-a11y.)*
 - [ ] **Keyboard-operate the custom controls** — sidebar date items, chart bars,
       blacklist/alias/Slack toggles, the Live toggle are click-only `<div>`s. Add
       `role`/`tabindex`/`aria-*` + Enter-Space handlers (or convert to `<button>`).
