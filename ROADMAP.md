@@ -238,9 +238,10 @@ polish. All fixes are additive, no-dep, vanilla JS/CSS. Built items are checked 
 - [ ] **Keyboard-operate the custom controls** — sidebar date items, chart bars,
       blacklist/alias/Slack toggles, the Live toggle are click-only `<div>`s. Add
       `role`/`tabindex`/`aria-*` + Enter-Space handlers (or convert to `<button>`).
-- [ ] **Dialog semantics + focus management** for the lightbox and flipbook player
-      — add `role="dialog" aria-modal`, move focus in on open, trap Tab, restore
-      focus to the trigger on close (currently focus escapes behind the overlay).
+- [x] **Dialog semantics + focus management** — lightbox + flipbook player are
+      now `role="dialog" aria-modal`, move focus in on open, trap Tab within
+      (pure `tabWrap` + `trapFocus`), and restore focus to the opener on close.
+      *(Shipped — feat/dialog-focus.)*
 - [ ] **Mobile touch targets** — card action buttons (28px) and toggle rows are
       below the 44px minimum; bump via `@media (pointer:coarse)`.
 - [x] **`ongoing` visit is misleading** — now gated on recency via pure
