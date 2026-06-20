@@ -3923,7 +3923,7 @@
       function backfillProgress(q) {
         q = q || {};
         const analyzed = q.llm_verified || 0;
-        const pending = (q.awaiting_backfill || 0) + (q.unverified_partials || 0);
+        const pending = (q.awaiting_backfill || 0) + (q.unverified_partials || 0) + (q.unanalyzed || 0);
         const total = analyzed + pending;
         const pct = total ? Math.round((analyzed / total) * 100) : 100;
         return { analyzed, pending, total, pct };
@@ -4013,7 +4013,7 @@
             ${s.retention ? `<div style="color:var(--text-secondary);">Last cleanup: removed ${s.retention.count} img${s.retention.count !== 1 ? 's' : ''} (${(s.retention.bytes_freed / 1e6).toFixed(0)} MB) ${fmtDur(Math.max(0, Math.round(Date.now() / 1000 - s.retention.ts)))} ago</div>` : ''}
             ${s.filesystem ? `<div style="color:${s.filesystem.free_gb < 1 ? '#ef4444' : 'var(--text-secondary)'};">Host disk: ${s.filesystem.free_gb} GB free of ${s.filesystem.total_gb} GB (${s.filesystem.used_pct}% used)</div>` : ''}
             <div style="margin-top:8px;font-weight:700;text-transform:uppercase;font-size:0.7rem;color:var(--text-secondary);border-bottom:1px solid var(--border-color);padding-bottom:3px;">Insights</div>
-            <div>${insTotal.toLocaleString()} frames${insPeak >= 0 ? ` &middot; busiest ${String(insPeak).padStart(2, '0')}:00` : ''}</div>
+            <div title="computed from the frames loaded in this view, not the full on-disk set">${insTotal.toLocaleString()} loaded frames${insPeak >= 0 ? ` &middot; busiest ${String(insPeak).padStart(2, '0')}:00` : ''}</div>
             <div style="margin:3px 0;line-height:0;">${insSpark}</div>
             <div><b>Most seen:</b> ${insTopHtml}</div>
             <div style="margin-top:8px;font-weight:700;text-transform:uppercase;font-size:0.7rem;color:var(--text-secondary);border-bottom:1px solid var(--border-color);padding-bottom:3px;">Inference (last ${(s.metrics && s.metrics.window_min) || 60}m)</div>

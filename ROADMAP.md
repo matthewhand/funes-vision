@@ -261,10 +261,11 @@ polish. All fixes are additive, no-dep, vanilla JS/CSS. Built items are checked 
 ### P2 — notable UX / a11y / correctness
 - [ ] **Cross-midnight visits** mislabel to the start date and silently cap at 60
       frames; show both dates + a "(first 60 frames)" note.
-- [ ] **Insights stats are "loaded frames", not totals** — label them so they don't
-      contradict the on-disk count; same for busiest-hour/sparkline.
-- [ ] **Backfill bar excludes `unanalyzed`** — bar can read 100% while the Queue
-      line shows hundreds "new"; fold in or relabel.
+- [x] **Insights stats are "loaded frames", not totals** — relabeled "N loaded
+      frames" (+ tooltip) so it no longer contradicts the on-disk count. *(Shipped — feat/panel-accuracy.)*
+- [x] **Backfill bar excludes `unanalyzed`** — `backfillProgress` now folds
+      `unanalyzed` into pending, so the bar can't read 100% while frames are
+      still queued. *(Shipped — feat/panel-accuracy.)*
 - [x] **Stream "live" never goes stale** — the heartbeat is now a named `ping`
       SSE event the client tracks (`lastPingTs`); the panel shows "stale (no
       signal)" when pings stop (a silent stall), distinct from a quiet period.

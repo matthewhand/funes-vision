@@ -25,6 +25,13 @@ assert.deepStrictEqual(backfillProgress(undefined), { analyzed: 0, pending: 0, t
 // All pending, none analyzed => 0%.
 assert.strictEqual(backfillProgress({ llm_verified: 0, awaiting_backfill: 10 }).pct, 0);
 
+// `unanalyzed` (fast-pass not yet run) must count as pending too — otherwise the
+// bar reads 100% while the Queue line still shows "new" frames.
+let u = backfillProgress({ llm_verified: 50, awaiting_backfill: 0, unverified_partials: 0, unanalyzed: 10 });
+assert.strictEqual(u.pending, 10);
+assert.strictEqual(u.total, 60);
+assert.strictEqual(u.pct, 83);   // round(50/60*100)
+
 // Missing fields are treated as zero.
 assert.strictEqual(backfillProgress({ llm_verified: 30 }).pct, 100);
 
