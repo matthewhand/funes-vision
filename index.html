@@ -2219,6 +2219,13 @@
       };
     }
 
+    // === pure:formatCount ===
+    // Thousands-grouped integer for status readouts; nullish/non-finite -> ''.
+    function formatCount(n) {
+      return (typeof n === 'number' && isFinite(n)) ? n.toLocaleString('en-US') : '';
+    }
+    // === /pure:formatCount ===
+
     // === pure:visitsSummary ===
     // Timeline count label that reveals the render cap: "N visits detected", or
     // "showing first <cap> of N visits" when the list is truncated.
@@ -4015,9 +4022,9 @@
             <div><b>Idle backfill:</b> ${s.settings.deep_backfill ? 'on' : 'off'}</div>
             <div><b>Quiet labels:</b> ${(s.settings.gate_ignore_labels || []).join(', ') || 'none'}</div>
             <div style="margin-top:6px;"><b>Queue:</b>
-              ${s.queue.unanalyzed} new &middot; ${s.queue.unverified_partials} priority &middot;
-              ${s.queue.awaiting_backfill} backfill &middot; ${s.queue.llm_verified} verified
-              (${s.queue.images_on_disk} on disk)</div>
+              ${formatCount(s.queue.unanalyzed)} new &middot; ${formatCount(s.queue.unverified_partials)} priority &middot;
+              ${formatCount(s.queue.awaiting_backfill)} backfill &middot; ${formatCount(s.queue.llm_verified)} verified
+              (${formatCount(s.queue.images_on_disk)} on disk)</div>
             ${(() => {
               const b = backfillProgress(s.queue);
               const paused = s.settings && s.settings.deep_passes_enabled === false;
@@ -4034,7 +4041,7 @@
               const dot = c.stale ? '<span style="color:#ef4444;">&#9679;</span>' : '<span style="color:#10b981;">&#9679;</span>';
               const age = c.last_frame_age_s == null ? 'no frames' : fmtDur(c.last_frame_age_s) + ' ago';
               const pct = c.budget_pct == null ? '' : ` <span style="color:${c.budget_pct > 85 ? '#ef4444' : 'inherit'};">(${c.budget_pct}%)</span>`;
-              return `<div>${dot} <b>${escapeHtml(c.name)}</b>: last frame ${age} &middot; ${(c.bytes / 1e9).toFixed(1)}GB${pct} &middot; ${c.images} imgs</div>`;
+              return `<div>${dot} <b>${escapeHtml(c.name)}</b>: last frame ${age} &middot; ${(c.bytes / 1e9).toFixed(1)}GB${pct} &middot; ${formatCount(c.images)} imgs</div>`;
             }).join('')}
             ${s.retention ? `<div style="color:var(--text-secondary);">Last cleanup: removed ${s.retention.count} img${s.retention.count !== 1 ? 's' : ''} (${(s.retention.bytes_freed / 1e6).toFixed(0)} MB) ${fmtDur(Math.max(0, Math.round(Date.now() / 1000 - s.retention.ts)))} ago</div>` : ''}
             ${s.filesystem ? `<div style="color:${s.filesystem.free_gb < 1 ? '#ef4444' : 'var(--text-secondary)'};">Host disk: ${s.filesystem.free_gb} GB free of ${s.filesystem.total_gb} GB (${s.filesystem.used_pct}% used)</div>` : ''}

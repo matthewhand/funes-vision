@@ -305,7 +305,9 @@ polish. All fixes are additive, no-dep, vanilla JS/CSS. Built items are checked 
       notification, reserve accent for the icon.
 - [x] **`fmtDur`/`formatSeconds` cap at minutes** — now emit `Hh Mm` past 3600s
       (e.g. "1h 13m" not "73m 12s") for long ages/inferences. *(Shipped — feat/format-hours.)*
-- [ ] **Status numbers** lack locale grouping; sub-1GB cameras show "0.0GB".
+- [x] **Status numbers** — queue + per-camera counts are now thousands-grouped
+      via pure `formatCount` ("8,802" not "8802"). (Sub-1GB GB display is a
+      separate follow-up.) *(Shipped — feat/locale-numbers.)*
 - [ ] **Empty-state polish**: distinct "Analyzing…" vs "no visits" vs error; "no
       data yet" placeholder for the all-zero sparkline; reserve red for real faults
       (the activity pill is alarming-red for benign events).
