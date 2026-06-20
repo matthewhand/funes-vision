@@ -2218,6 +2218,17 @@
       };
     }
 
+    // === pure:badgeLabel ===
+    // Accessible name for a detection badge: the lifecycle state (which the
+    // colour + ?/✗ glyph convey visually) spelled out for screen readers.
+    function badgeLabel(label, state) {
+      const note = state === 'preliminary' ? ', unconfirmed'
+                 : state === 'disputed' ? ', disputed'
+                 : '';   // verified / unknown -> bare label
+      return `${label}${note}`;
+    }
+    // === /pure:badgeLabel ===
+
     // === pure:cardAriaLabel ===
     // Human accessible name for a gallery card from parsed meta + visible
     // labels (e.g. "Jun 18, 2026 06:45:25 am — person, car").
@@ -2965,9 +2976,9 @@
           const suffix = st === 'preliminary' ? '?' : st === 'disputed' ? ' &#10007;' : '';
 
           detectionsHtml += `
-            <span class="badge badge-ai tag-${label} ${cls}">
-              <i data-lucide="${icon}"></i>
-              <span style="text-transform: capitalize;">${escapeHtml(label)}${suffix}</span>
+            <span class="badge badge-ai tag-${label} ${cls}" role="img" aria-label="${escapeHtml(badgeLabel(label, st))}">
+              <i data-lucide="${icon}" aria-hidden="true"></i>
+              <span style="text-transform: capitalize;" aria-hidden="true">${escapeHtml(label)}${suffix}</span>
             </span>`;
         });
 

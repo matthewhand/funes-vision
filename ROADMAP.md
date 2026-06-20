@@ -253,9 +253,10 @@ polish. All fixes are additive, no-dep, vanilla JS/CSS. Built items are checked 
 - [ ] **Player robustness** — fetch/`onerror` stale-frame closure (capture `idx`),
       GIF-download race after close (AbortController + `overlay.isConnected` guard),
       Space double-toggle when a button is focused.
-- [ ] **Detection badges encode meaning by colour only** — disputed/potential use
-      line-through + colour with no text equivalent; add `aria-label`/visually-hidden
-      text and verify contrast.
+- [x] **Detection badges encode meaning by colour only** — each badge is now
+      `role="img"` with an `aria-label` spelling out the state (pure `badgeLabel`:
+      "person, unconfirmed" / "dog, disputed"); the decorative icon + glyph are
+      `aria-hidden`. *(Shipped — feat/badge-a11y.)*
 
 ### P2 — notable UX / a11y / correctness
 - [ ] **Cross-midnight visits** mislabel to the start date and silently cap at 60
