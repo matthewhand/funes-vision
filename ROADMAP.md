@@ -301,8 +301,9 @@ polish. All fixes are additive, no-dep, vanilla JS/CSS. Built items are checked 
       — replace ad-hoc per-element values with `:root` vars.
 - [ ] **`#stats-label` has no CSS rule** (renders at body default, louder than the
       toolbar); make it `0.78rem` secondary + tabular-nums.
-- [ ] **Toast looks like a primary CTA** (solid accent); restyle as a surface
-      notification, reserve accent for the icon.
+- [x] **Toast looks like a primary CTA** — restyled to a surface notification
+      (panel bg + border + shadow); the accent is now reserved for the leading
+      icon. *(Shipped — feat/toast-restyle.)*
 - [x] **`fmtDur`/`formatSeconds` cap at minutes** — now emit `Hh Mm` past 3600s
       (e.g. "1h 13m" not "73m 12s") for long ages/inferences. *(Shipped — feat/format-hours.)*
 - [x] **Status numbers** — queue + per-camera counts are now thousands-grouped

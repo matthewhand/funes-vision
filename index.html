@@ -1253,11 +1253,12 @@
       position: fixed;
       bottom: 24px;
       right: 24px;
-      background: var(--accent-color);
-      color: white;
+      background: var(--bg-secondary);
+      color: var(--text-primary);
+      border: 1px solid var(--border-color);
       padding: 12px 18px;
       border-radius: 8px;
-      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
       z-index: 1000;
       display: flex;
       align-items: center;
@@ -1278,6 +1279,8 @@
     .toast i {
       width: 16px;
       height: 16px;
+      color: var(--accent-color);
+      flex-shrink: 0;
     }
 
     /* Responsive Viewports */
