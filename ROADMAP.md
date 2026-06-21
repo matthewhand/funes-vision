@@ -292,8 +292,9 @@ polish. All fixes are additive, no-dep, vanilla JS/CSS. Built items are checked 
 - [x] **300-visit cap** — the Timeline count now reads "showing first 300 of N
       visits" (pure `visitsSummary`) + a footer note when truncated, so the cap
       isn't silent. (stats-label already updates correctly on the tab.) *(Shipped — feat/visits-count.)*
-- [ ] **`<img alt>` is the raw filename** everywhere — derive a human alt from
-      parsed metadata.
+- [x] **`<img alt>` is the raw filename** everywhere — derive a human alt from
+      parsed metadata. *(Cards use `cardAriaLabel`; Timeline visit thumbnails
+      now use `visitAltText`.)*
 
 ### P3 — polish / design system
 - [ ] **Design tokens**: unify radii, a 4px spacing scale, one accent (three blues

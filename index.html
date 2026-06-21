@@ -23,12 +23,49 @@
       --bg-tertiary: #1e293b;
       --text-primary: #f8fafc;
       --text-secondary: #94a3b8;
-      --accent-color: #3b82f6;
-      --accent-hover: #1d4ed8;
-      --success-color: #10b981;
       --border-color: rgba(255, 255, 255, 0.06);
       --transition-speed: 0.25s;
-      
+
+      /* === design tokens (declutter program) ============================== */
+      /* spacing — 4px base scale */
+      --space-05: 2px;  --space-1: 4px;  --space-15: 6px;  --space-2: 8px;
+      --space-3: 12px;  --space-4: 16px; --space-5: 24px;  --space-6: 32px;
+      /* radius */
+      --radius-1: 4px;  --radius-2: 8px; --radius-3: 12px;
+      --radius-pill: 999px; --radius-round: 50%;
+      /* accent — ONE canonical blue + tint ladder (was three blues) */
+      --accent: #3b82f6;
+      --accent-fg: #60a5fa;        /* readable accent on tinted dark bg */
+      --accent-strong: #1d4ed8;    /* pressed/active primary */
+      --accent-10: rgba(59, 130, 246, 0.10);
+      --accent-15: rgba(59, 130, 246, 0.15);
+      --accent-25: rgba(59, 130, 246, 0.25);
+      --accent-35: rgba(59, 130, 246, 0.35);
+      /* semantic */
+      --success: #10b981;
+      --danger: #ef4444;
+      --danger-12: rgba(239, 68, 68, 0.12);
+      --danger-35: rgba(239, 68, 68, 0.35);
+      --warning: #f59e0b;
+      --surface-hover: rgba(255, 255, 255, 0.04);
+      --surface-hover-strong: rgba(255, 255, 255, 0.08);
+      /* categorical detection-tag hues (RGB triplet + readable light text);
+         all tags share one tinted recipe: rgba(hue,.2) bg / fg / rgba(hue,.4) border */
+      --tag-person: 59, 130, 246;  --tag-person-fg: #93c5fd;
+      --tag-dog: 245, 158, 11;     --tag-dog-fg: #fcd34d;
+      --tag-cat: 168, 85, 247;     --tag-cat-fg: #d8b4fe;
+      --tag-face: 236, 72, 153;    --tag-face-fg: #f9a8d4;
+      --tag-body: 16, 185, 129;    --tag-body-fg: #6ee7b7;
+      /* elevation */
+      --elevation-1: 0 1px 3px rgba(0, 0, 0, 0.25);
+      --elevation-2: 0 4px 12px rgba(0, 0, 0, 0.35);
+      --elevation-3: 0 10px 25px rgba(0, 0, 0, 0.50);
+      --elevation-4: 0 24px 50px rgba(0, 0, 0, 0.70);
+      /* control sizing */
+      --control-h: 36px; --control-h-sm: 32px;
+      --fs-control: 0.85rem; --fs-control-sm: 0.8rem; --fs-chip: 0.75rem;
+      /* ==================================================================== */
+
       /* Grid variables */
       --grid-gap: 16px;
       --card-min-width: 280px;
@@ -51,6 +88,78 @@
     h1, h2, h3, h4 {
       font-family: 'Outfit', sans-serif;
     }
+
+    /* === component primitives (declutter program) =========================
+       Additive: defined alongside the existing ad-hoc classes, then markup is
+       migrated onto them step by step. See /tmp/webcam_ui_designspec.md. */
+    .panel {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-3);
+      padding: var(--space-4);
+      box-shadow: var(--elevation-1);
+    }
+    .panel--tight { padding: var(--space-2) var(--space-4); }
+
+    .chip {
+      display: inline-flex; align-items: center; gap: var(--space-1);
+      padding: var(--space-1) var(--space-3);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-pill);
+      background: var(--surface-hover);
+      color: var(--text-secondary);
+      font-size: var(--fs-chip); font-weight: 500;
+      cursor: pointer; user-select: none; white-space: nowrap;
+      transition: all var(--transition-speed);
+    }
+    .chip:hover { background: var(--surface-hover-strong); color: var(--text-primary); }
+    .chip--active { background: var(--accent-10); color: var(--accent-fg); border-color: var(--accent-25); }
+    .chip--removable { padding-right: var(--space-15); }
+    .chip__x { border: none; background: none; color: inherit; cursor: pointer; line-height: 1; padding: 0 2px; }
+    /* The canonical button is .btn (token-based, see below) + .btn-switch accent
+       variant + the icon-button classes; no separate .btn-c primitive needed. */
+
+    .segmented {
+      display: inline-flex; background: var(--bg-secondary);
+      padding: var(--space-1); border: 1px solid var(--border-color);
+      border-radius: var(--radius-2); gap: var(--space-05);
+    }
+    .segmented > button {
+      background: transparent; border: none; color: var(--text-secondary);
+      height: var(--control-h-sm); min-width: var(--control-h-sm); padding: 0 var(--space-2);
+      border-radius: var(--radius-1); cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      font-size: var(--fs-control-sm); transition: all var(--transition-speed);
+    }
+    .segmented > button.active { background: var(--bg-tertiary); color: var(--accent); box-shadow: var(--elevation-1); }
+
+    .menu {
+      position: absolute; top: 100%; right: 0; min-width: 220px; margin-top: var(--space-2);
+      background: var(--bg-secondary); border: 1px solid var(--border-color);
+      border-radius: var(--radius-2); box-shadow: var(--elevation-3);
+      padding: var(--space-3); z-index: 100; display: none;
+    }
+    .menu.active { display: block; }
+    .menu-section-title {
+      font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
+      color: var(--text-secondary); margin-bottom: var(--space-2);
+      padding-bottom: var(--space-1); border-bottom: 1px solid var(--border-color);
+    }
+    /* a section header that follows other content in the same popover */
+    .menu-section-title.with-gap { margin-top: var(--space-2); }
+    .menu-item {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: var(--space-15) var(--space-2); border-radius: var(--radius-1);
+      cursor: pointer; font-size: var(--fs-control-sm); color: var(--text-secondary);
+    }
+    .menu-item:hover { background: var(--surface-hover-strong); color: var(--text-primary); }
+    /* form fields inside menus/dropdowns (select, number/text inputs) */
+    .menu-field {
+      background: var(--bg-tertiary); color: var(--text-primary);
+      border: 1px solid var(--border-color); border-radius: var(--radius-1);
+      padding: 5px; font-size: 0.8rem;
+    }
+    /* ===================================================================== */
 
     /* Scrollbar styling */
     ::-webkit-scrollbar {
@@ -112,7 +221,7 @@
       align-items: center;
       justify-content: center;
       color: white;
-      box-shadow: 0 4px 14px rgba(59, 130, 246, 0.35);
+      box-shadow: 0 4px 14px var(--accent-35);
     }
 
     .logo-text h1 {
@@ -143,7 +252,8 @@
       min-width: 240px;
     }
 
-    .search-box i {
+    /* direct child only, so the clear button's nested icon isn't left-anchored */
+    .search-box > i {
       position: absolute;
       left: 12px;
       top: 50%;
@@ -158,49 +268,70 @@
       background: rgba(255, 255, 255, 0.04);
       border: 1px solid var(--border-color);
       border-radius: 8px;
-      padding: 9px 12px 9px 36px;
+      padding: 9px 32px 9px 36px;
       color: var(--text-primary);
       font-size: 0.85rem;
       transition: all var(--transition-speed);
     }
 
+    /* Inline clear (×) — appears only when the field has text. */
+    .search-clear {
+      position: absolute;
+      right: 6px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: none;
+      border: none;
+      color: var(--text-secondary);
+      cursor: pointer;
+      padding: 4px;
+      border-radius: 4px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .search-clear[hidden] { display: none; }
+    .search-clear:hover { color: var(--text-primary); background: rgba(255, 255, 255, 0.08); }
+    .search-clear i { width: 14px; height: 14px; }
+
     .search-input:focus {
       outline: none;
-      border-color: var(--accent-color);
+      border-color: var(--accent);
       background: rgba(255, 255, 255, 0.07);
-      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+      box-shadow: 0 0 0 3px var(--accent-15);
     }
 
+    /* Canonical button (token-based). .btn-switch is the accent variant. */
     .btn {
-      background: rgba(255, 255, 255, 0.04);
+      background: var(--surface-hover);
       color: var(--text-primary);
       border: 1px solid var(--border-color);
-      border-radius: 8px;
-      padding: 9px 14px;
-      font-size: 0.85rem;
+      border-radius: var(--radius-2);
+      padding: 9px var(--space-3);
+      font-size: var(--fs-control);
       cursor: pointer;
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: var(--space-15);
       font-weight: 500;
       transition: all var(--transition-speed);
       user-select: none;
     }
 
     .btn:hover {
-      background: rgba(255, 255, 255, 0.08);
+      background: var(--surface-hover-strong);
       border-color: var(--text-secondary);
     }
 
     .btn-switch {
-      background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(59, 130, 246, 0.1));
-      color: #60a5fa;
-      border: 1px solid rgba(59, 130, 246, 0.2);
+      background: var(--accent-10);
+      color: var(--accent-fg);
+      border: 1px solid var(--accent-25);
     }
 
     .btn-switch:hover {
-      background: linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(59, 130, 246, 0.2));
-      border-color: #60a5fa;
+      background: var(--accent-15);
+      border-color: var(--accent-fg);
     }
 
     /* Live pulse badge */
@@ -209,7 +340,7 @@
       align-items: center;
       gap: 6px;
       background: rgba(16, 185, 129, 0.08);
-      color: var(--success-color);
+      color: var(--success);
       padding: 6px 12px;
       border-radius: 20px;
       font-size: 0.75rem;
@@ -229,7 +360,7 @@
     .live-dot {
       width: 7px;
       height: 7px;
-      background-color: var(--success-color);
+      background-color: var(--success);
       border-radius: 50%;
     }
 
@@ -274,12 +405,20 @@
       gap: 20px;
       flex-shrink: 0;
     }
+    /* Collapsible sidebar: toggled via #sidebar-toggle. Collapsed by default on
+       small screens (where the sidebar otherwise stacks on top and buries the
+       feed); the content area reclaims the full width. */
+    .workspace.sidebar-collapsed aside { display: none; }
+    #sidebar-toggle[aria-pressed="true"] { color: var(--accent); border-color: var(--accent-25); }
 
     .sidebar-section {
       background: var(--bg-secondary);
-      border-radius: 12px;
+      border-radius: var(--radius-3);
       border: 1px solid var(--border-color);
-      padding: 16px;
+      padding: var(--space-4);
+      box-shadow: var(--elevation-1); /* panels sit at rest elevation so they
+                                         read above the page, not flatter than
+                                         the cards they contain (ROADMAP:316) */
     }
 
     .sidebar-section h3 {
@@ -324,7 +463,7 @@
 
     .sidebar-item.active {
       background: var(--bg-tertiary);
-      color: var(--accent-color);
+      color: var(--accent);
       font-weight: 600;
     }
 
@@ -337,8 +476,8 @@
     }
 
     .sidebar-item.active .count-badge {
-      background: rgba(59, 130, 246, 0.15);
-      color: var(--accent-color);
+      background: var(--accent-15);
+      color: var(--accent);
     }
 
     /* Hourly Activity Chart */
@@ -346,6 +485,18 @@
       display: flex;
       flex-direction: column;
       gap: 12px;
+    }
+    /* Sidebar-toggle label: hidden on desktop (icon only), shown on mobile so
+       the collapsed Dates/Activity/Saved panels are discoverable. */
+    .sidebar-toggle-label { display: none; }
+    @media (max-width: 768px) { .sidebar-toggle-label { display: inline; } }
+    /* Visit-row meta line: legible on phones (lift contrast a step, wrap cleanly). */
+    .visit-meta { font-size: 0.75rem; color: var(--text-secondary); line-height: 1.5; }
+    @media (max-width: 480px) { .visit-meta { color: var(--text-primary); opacity: 0.85; } }
+    /* tiny sub-labels so the stacked day/hour charts read as two distinct views */
+    .chart-sublabel {
+      font-size: 0.62rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.04em; color: var(--text-secondary); margin-bottom: -6px;
     }
 
     .chart-viewport {
@@ -400,12 +551,12 @@
     }
 
     .chart-bar.day-bar.active {
-      outline: 1px solid var(--accent-color);
+      outline: 1px solid var(--accent);
       box-shadow: 0 0 6px rgba(59, 130, 246, 0.5);
     }
 
     .chart-bar-wrapper:hover .chart-bar {
-      background: var(--accent-color);
+      background: var(--accent);
       box-shadow: 0 0 6px rgba(59, 130, 246, 0.5);
     }
 
@@ -429,6 +580,9 @@
       display: flex;
       flex-direction: column;
       gap: 16px;
+      min-width: 0; /* allow this flex child to shrink instead of forcing the
+                       centered .workspace past its max-width (which, with
+                       body{overflow-x:hidden}, clips the sidebar off-screen) */
     }
 
     /* Filter Stats Panel */
@@ -439,6 +593,35 @@
       gap: 16px;
       flex-wrap: wrap;
     }
+    /* No single toolbar child may impose a width wider than the viewport. */
+    .toolbar-bar > * { min-width: 0; }
+    /* The dynamic object-filter chip row must wrap (not push a >viewport
+       single line) at all widths; mobile adds horizontal scroll on top. */
+    #object-filters { flex-wrap: wrap; }
+    /* A plain wrapping row of .chip pills (replaces the boxed .tab-group look
+       for the object-filter chips). */
+    .chip-row { display: flex; flex-wrap: wrap; gap: var(--space-15); align-items: center; }
+    /* Collapsed "Filters" control: a count badge on the button + an inline
+       read-only summary of the active filters (progressive disclosure). */
+    .filters-count {
+      display: inline-flex; align-items: center; justify-content: center;
+      min-width: 18px; height: 18px; padding: 0 var(--space-1);
+      border-radius: var(--radius-pill); background: var(--accent); color: #fff;
+      font-size: 0.7rem; font-weight: 700; line-height: 1;
+    }
+    .active-filters-summary {
+      font-size: var(--fs-chip); color: var(--accent-fg);
+      max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .active-filters-summary:empty { display: none; }
+    /* Right-aligned toolbar actions cluster (Filters + Settings/Integrations/AI).
+       In .compact (set by JS when space is tight, via actionsOverflow), the
+       secondary action labels collapse to icons; the AI status keeps its text. */
+    /* nowrap: the cluster stays one row or fully collapses to icons via
+       .compact (actionsOverflow) — no ragged 1.5-row wrap state. */
+    .toolbar-actions { display: flex; gap: var(--space-2); align-items: center; flex-wrap: nowrap; }
+    .toolbar-actions.compact #btn-manage-blacklist span,
+    .toolbar-actions.compact #btn-integrations span { display: none; }
 
     .tab-group {
       display: flex;
@@ -466,25 +649,30 @@
     }
 
     .tab-btn.active {
-      background: var(--bg-tertiary);
-      color: var(--text-primary);
-      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+      /* The view tabs are the primary control — anchor the active one with the
+         accent (was a muted bg-tertiary fill the eye skipped past). */
+      background: var(--accent-10);
+      color: var(--accent-fg);
+      box-shadow: var(--elevation-1);
     }
 
     /* Quick Hour Range Pills */
+    /* Time-of-day quick-pick pills: mobile only (desktop uses the slider). */
     .time-pills {
-      display: flex;
+      display: none;
       gap: 8px;
       flex-wrap: wrap;
+      margin-bottom: 8px;
     }
+    @media (max-width: 768px) { .time-pills { display: flex; } }
 
     .time-pill {
-      background: rgba(255, 255, 255, 0.03);
+      background: var(--surface-hover);
       border: 1px solid var(--border-color);
       color: var(--text-secondary);
-      padding: 4px 10px;
-      border-radius: 15px;
-      font-size: 0.75rem;
+      padding: var(--space-1) var(--space-3);
+      border-radius: var(--radius-pill);
+      font-size: var(--fs-chip);
       cursor: pointer;
       font-weight: 500;
       transition: all var(--transition-speed);
@@ -492,32 +680,26 @@
     }
 
     .time-pill:hover {
-      background: rgba(255, 255, 255, 0.06);
+      background: var(--surface-hover-strong);
       color: var(--text-primary);
     }
 
     .time-pill.active {
-      background: rgba(59, 130, 246, 0.1);
-      color: var(--accent-color);
-      border-color: rgba(59, 130, 246, 0.3);
+      background: var(--accent-10);
+      color: var(--accent-fg);
+      border-color: var(--accent-25);
     }
 
     /* Grid Layout Toggle */
-    .view-toggles {
-      display: flex;
-      background: var(--bg-secondary);
-      padding: 4px;
-      border-radius: 8px;
-      border: 1px solid var(--border-color);
-    }
-
+    /* .view-toggles container now uses the .segmented primitive; only the
+       per-button sizing unique to the icon toggles remains here. */
     .view-btn {
       background: transparent;
       border: none;
       color: var(--text-secondary);
-      width: 32px;
-      height: 32px;
-      border-radius: 6px;
+      width: var(--control-h-sm);
+      height: var(--control-h-sm);
+      border-radius: var(--radius-1);
       cursor: pointer;
       display: flex;
       align-items: center;
@@ -531,7 +713,8 @@
 
     .view-btn.active {
       background: var(--bg-tertiary);
-      color: var(--accent-color);
+      color: var(--accent);
+      box-shadow: var(--elevation-1);
     }
 
     /* Small controls above/below the dynamic object-filter chips */
@@ -547,7 +730,7 @@
       white-space: nowrap;
     }
     .filter-meta-btn:hover { color: var(--text-primary); }
-    .filter-meta-btn.active { color: var(--accent-color); border-color: var(--accent-color); }
+    .filter-meta-btn.active { color: var(--accent); border-color: var(--accent); }
 
     /* AI Label Styles */
     .ai-labels-overlay {
@@ -609,16 +792,20 @@
       box-shadow: 0 1px 3px rgba(0,0,0,0.2);
     }
 
-    .tag-person { background: #3b82f6; color: white; }
-    .tag-dog { background: #f59e0b; color: white; }
-    .tag-cat { background: #a855f7; color: white; }
-    .tag-face { background: #ec4899; color: white; }
-    .tag-body { background: #10b981; color: white; }
+    /* Verified-detection tags: a calm tinted recipe (tinted bg + light-hue text
+       + subtle border) consistent with the disputed/potential tags below,
+       instead of loud solid fills on every card. Hue still identifies the
+       object; weight/border keep them distinct from the italic "potential". */
+    .tag-person { background: rgba(var(--tag-person), 0.2); color: var(--tag-person-fg); border: 1px solid rgba(var(--tag-person), 0.4); }
+    .tag-dog { background: rgba(var(--tag-dog), 0.2); color: var(--tag-dog-fg); border: 1px solid rgba(var(--tag-dog), 0.4); }
+    .tag-cat { background: rgba(var(--tag-cat), 0.2); color: var(--tag-cat-fg); border: 1px solid rgba(var(--tag-cat), 0.4); }
+    .tag-face { background: rgba(var(--tag-face), 0.2); color: var(--tag-face-fg); border: 1px solid rgba(var(--tag-face), 0.4); }
+    .tag-body { background: rgba(var(--tag-body), 0.2); color: var(--tag-body-fg); border: 1px solid rgba(var(--tag-body), 0.4); }
 
     .tag-disputed {
-      background: rgba(239, 68, 68, 0.12);
+      background: var(--danger-12);
       color: #ef4444;
-      border: 1px solid rgba(239, 68, 68, 0.35);
+      border: 1px solid var(--danger-35);
       text-decoration: line-through;
     }
 
@@ -630,13 +817,13 @@
     }
 
     .btn-mode-toggle {
-      border-color: var(--accent-color);
-      color: var(--accent-color);
+      border-color: var(--accent);
+      color: var(--accent);
       background: rgba(59, 130, 246, 0.05);
     }
 
     .btn-mode-toggle.active {
-      background: var(--accent-color);
+      background: var(--accent);
       color: white;
     }
 
@@ -645,6 +832,8 @@
       position: relative;
     }
 
+    /* Dropdown popovers — same recipe as the .menu primitive (tokenized);
+       class kept to preserve each dropdown's positioning + open/close handlers. */
     .blacklist-dropdown {
       position: absolute;
       top: 100%;
@@ -652,16 +841,39 @@
       width: 220px;
       background: var(--bg-secondary);
       border: 1px solid var(--border-color);
-      border-radius: 8px;
-      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+      border-radius: var(--radius-2);
+      box-shadow: var(--elevation-3);
       z-index: 100;
-      padding: 12px;
+      padding: var(--space-3);
       display: none;
-      margin-top: 8px;
+      margin-top: var(--space-2);
+      /* Never let a long menu (e.g. Settings with many hidden labels) run off the
+         bottom of the screen and strand its lower controls — scroll inside it. */
+      max-height: calc(100vh - 180px);
+      overflow-y: auto;
+      overscroll-behavior: contain;
     }
 
     .blacklist-dropdown.active {
       display: block;
+    }
+
+    /* On phones these menus are anchored right:0 to a trigger that now sits near
+       the left of the wrapped toolbar, so a 220-300px menu ran off the LEFT edge
+       (clipping every label) and off the bottom. Re-anchor as a centred, viewport-
+       fitted panel so it always fits both axes and scrolls inside. */
+    @media (max-width: 768px) {
+      .blacklist-dropdown {
+        position: fixed;
+        left: 50%;
+        right: auto;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        width: min(360px, calc(100vw - 24px));
+        max-width: calc(100vw - 24px);
+        max-height: min(82vh, calc(100vh - 72px));
+        margin: 0;
+      }
     }
 
     .blacklist-item {
@@ -689,7 +901,7 @@
       width: 10px;
       height: 10px;
       border-radius: 50%;
-      background: var(--success-color);
+      background: var(--success);
     }
 
     .hidden-label .blacklist-status {
@@ -698,7 +910,7 @@
 
     .burst-summary {
       background: rgba(255, 255, 255, 0.05);
-      border-left: 3px solid var(--accent-color);
+      border-left: 3px solid var(--accent);
       padding: 10px 14px;
       border-radius: 4px;
       font-size: 0.9rem;
@@ -710,12 +922,13 @@
     .time-slider-wrapper {
       background: var(--bg-secondary);
       border: 1px solid var(--border-color);
-      border-radius: 10px;
-      padding: 8px 16px;
+      border-radius: var(--radius-3);
+      padding: var(--space-2) var(--space-4);
+      box-shadow: var(--elevation-1);
       min-width: 280px;
       display: flex;
       flex-direction: column;
-      gap: 6px;
+      gap: var(--space-15);
     }
 
     .slider-header {
@@ -723,6 +936,34 @@
       justify-content: space-between;
       align-items: center;
     }
+
+    .slider-header-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .slider-caret {
+      width: 14px;
+      height: 14px;
+      color: var(--text-secondary);
+      transition: transform 0.2s;
+      display: none;
+    }
+
+    /* At the all-day default the Reset button is a no-op, so swap it for a caret
+       that expands/collapses the slider; clicking the header toggles it. */
+    .time-slider-wrapper.range-default .slider-header { cursor: pointer; }
+    .time-slider-wrapper.range-default .time-reset-btn { display: none; }
+    .time-slider-wrapper.range-default .slider-caret { display: block; }
+    .time-slider-wrapper.range-default:not(.range-collapsed) .slider-caret {
+      transform: rotate(180deg);
+    }
+
+    /* Collapsed: fold away the pills + dual-range, leaving only the header row. */
+    .time-slider-wrapper.range-collapsed { gap: 0; }
+    .time-slider-wrapper.range-collapsed .time-pills,
+    .time-slider-wrapper.range-collapsed .dual-range-container { display: none; }
 
     .slider-label {
       font-size: 0.75rem;
@@ -773,7 +1014,18 @@
       appearance: none;
       width: 16px;
       height: 16px;
-      background: var(--accent-color);
+      background: var(--accent);
+      border-radius: 50%;
+      cursor: pointer;
+      pointer-events: auto;
+      border: 2px solid var(--bg-primary);
+      box-shadow: 0 0 5px rgba(0,0,0,0.5);
+    }
+    /* Firefox: was using the unstyled default thumb (no rule existed). */
+    .time-slider::-moz-range-thumb {
+      width: 16px;
+      height: 16px;
+      background: var(--accent);
       border-radius: 50%;
       cursor: pointer;
       pointer-events: auto;
@@ -819,6 +1071,13 @@
       display: flex;
       flex-direction: column;
       gap: 8px;
+      /* Cap the list to a comfortable reading column instead of stretching each
+         row edge-to-edge on wide screens — caption-less rows otherwise read as a
+         big empty band between the badges and the right-anchored actions. Left-
+         aligned (not centred) so it stays anchored under the sidebar. ~760px
+         hugs the row content (thumb + time/date/badge + actions) so the band
+         between the badge and the right-anchored actions stays modest. */
+      max-width: 760px;
     }
 
     /* Card Item design */
@@ -842,13 +1101,13 @@
     }
 
     .image-card:focus-visible {
-      outline: 2px solid var(--accent-color);
+      outline: 2px solid var(--accent);
       outline-offset: 2px;
     }
     .image-card:hover {
-      transform: translateY(-3px);
-      box-shadow: 0 10px 20px rgba(0, 0, 0, 0.4);
-      border-color: rgba(59, 130, 246, 0.25);
+      transform: translateY(-2px);
+      box-shadow: var(--elevation-2); /* softer lift — was a dramatic 10/20/.4 */
+      border-color: var(--accent-25);
     }
 
     .card-img-wrapper {
@@ -897,8 +1156,26 @@
       flex: 1;
       flex-direction: row;
       align-items: center;
+      justify-content: flex-start; /* was inherited space-between -> dead middle */
+      gap: 16px;
       padding: 12px 16px;
     }
+    /* In a list row, lay time/date + badges + caption left-to-right across the
+       reclaimed width instead of stacking them off the bottom of the row. */
+    .image-grid.list .meta-info {
+      flex-direction: row;
+      align-items: center;
+      gap: 12px;
+      flex: 1;
+      min-width: 0;
+    }
+    .image-grid.list .card-caption { flex: 1; min-width: 0; }
+    /* Right-aligned relative time, list-view only — fills the row's right edge
+       so caption-less rows aren't a big empty band. */
+    /* row-ago is hidden everywhere: in list, the absolute date+time already
+       shown is the single source of truth (the relative "ago" was redundant),
+       and the always-on row actions anchor the right edge. */
+    .row-ago { display: none; }
 
     .meta-info {
       display: flex;
@@ -920,12 +1197,15 @@
     }
 
     .date-stamp {
+      display: none; /* grid cards stay uncluttered (time only); shown in list */
       font-size: 0.7rem;
       color: rgba(255, 255, 255, 0.75);
       text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+      white-space: nowrap;
     }
 
     .image-grid.list .date-stamp {
+      display: inline;
       color: var(--text-secondary);
       font-size: 0.8rem;
       text-shadow: none;
@@ -951,11 +1231,34 @@
       background: #4b5563;
       color: white;
     }
+    /* "Clear" = scanned, nothing detected (tokenized; was an inline style). */
+    .badge-clear {
+      background: var(--surface-hover);
+      color: var(--text-secondary);
+    }
 
     .card-actions {
       display: flex;
-      gap: 8px;
+      gap: var(--space-2);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity var(--transition-speed);
     }
+    /* Reveal the pin/delete/download actions only on hover or keyboard focus
+       (declutter: they're not part of the at-a-glance scan). */
+    .image-card:hover .card-actions,
+    .image-card:focus-within .card-actions {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    /* Touch / no-hover devices have no hover to reveal them — always show. */
+    @media (hover: none) {
+      .card-actions { opacity: 1; pointer-events: auto; }
+    }
+    /* List view is a utilitarian table-like layout: show the row actions
+       always (right-anchored), which also keeps each row from reading as a big
+       empty band. Grid keeps the hover-reveal. */
+    .image-grid.list .card-actions { opacity: 1; pointer-events: auto; }
 
     .action-icon-btn {
       background: rgba(255, 255, 255, 0.12);
@@ -980,14 +1283,19 @@
     }
 
     .action-icon-btn:hover {
-      background: var(--accent-color);
-      border-color: var(--accent-color);
+      background: var(--accent);
+      border-color: var(--accent);
       transform: scale(1.05);
     }
 
     @keyframes ai-pulse {
       0%, 100% { opacity: 1; }
       50% { opacity: 0.3; }
+    }
+    /* status indicator dot (e.g. the AI/pipeline dot); state colors override via class */
+    .status-dot {
+      width: 8px; height: 8px; border-radius: var(--radius-round);
+      background: #6b7280; display: inline-block; flex-shrink: 0;
     }
     #ai-live-dot.inferring {
       background: #f59e0b !important;
@@ -1060,9 +1368,9 @@
       text-align: center;
       grid-column: 1 / -1;
       background: var(--bg-secondary);
-      border-radius: 12px;
+      border-radius: var(--radius-3);
       border: 1px dashed var(--border-color);
-      gap: 12px;
+      gap: var(--space-3);
     }
 
     .empty-state i {
@@ -1202,8 +1510,8 @@
     }
 
     .nav-arrow:hover {
-      background: var(--accent-color);
-      border-color: var(--accent-color);
+      background: var(--accent);
+      border-color: var(--accent);
       transform: scale(1.04);
     }
 
@@ -1226,7 +1534,7 @@
       top: 0;
       left: 0;
       height: 3px;
-      background: var(--accent-color);
+      background: var(--accent);
       width: 0%;
       transition: width 0.1s linear;
     }
@@ -1279,7 +1587,7 @@
     .toast i {
       width: 16px;
       height: 16px;
-      color: var(--accent-color);
+      color: var(--accent);
       flex-shrink: 0;
     }
 
@@ -1290,12 +1598,18 @@
       }
       aside {
         width: 100%;
+        min-width: 0;      /* shrink to the column, don't be sized by content */
+        max-width: 100%;
       }
+      aside > * { min-width: 0; max-width: 100%; }
       .date-list {
         flex-direction: row;
         max-height: none;
         overflow-x: auto;
         padding-bottom: 8px;
+        min-width: 0;      /* required for overflow-x:auto to actually scroll a
+                              flex item instead of expanding to content width */
+        max-width: 100%;
       }
       .sidebar-item {
         flex-shrink: 0;
@@ -1310,10 +1624,20 @@
       .controls-wrapper {
         width: 100%;
         justify-content: space-between;
+        flex-wrap: nowrap;
+        align-items: center;
+        gap: var(--space-2);
       }
+      /* Search shares the controls row instead of owning a full-height band;
+         the switch-feed + refresh buttons collapse to icons to make room. This
+         reclaims the single biggest chunk of vertical space above the feed. */
       .search-box {
-        flex: 1;
-        min-width: 100%;
+        flex: 1 1 120px;
+        min-width: 0;
+      }
+      #switch-feed-label,
+      #btn-refresh span {
+        display: none;
       }
       .nav-arrow {
         width: 40px;
@@ -1339,6 +1663,29 @@
          (the AI button keeps its live status label) */
       #btn-manage-blacklist span,
       #btn-integrations span { display: none; }
+      /* Toolbar on mobile: the WIDE controls (actions cluster, time slider, the
+         density toggles when shown) each take a full-width row so they can never
+         force a >viewport row that clips content left. But the small Panels
+         toggle shares the tabs row instead of wasting a whole 44px row on itself
+         — reclaiming a row above the feed on every mobile view. (The collapsed
+         time-range, see .range-collapsed, means the slider no longer over-widens
+         its row, so the old all-column stack is no longer needed.) */
+      .toolbar-bar { flex-flow: row wrap; align-items: center; row-gap: var(--space-2); }
+      .toolbar-bar > .toolbar-actions,
+      .toolbar-bar > .time-slider-wrapper,
+      .toolbar-bar > .view-toggles-wrap { flex: 1 1 100%; }
+      #sidebar-toggle { flex: 0 0 auto; }
+      /* basis:0 (not auto) so the cluster doesn't claim its full content width and
+         get bumped to its own row — it sits beside Panels and grows into the rest
+         of the row, wrapping its "Showing N logs" count below the tabs. */
+      .toolbar-bar > .tab-cluster { flex: 1 1 0; min-width: 0; flex-wrap: wrap; }
+      .time-slider-wrapper { min-width: 0; width: 100%; }
+    }
+
+    @media (max-width: 480px) {
+      /* Smallest phones: a single fluid column + tighter padding. */
+      .image-grid { --card-min-width: 0px; grid-template-columns: 1fr; }
+      .workspace { padding: 12px; }
     }
 
     /* Accessibility: honor the OS "reduce motion" preference — kill the
@@ -1353,14 +1700,15 @@
     }
     /* Saved searches */
     .saved-list { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
-    .saved-list:empty::after { content: "No saved views yet."; color: var(--text-secondary); font-size: 0.75rem; }
-    .saved-chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 6px 3px 9px;
-      border: 1px solid var(--border-color); border-radius: 999px; background: rgba(59,130,246,0.10);
-      font-size: 0.75rem; cursor: pointer; color: var(--text-primary); }
-    .saved-chip:hover { background: rgba(59,130,246,0.20); }
+    /* Quiet empty state: the "+ Save current view" affordance below is enough. */
+    .saved-list:empty { margin-bottom: 0; }
+    .saved-chip { display: inline-flex; align-items: center; gap: var(--space-1); padding: var(--space-1) var(--space-15) var(--space-1) var(--space-2);
+      border: 1px solid var(--accent-25); border-radius: var(--radius-pill); background: var(--accent-10);
+      font-size: var(--fs-chip); cursor: pointer; color: var(--text-primary); }
+    .saved-chip:hover { background: var(--accent-15); }
     .saved-chip .saved-del { border: none; background: none; color: var(--text-secondary); cursor: pointer;
       font-size: 0.85rem; line-height: 1; padding: 0 1px; }
-    .saved-chip .saved-del:hover { color: #ef4444; }
+    .saved-chip .saved-del:hover { color: var(--danger); }
     .saved-add { width: 100%; padding: 5px; border: 1px dashed var(--border-color); border-radius: 6px;
       background: none; color: var(--text-secondary); font-size: 0.75rem; cursor: pointer;
       display: inline-flex; align-items: center; justify-content: center; gap: 4px; }
@@ -1373,7 +1721,7 @@
     [role="button"]:focus-visible, .sidebar-item:focus-visible,
     .blacklist-item:focus-visible, .saved-chip:focus-visible,
     .tab-btn:focus-visible, .view-btn:focus-visible, .time-pill:focus-visible {
-      outline: 2px solid var(--accent-color);
+      outline: 2px solid var(--accent);
       outline-offset: 2px;
     }
     /* A11y: comfortable touch targets on coarse-pointer (touch) devices — the
@@ -1383,6 +1731,13 @@
       .view-btn { min-width: 44px; min-height: 44px; }
       .blacklist-item { min-height: 44px; }
       .saved-chip { min-height: 36px; }
+      /* Primary nav: comfortable 44px touch targets (were ~29px). */
+      .tab-btn { min-height: 44px; }
+      .time-pill { min-height: 36px; }
+      /* The time-range thumbs need a draggable touch target — were 16px. */
+      .time-slider::-webkit-slider-thumb { width: 24px; height: 24px; }
+      .time-slider::-moz-range-thumb { width: 24px; height: 24px; }
+      .dual-range-container { height: 28px; }
     }
   </style>
 </head>
@@ -1411,6 +1766,9 @@
           <div class="search-box">
             <i data-lucide="search"></i>
             <input type="text" id="search-input" class="search-input" placeholder="Filter by timestamp or event...">
+            <button id="search-clear" class="search-clear" type="button" aria-label="Clear search" hidden>
+              <i data-lucide="x"></i>
+            </button>
           </div>
           
           <button id="btn-refresh" class="btn" aria-label="Force Reload" title="Force Reload">
@@ -1420,7 +1778,7 @@
 
           <div id="live-toggle" class="live-badge" aria-label="Toggle real-time auto-polling" title="Toggle real-time auto-polling">
             <div class="live-dot"></div>
-            <span id="live-text">Live: ON</span>
+            <span id="live-text">Auto-refresh: ON</span>
           </div>
         </div>
       </div>
@@ -1441,11 +1799,13 @@
         <div class="sidebar-section activity-chart-container">
           <h3><i data-lucide="activity"></i> Motion Activity</h3>
           <!-- Day planner: one bar per day, red marks at time-of-day -->
+          <div class="chart-sublabel">By day</div>
           <div class="chart-viewport chart-days" id="activity-chart-days">
             <!-- Dynamic bars inserted here -->
           </div>
           <div class="chart-x-axis" id="chart-x-axis-days"></div>
           <!-- Hour histogram over the selected date range -->
+          <div class="chart-sublabel">By hour</div>
           <div class="chart-viewport" id="activity-chart">
             <!-- Dynamic bars inserted here -->
           </div>
@@ -1471,35 +1831,53 @@
       <!-- Main feeds area -->
       <div class="content-area">
       <div class="toolbar-bar">
-        <div class="tab-group" id="filter-tabs">
-          <button class="tab-btn active" data-filter="events">Timeline</button>
-          <button class="tab-btn" data-filter="objects">Objects</button>
-          <button class="tab-btn" data-filter="all">All</button>
+        <button class="btn" id="sidebar-toggle" aria-label="Show or hide the dates & activity panels" aria-pressed="false" title="Dates &amp; activity panels">
+          <i data-lucide="panel-left"></i>
+          <span class="sidebar-toggle-label">Panels</span>
+        </button>
+        <!-- Tabs + the count of what they're showing, kept together -->
+        <div class="tab-cluster" style="display: flex; align-items: center; gap: var(--space-3);">
+          <div class="tab-group" id="filter-tabs" role="tablist" aria-label="Gallery view">
+            <button class="tab-btn active" data-filter="events" role="tab" aria-selected="true" title="Object visits grouped over time, each with an AI caption">Timeline</button>
+            <button class="tab-btn" data-filter="objects" role="tab" aria-selected="false" title="Only frames with an AI-verified detection">Objects</button>
+            <button class="tab-btn" data-filter="all" role="tab" aria-selected="false" title="Every captured snapshot">All</button>
+          </div>
+          <span class="stats-info" id="stats-label">Loading image logs...</span>
         </div>
 
-        <!-- Dynamic Object Filters Container -->
-        <div style="display: flex; gap: 8px; align-items: center;">
-          <div id="object-filter-panel" style="display: none; flex-direction: column; gap: 4px; align-items: flex-start;">
-            <button type="button" id="sticky-toggle" class="filter-meta-btn" title="When on, toggle several object filters at once (match any). When off, one at a time."></button>
-            <div class="tab-group" id="object-filters">
-              <!-- Buttons injected by JS -->
+        <!-- Right-aligned actions cluster: Filters + Settings/Integrations/AI -->
+        <div class="toolbar-actions" id="toolbar-actions">
+          <div class="filters-menu" style="position: relative; display: flex; gap: 8px; align-items: center;">
+            <button class="btn" id="btn-filters" aria-haspopup="true" aria-expanded="false" style="display: none;" title="Filter the gallery by detected object">
+              <i data-lucide="filter"></i><span>Filters</span>
+              <span id="filters-active-count" class="filters-count" hidden></span>
+            </button>
+            <span id="active-filters-summary" class="active-filters-summary" aria-live="polite"></span>
+            <div class="menu" id="filters-dropdown" style="left: 0; right: auto; min-width: 280px; max-width: min(360px, calc(100vw - 24px));">
+              <div class="menu-section-title">Filter by object</div>
+              <div id="object-filter-panel" style="display: none; flex-direction: column; gap: 4px; align-items: flex-start;">
+                <button type="button" id="sticky-toggle" class="filter-meta-btn" title="When on, toggle several object filters at once (match any). When off, one at a time."></button>
+                <div class="chip-row" id="object-filters">
+                  <!-- Buttons injected by JS -->
+                </div>
+                <button type="button" id="hide-filters-toggle" class="filter-meta-btn" title="Hide or show the object filter chips"></button>
+              </div>
             </div>
-            <button type="button" id="hide-filters-toggle" class="filter-meta-btn" title="Hide or show the object filter chips"></button>
           </div>
           
           <div class="blacklist-menu">
-            <button class="btn" id="btn-manage-blacklist" title="Detection settings: hidden labels, merging, detector, backfill, intervals">
+            <button class="btn" id="btn-manage-blacklist" aria-label="Settings" title="Detection settings: hidden labels, merging, detector, backfill, intervals">
               <i data-lucide="settings-2"></i>
               <span>Settings</span>
             </button>
             <div class="blacklist-dropdown" id="blacklist-dropdown">
-              <div style="font-size: 0.7rem; font-weight: 700; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 8px; border-bottom: 1px solid var(--border-color); padding-bottom: 4px;">
+              <div class="menu-section-title">
                 Hide / Show Labels
               </div>
               <div id="blacklist-list">
                 <!-- Items injected by JS -->
               </div>
-              <div style="font-size: 0.7rem; font-weight: 700; text-transform: uppercase; color: var(--text-secondary); margin: 8px 0; border-bottom: 1px solid var(--border-color); padding-bottom: 4px;">
+              <div class="menu-section-title with-gap">
                 Label Merging
               </div>
               <div class="blacklist-item" id="alias-toggle" title="Merge equivalent labels: face/body -> person, raccoon -> dog">
@@ -1510,10 +1888,10 @@
                 <span>Show unconfirmed detections</span>
                 <div class="blacklist-status"></div>
               </div>
-              <div style="font-size: 0.7rem; font-weight: 700; text-transform: uppercase; color: var(--text-secondary); margin: 8px 0; border-bottom: 1px solid var(--border-color); padding-bottom: 4px;">
+              <div class="menu-section-title with-gap">
                 Fast Detector
               </div>
-              <select id="detector-select" title="Pre-filter engine that gates AI deep analysis" style="width: 100%; padding: 6px; background: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 6px; font-size: 0.8rem;">
+              <select id="detector-select" class="menu-field" title="Pre-filter engine that gates AI deep analysis" style="width: 100%;">
                 <option value="yolo">YOLO (recommended)</option>
                 <option value="haar">Haar cascades (legacy)</option>
               </select>
@@ -1525,27 +1903,27 @@
                 <span>Gemma backfill when idle</span>
                 <div class="blacklist-status"></div>
               </div>
-              <div style="font-size: 0.7rem; font-weight: 700; text-transform: uppercase; color: var(--text-secondary); margin: 8px 0; border-bottom: 1px solid var(--border-color); padding-bottom: 4px;">
+              <div class="menu-section-title with-gap">
                 Intervals
               </div>
               <label style="display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:0.78rem; padding:2px 0;" title="Server: seconds between idle catch-up sweeps">
                 Idle sweep (s)
-                <input type="number" id="sweep-interval-input" min="15" max="3600" step="15" style="width:70px; padding:4px; background:var(--bg-tertiary); color:var(--text-primary); border:1px solid var(--border-color); border-radius:4px;">
+                <input type="number" id="sweep-interval-input" class="menu-field" min="15" max="3600" step="15" style="width:70px;">
               </label>
               <label style="display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:0.78rem; padding:2px 0;" title="This browser: seconds between AI status polls">
                 Status poll (s)
-                <input type="number" id="poll-interval-input" min="5" max="300" step="5" style="width:70px; padding:4px; background:var(--bg-tertiary); color:var(--text-primary); border:1px solid var(--border-color); border-radius:4px;">
+                <input type="number" id="poll-interval-input" class="menu-field" min="5" max="300" step="5" style="width:70px;">
               </label>
             </div>
           </div>
 
           <div class="blacklist-menu">
-            <button class="btn" id="btn-integrations" title="Outbound integrations (Slack, ...)">
+            <button class="btn" id="btn-integrations" aria-label="Integrations" title="Outbound integrations (Slack, ...)">
               <i data-lucide="share-2"></i>
               <span>Integrations</span>
             </button>
             <div class="blacklist-dropdown" id="integrations-dropdown" style="width: 300px;">
-              <div style="font-size: 0.7rem; font-weight: 700; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 8px; border-bottom: 1px solid var(--border-color); padding-bottom: 4px;">
+              <div class="menu-section-title">
                 Integrations
               </div>
               <div style="font-size: 0.72rem; color: var(--text-secondary); margin-bottom: 10px; line-height: 1.5;">
@@ -1598,11 +1976,11 @@
 
           <div class="blacklist-menu">
             <button class="btn" id="btn-system-status" title="Pipeline status">
-              <span id="ai-live-dot" style="width:8px;height:8px;border-radius:50%;background:#6b7280;display:inline-block;flex-shrink:0;"></span>
+              <span id="ai-live-dot" class="status-dot"></span>
               <span id="ai-live-label">AI</span>
             </button>
             <div class="blacklist-dropdown" id="system-dropdown">
-              <div style="font-size: 0.7rem; font-weight: 700; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 8px; border-bottom: 1px solid var(--border-color); padding-bottom: 4px;">
+              <div class="menu-section-title">
                 Pipeline Status
               </div>
               <div id="system-status-content" style="font-size: 0.78rem; line-height: 1.7;"></div>
@@ -1613,7 +1991,17 @@
           <div class="time-slider-wrapper">
             <div class="slider-header">
               <span class="slider-label"><i data-lucide="clock" style="width:14px;height:14px;"></i> Time Range: <span id="time-range-display">00:00 - 23:59</span></span>
-              <button class="time-reset-btn" id="btn-reset-time">Reset</button>
+              <span class="slider-header-actions">
+                <button class="time-reset-btn" id="btn-reset-time">Reset</button>
+                <i data-lucide="chevron-down" class="slider-caret"></i>
+              </span>
+            </div>
+            <div class="time-pills" id="time-pills" role="group" aria-label="Quick time-of-day filter">
+              <button class="time-pill" data-pill="all">All day</button>
+              <button class="time-pill" data-pill="morning">Morning</button>
+              <button class="time-pill" data-pill="afternoon">Afternoon</button>
+              <button class="time-pill" data-pill="evening">Evening</button>
+              <button class="time-pill" data-pill="night">Night</button>
             </div>
             <div class="dual-range-container">
               <input type="range" id="time-start" min="0" max="23" value="0" class="time-slider">
@@ -1621,20 +2009,18 @@
             </div>
           </div>
 
-          <div style="display: flex; align-items: center; gap: 12px; margin-left: auto;">
-            <span class="stats-info" id="stats-label">Loading image logs...</span>
-            
-            <div class="view-toggles" id="view-toggles">
-              <button class="view-btn" data-view="small" aria-label="Small Cards" title="Small Cards">
+          <div class="view-toggles-wrap" style="display: flex; align-items: center; gap: 12px; margin-left: auto;">
+            <div class="segmented view-toggles" id="view-toggles">
+              <button class="view-btn" data-view="small" aria-label="Small Cards" aria-pressed="false" title="Small Cards">
                 <i data-lucide="layout-grid"></i>
               </button>
-              <button class="view-btn active" data-view="medium" aria-label="Medium Grid" title="Medium Grid">
+              <button class="view-btn active" data-view="medium" aria-label="Medium Grid" aria-pressed="true" title="Medium Grid">
                 <i data-lucide="grid"></i>
               </button>
-              <button class="view-btn" data-view="large" aria-label="Large Grid" title="Large Grid">
+              <button class="view-btn" data-view="large" aria-label="Large Grid" aria-pressed="false" title="Large Grid">
                 <i data-lucide="layout-template"></i>
               </button>
-              <button class="view-btn" data-view="list" aria-label="List View" title="List View">
+              <button class="view-btn" data-view="list" aria-label="List View" aria-pressed="false" title="List View">
                 <i data-lucide="list"></i>
               </button>
             </div>
@@ -1709,7 +2095,11 @@
   </div>
 
   <!-- Live Toast Alert -->
-  <div class="toast" id="toast-alert">
+  <!-- role=status + aria-live so screen readers announce toast messages (pins,
+       deletes, copy, errors). The element is always rendered (slid off via
+       transform/opacity, not display:none), so the live region stays in the a11y
+       tree and announces on text change. aria-atomic reads the whole message. -->
+  <div class="toast" id="toast-alert" role="status" aria-live="polite" aria-atomic="true">
     <i data-lucide="bell-ring"></i>
     <span id="toast-text">New snapshots are available!</span>
   </div>
@@ -1859,6 +2249,111 @@
     }
     // === /pure:parseFilenameFields ===
 
+    // === pure:visitAltText ===
+    // A human, screen-reader-friendly alt for a Timeline visit thumbnail
+    // (was alt="", i.e. announced as an unlabelled image). Pure.
+    function visitAltText(label, time, count, ongoing) {
+      const parts = [(label || 'object') + ' visit'];
+      if (time) parts.push(time);
+      if (count > 1) parts.push(count + ' frames');
+      let s = parts.join(', ');
+      if (ongoing) s += ' (ongoing)';
+      return s;
+    }
+    // === /pure:visitAltText ===
+
+    // === pure:lightboxTitle ===
+    // A clean, human lightbox heading from a parsed-filename meta:
+    // "Jun 21, 2026 · 06:08:26 pm" instead of the raw camera filename. Falls
+    // back to the original name for non-conforming files so nothing is lost. Pure.
+    function lightboxTitle(meta) {
+      if (!meta) return '';
+      const d = meta.formattedDate, t = meta.formattedTime;
+      const haveDate = d && d !== 'Unknown Date';
+      const haveTime = t && t !== 'Unknown Time';
+      if (haveDate && haveTime) return `${d} · ${t}`;
+      if (haveDate) return d;
+      if (haveTime) return t;
+      return meta.original || '';
+    }
+    // === /pure:lightboxTitle ===
+
+    // === pure:timelineEmptyState ===
+    // Message + whether to offer a "Clear all filters" escape for the Timeline
+    // (visits) empty view. When a filter/search is narrowing it, say exactly that
+    // and offer the escape; otherwise explain what a visit is — WITHOUT blaming a
+    // specific (possibly-disabled) model, which misreads as "pipeline broken". Pure.
+    function timelineEmptyState(filtersActive) {
+      if (filtersActive) {
+        return { message: 'No object visits match the current filters.', showReset: true };
+      }
+      return {
+        message: 'No object visits yet. A visit groups a detected object (person, car, …) across the frames it appears in.',
+        showReset: false,
+      };
+    }
+    // === /pure:timelineEmptyState ===
+
+    // === pure:lightboxFooterMeta ===
+    // The lightbox's technical metadata line. Date+time now live in the heading
+    // (see lightboxTitle), so they're intentionally omitted here — no point
+    // showing the same instant twice in one view. aiText already starts with its
+    // own " | " separator. Pure.
+    function lightboxFooterMeta(meta, aiText) {
+      const parts = [];
+      if (meta) {
+        if (meta.channel) parts.push(`Channel: ${meta.channel}`);
+        if (meta.eventType) parts.push(`Event Type: ${meta.eventType}`);
+        if (meta.ip) parts.push(`Camera IP: ${meta.ip}`);
+      }
+      let s = parts.join(' | ');
+      if (aiText) s = s ? s + aiText : aiText.replace(/^\s*\|\s*/, '');
+      return s;
+    }
+    // === /pure:lightboxFooterMeta ===
+
+    // === pure:showSearchClear ===
+    // Whether the search box's inline clear (×) should show — only when the field
+    // holds a non-blank query. Pure.
+    function showSearchClear(value) {
+      return !!(value && value.trim().length > 0);
+    }
+    // === /pure:showSearchClear ===
+
+    // === pure:isActivateKey ===
+    // Whether a key should activate a button-like element (Enter/Space), so
+    // div-based controls can be operated from the keyboard. Pure.
+    function isActivateKey(key) {
+      return key === 'Enter' || key === ' ' || key === 'Spacebar';
+    }
+    // === /pure:isActivateKey ===
+
+    // Make a div-based control keyboard-operable: button semantics + Enter/Space.
+    function bindActivatable(el, onActivate) {
+      el.setAttribute('role', 'button');
+      el.tabIndex = 0;
+      el.addEventListener('click', onActivate);
+      el.addEventListener('keydown', (e) => {
+        if (isActivateKey(e.key)) { e.preventDefault(); onActivate(); }
+      });
+    }
+
+    // Make a .blacklist-item on/off toggle an accessible switch: keyboard-operable
+    // and state-announced. State is DOM-encoded (the 'hidden-label' class = OFF),
+    // so a MutationObserver keeps aria-checked in lockstep with the visual dot —
+    // no need to touch each toggle's existing click handler. Enter/Space click it.
+    function bindSwitch(el) {
+      if (!el) return;
+      el.setAttribute('role', 'switch');
+      el.tabIndex = 0;
+      const sync = () => el.setAttribute('aria-checked', String(!el.classList.contains('hidden-label')));
+      sync();
+      new MutationObserver(sync).observe(el, { attributes: true, attributeFilter: ['class'] });
+      el.addEventListener('keydown', (e) => {
+        if (isActivateKey(e.key)) { e.preventDefault(); el.click(); }
+      });
+    }
+
     // Parse filename details - source wall-clock is SOURCE_TZ (DST-aware)
     const parseFilename = (filename) => {
       const f = parseFilenameFields(filename);
@@ -1957,7 +2452,7 @@
       const allItem = document.createElement('div');
       allItem.className = `sidebar-item ${state.activeDateFilter === 'all' ? 'active' : ''}`;
       allItem.innerHTML = `<span>All Dates</span><span class="count-badge">${state.allImages.length}</span>`;
-      allItem.addEventListener('click', () => {
+      bindActivatable(allItem, () => {
         state.activeDateFilter = 'all';
         document.querySelectorAll('.sidebar-item').forEach(el => el.classList.remove('active'));
         allItem.classList.add('active');
@@ -1974,7 +2469,7 @@
         const rel = dayLabel(dateStr, todayStr);
         const label = rel ? `${rel} · ${dateCounts[dateStr].label}` : dateCounts[dateStr].label;
         item.innerHTML = `<span>${label}</span><span class="count-badge">${dateCounts[dateStr].count}</span>`;
-        item.addEventListener('click', () => {
+        bindActivatable(item, () => {
           state.activeDateFilter = dateStr;
           document.querySelectorAll('.sidebar-item').forEach(el => el.classList.remove('active'));
           item.classList.add('active');
@@ -2153,6 +2648,17 @@
 
     const labelStates = (analysis) => computeLabelStates(analysis, state.labelAliases);
 
+    // === pure:badgeStateFor ===
+    // When Gemma deep passes are OFF, the fast detector IS the final verdict —
+    // no confirmation pass is coming — so a 'preliminary' (awaiting-Gemma) hit
+    // should read as a plain verified label, not a wall of amber "label?".
+    // Every other state passes through unchanged. Pure.
+    function badgeStateFor(rawState, deepPassesOn) {
+      if (!deepPassesOn && rawState === 'preliminary') return 'verified';
+      return rawState;
+    }
+    // === /pure:badgeStateFor ===
+
     // === pure:visibleLabels ===
     // Disputed-hiding is a PRECISION-MODE feature: 'disputed' means the two
     // models disagreed, which only happens when Gemma deep passes run. With
@@ -2268,6 +2774,99 @@
     }
     // === /pure:cardAriaLabel ===
 
+    // === pure:frameStatusBadge ===
+    // Calm state badge for a frame that produced NO object-detection badges
+    // (so negative/scanned-clear rows don't render an empty middle). Returns
+    // {text, cls}; '' when there's no analysis yet (don't invent a state). Pure.
+    function frameStatusBadge(analysis) {
+      if (!analysis) return { text: '', cls: '' };
+      return { text: 'Clear', cls: 'badge-clear' };
+    }
+    // === /pure:frameStatusBadge ===
+
+    // === pure:timePillRange ===
+    // [startHour, endHour] for a named time-of-day quick-pick pill. Pure.
+    function timePillRange(name) {
+      switch (name) {
+        case 'morning': return [6, 11];
+        case 'afternoon': return [12, 16];
+        case 'evening': return [17, 20];
+        case 'night': return [21, 23];
+        case 'all':
+        default: return [0, 23];
+      }
+    }
+    // === /pure:timePillRange ===
+
+    // === pure:timeRangeIsDefault ===
+    // True when the time range covers the whole day (the "All" default). Pure.
+    function timeRangeIsDefault(start, end) {
+      return (start <= 0) && (end >= 23);
+    }
+    // === /pure:timeRangeIsDefault ===
+
+    // === pure:timeRangeCollapsed ===
+    // Whether the time-range row should fold to just its header: only when the
+    // range is the all-day default AND the user hasn't manually expanded it.
+    // Reclaims the toolbar's second row in the common (unfiltered) case. Pure.
+    function timeRangeCollapsed(start, end, userExpanded) {
+      return timeRangeIsDefault(start, end) && !userExpanded;
+    }
+    // === /pure:timeRangeCollapsed ===
+
+    // === pure:listRowSummary ===
+    // A dense, scannable one-line summary for a list-view row (and its hover
+    // tooltip): "Jun 18, 2026 · 05:55 am · person, car · \"two near the gate\"".
+    // Parts are omitted when empty so it never shows stray separators. Pure.
+    function listRowSummary(meta, labels, caption) {
+      const parts = [];
+      if (meta && meta.formattedDate) parts.push(meta.formattedDate);
+      if (meta && meta.formattedTime) parts.push(meta.formattedTime);
+      if (labels && labels.length) parts.push(labels.join(', '));
+      if (caption) parts.push(`“${caption}”`);
+      return parts.join(' · ');
+    }
+    // === /pure:listRowSummary ===
+
+    // === pure:activeFiltersSummary ===
+    // Compact read-only summary of the active object filters for the collapsed
+    // "Filters" control, e.g. {text:'person, dog +1', count:3}. Empty set ->
+    // {text:'', count:0}. `max` caps how many names show before "+N".
+    function activeFiltersSummary(filterSet, max) {
+      const items = filterSet ? Array.from(filterSet) : [];
+      const count = items.length;
+      if (count === 0) return { text: '', count: 0 };
+      const cap = (typeof max === 'number' && max > 0) ? max : 2;
+      const shown = items.slice(0, cap);
+      let text = shown.join(', ');
+      if (count > cap) text += ` +${count - cap}`;
+      return { text, count };
+    }
+    // === /pure:activeFiltersSummary ===
+
+    // === pure:actionsOverflow ===
+    // How many of `itemCount` equal-width toolbar actions don't fit in
+    // `available` px (each `itemWidth` px). Drives the icon-only "compact"
+    // collapse of the actions cluster. Pure; guards bad inputs -> 0.
+    function actionsOverflow(itemCount, available, itemWidth) {
+      if (!(itemWidth > 0) || !(itemCount > 0) || !(available >= 0)) return 0;
+      const fit = Math.floor(available / itemWidth);
+      return Math.max(0, itemCount - fit);
+    }
+    // === /pure:actionsOverflow ===
+
+    // === pure:sidebarDefaultCollapsed ===
+    // Initial sidebar state: an explicit stored preference wins; with none, the
+    // sidebar starts collapsed on small screens (<= breakpoint) so the feed is
+    // immediately visible instead of buried under the stacked sidebar. Pure.
+    function sidebarDefaultCollapsed(stored, vw, breakpoint) {
+      if (stored === 'true' || stored === true) return true;
+      if (stored === 'false' || stored === false) return false;
+      const bp = (typeof breakpoint === 'number') ? breakpoint : 992;
+      return (typeof vw === 'number') && vw <= bp;
+    }
+    // === /pure:sidebarDefaultCollapsed ===
+
     // === pure:escapeHtml ===
     // Escape a value for safe interpolation into innerHTML. Server/model
     // strings (filenames, streamed captions, labels) are untrusted.
@@ -2329,11 +2928,15 @@
       state.timeStart = f.timeStart; state.timeEnd = f.timeEnd;
       state.activeHourChartFilter = f.activeHourChartFilter;
       const si = document.getElementById('search-input'); if (si) si.value = '';
+      if (window.syncSearchClear) window.syncSearchClear();
       const ss = document.getElementById('time-start'), se = document.getElementById('time-end');
       if (ss) ss.value = 0; if (se) se.value = 23;
       if (typeof updateSliderLabel === 'function') updateSliderLabel();
-      document.querySelectorAll('#filter-tabs .tab-btn').forEach(btn =>
-        btn.classList.toggle('active', btn.dataset.filter === 'all'));
+      document.querySelectorAll('#filter-tabs .tab-btn').forEach(btn => {
+        const on = btn.dataset.filter === 'all';
+        btn.classList.toggle('active', on);
+        btn.setAttribute('aria-selected', on ? 'true' : 'false');
+      });
       renderObjectFilters();
       renderDateSidebar();
       applyFiltersAndSearch();
@@ -2401,15 +3004,32 @@
       const container = document.getElementById('object-filters');
       const stickyBtn = document.getElementById('sticky-toggle');
       const hideBtn = document.getElementById('hide-filters-toggle');
+      const btnFilters = document.getElementById('btn-filters');
+      const summaryEl = document.getElementById('active-filters-summary');
+      const countEl = document.getElementById('filters-active-count');
 
       // Only show filter buttons for labels NOT in blacklist
       const whitelisted = Array.from(detectedSet).filter(obj => !state.blacklist.includes(obj)).sort();
 
+      // Collapsed "Filters" control: hidden entirely when nothing is detectable,
+      // otherwise shows a count badge + inline summary of the ACTIVE filters
+      // (updated here so it's correct even when the chip popover is collapsed).
       if (whitelisted.length === 0) {
         panel.style.display = 'none';
+        if (btnFilters) btnFilters.style.display = 'none';
+        if (summaryEl) summaryEl.textContent = '';
+        if (window.updateActionsOverflow) window.updateActionsOverflow();
         return;
       }
       panel.style.display = 'flex';
+      if (btnFilters) btnFilters.style.display = '';
+      const sum = activeFiltersSummary(state.objectFilters, 3);
+      if (summaryEl) summaryEl.textContent = sum.text;
+      if (countEl) {
+        if (sum.count > 0) { countEl.textContent = sum.count; countEl.hidden = false; }
+        else { countEl.hidden = true; }
+      }
+      if (window.updateActionsOverflow) window.updateActionsOverflow();
 
       // Bottom control: hide / show the chips (sticky preference)
       hideBtn.textContent = state.filtersHidden ? '▾ Show filters' : '▴ Hide filters';
@@ -2433,11 +3053,17 @@
         renderObjectFilters();
       };
 
+      // Clicking a chip re-renders this list (detaching the chip); remember which
+      // one was focused so we can restore it after, and announce active state.
+      const fa = document.activeElement;
+      const refocusObj = (fa && fa.parentElement === container && fa.dataset && fa.dataset.obj) ? fa.dataset.obj : null;
       container.innerHTML = '';
 
       // "All AI" clears every active filter
       const allBtn = document.createElement('button');
-      allBtn.className = `tab-btn ${state.objectFilters.size === 0 ? 'active' : ''}`;
+      allBtn.className = `chip ${state.objectFilters.size === 0 ? 'chip--active' : ''}`;
+      allBtn.dataset.obj = '__all__';
+      allBtn.setAttribute('aria-pressed', String(state.objectFilters.size === 0));
       allBtn.textContent = 'All AI';
       allBtn.onclick = () => {
         state.objectFilters.clear();
@@ -2449,7 +3075,9 @@
       whitelisted.forEach(obj => {
         const btn = document.createElement('button');
         const isActive = state.objectFilters.has(obj);
-        btn.className = `tab-btn ${isActive ? 'active' : ''}`;
+        btn.className = `chip ${isActive ? 'chip--active' : ''}`;
+        btn.dataset.obj = obj;
+        btn.setAttribute('aria-pressed', String(isActive));
         btn.style.textTransform = 'capitalize';
 
         let icon = 'eye';
@@ -2458,7 +3086,7 @@
         if (obj === 'cat') icon = 'cat';
         if (obj === 'bird') icon = 'bird';
 
-        btn.innerHTML = `<i data-lucide="${icon}" style="width:14px;height:14px;vertical-align:middle;margin-right:4px;"></i>${obj}`;
+        btn.innerHTML = `<i data-lucide="${icon}" style="width:14px;height:14px;vertical-align:middle;"></i>${obj}`;
         btn.onclick = () => {
           if (state.stickySelect) {
             // accumulate: toggle this label in/out, others stay
@@ -2475,6 +3103,11 @@
         container.appendChild(btn);
       });
       lucide.createIcons();
+      // Restore focus to the re-rendered chip the keyboard user had activated.
+      if (refocusObj) {
+        const el = container.querySelector(`.chip[data-obj="${CSS.escape(refocusObj)}"]`);
+        if (el) el.focus();
+      }
     }
 
     function renderBlacklistMenu(detectedSet) {
@@ -2491,16 +3124,23 @@
         const isHidden = state.blacklist.includes(label);
         const item = document.createElement('div');
         item.className = `blacklist-item ${isHidden ? 'hidden-label' : ''}`;
+        item.dataset.label = label;
+        item.setAttribute('aria-label', `Show ${label} detections`);
         item.innerHTML = `
           <span style="text-transform: capitalize;">${label}</span>
           <div class="blacklist-status"></div>
         `;
         item.onclick = () => toggleBlacklist(label);
+        bindSwitch(item); // role=switch + keyboard + aria-checked (= label shown)
         list.appendChild(item);
       });
     }
 
     function toggleBlacklist(label) {
+      // If a keyboard user toggled this row, the re-render below replaces it —
+      // restore focus to the new row for the same label so they keep their place.
+      const ae = document.activeElement;
+      const refocus = !!(ae && ae.classList && ae.classList.contains('blacklist-item') && ae.dataset.label === label);
       if (state.blacklist.includes(label)) {
         state.blacklist = state.blacklist.filter(l => l !== label);
       } else {
@@ -2510,6 +3150,10 @@
       localStorage.setItem('webcam_ai_blacklist', JSON.stringify(state.blacklist));
       renderObjectFilters();
       applyFiltersAndSearch();
+      if (refocus) {
+        const row = document.querySelector(`#blacklist-list .blacklist-item[data-label="${CSS.escape(label)}"]`);
+        if (row) row.focus();
+      }
     }
 
     function renderAliasToggle() {
@@ -2757,13 +3401,17 @@
 
     // Human duration between two parsed items (same-day assumption per frame mtimes)
     // === pure:formatDuration ===
-    // Human visit length from a span (ms) and frame count. A single frame or a
-    // non-positive span reads as "momentary"; under an hour as "N min"; an hour
-    // or more as "Xh Ym", dropping the minutes when they're zero ("2h", not
-    // "2h 0m").
+    // Human visit length from a span (ms) and frame count. Only a single frame or
+    // a non-positive span is truly "momentary"; a multi-frame visit that spans
+    // under a minute reads in seconds ("25 sec") rather than being flattened to
+    // "momentary" or rounded up to "1 min". Under an hour -> "N min"; an hour or
+    // more -> "Xh Ym", dropping the minutes when zero ("2h", not "2h 0m").
     function formatDuration(ms, count) {
-      const mins = Math.round(ms / 60000);
-      if (count <= 1 || mins <= 0) return 'momentary';
+      if (count <= 1) return 'momentary';
+      const secs = Math.round(ms / 1000);
+      if (secs <= 0) return 'momentary';
+      if (secs < 60) return `${secs} sec`;
+      const mins = Math.round(secs / 60);
       if (mins < 60) return `${mins} min`;
       const h = Math.floor(mins / 60), m = mins % 60;
       return m ? `${h}h ${m}m` : `${h}h`;
@@ -2792,7 +3440,15 @@
       document.getElementById('stats-label').textContent = visitsSummary(visits.length, VISIT_CAP);
 
       if (visits.length === 0) {
-        showEmptyState('No object visits for the current filters yet. Visits build up as Gemma verifies images.');
+        // Accurate cause + a real escape, mirroring the grid empty-state — not a
+        // static "waiting for the model" line (the model may be off, and the real
+        // cause is usually an active filter/search).
+        const filtersActive = !!(state.searchQuery || state.objectFilters.size ||
+          state.activeDateFilter !== 'all' || state.timeStart !== 0 || state.timeEnd !== 23 ||
+          state.activeHourChartFilter !== null);
+        const es = timelineEmptyState(filtersActive);
+        const actions = es.showReset ? '<button class="btn" id="empty-reset">Clear all filters</button>' : '';
+        showEmptyState(es.message, actions);
         return;
       }
 
@@ -2814,15 +3470,17 @@
         const row = document.createElement('div');
         row.style.cssText = 'display:flex;align-items:center;gap:12px;padding:10px 12px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:8px;color:var(--text-primary);cursor:pointer;';
         row.innerHTML = `
-          <img src="thumbs/${encodeURIComponent(v.start.f)}" onerror="this.onerror=null;this.src='${encodeURIComponent(v.start.f)}'" loading="lazy" alt="" style="width:80px;height:52px;object-fit:cover;border-radius:4px;flex-shrink:0;">
+          <img src="thumbs/${encodeURIComponent(v.start.f)}" onerror="this.onerror=function(){this.onerror=null;this.src=window.IMG_UNAVAILABLE};this.src='${encodeURIComponent(v.start.f)}'" loading="lazy" alt="${escapeHtml(visitAltText(v.label, v.start.meta.formattedTime, v.count, v.ongoing))}" style="width:80px;height:52px;object-fit:cover;border-radius:4px;flex-shrink:0;">
           <i data-lucide="${icon}" style="color:${v.ongoing ? '#f59e0b' : '#10b981'};width:20px;height:20px;flex-shrink:0;"></i>
           <div style="flex:1;min-width:0;">
             <div style="font-weight:600;"><span style="text-transform:capitalize;">${escapeHtml(v.label)}</span> visit ${v.ongoing ? '<span style="color:#f59e0b;">(ongoing)</span>' : ''}</div>
-            <div style="font-size:0.75rem;color:var(--text-secondary);">${escapeHtml(dateLabel)} &middot; ${timeRange} &middot; ${dur} &middot; ${v.count} frame${v.count !== 1 ? 's' : ''}${framesNote}${ago ? ' &middot; ' + ago : ''}</div>
+            <div class="visit-meta">${escapeHtml(dateLabel)} &middot; ${timeRange} &middot; ${dur} &middot; ${v.count} frame${v.count !== 1 ? 's' : ''}${framesNote}${ago ? ' &middot; ' + ago : ''}</div>
             ${captionHtml}
           </div>
-          <i data-lucide="play-circle" style="width:22px;height:22px;color:var(--accent-color);flex-shrink:0;"></i>`;
-        row.onclick = () => openEventPlayer({ label: v.label, type: 'visit', x: v.start, frames: v.frames });
+          <i data-lucide="play-circle" style="width:22px;height:22px;color:var(--accent);flex-shrink:0;"></i>`;
+        // Keyboard-operable (Timeline is the default view; rows play the visit).
+        row.setAttribute('aria-label', 'Play ' + visitAltText(v.label, v.start.meta.formattedTime, v.count, v.ongoing));
+        bindActivatable(row, () => openEventPlayer({ label: v.label, type: 'visit', x: v.start, frames: v.frames }));
         list.appendChild(row);
       });
       if (visits.length > VISIT_CAP) {
@@ -2846,7 +3504,7 @@
       overlay.innerHTML = `
         <img id="evp-img" style="max-width:95vw;max-height:75vh;border-radius:8px;background:#111;">
         <div id="evp-label" style="color:white;font-size:0.85rem;text-align:center;"></div>
-        <input type="range" id="evp-scrub" min="0" value="0" aria-label="Scrub through frames" style="width:min(95vw,520px);accent-color:var(--accent-color);cursor:pointer;">
+        <input type="range" id="evp-scrub" min="0" value="0" aria-label="Scrub through frames" style="width:min(95vw,520px);accent-color:var(--accent);cursor:pointer;">
         <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;">
           <button class="btn" id="evp-toggle" aria-label="Play or pause">Pause</button>
           <a class="btn" id="evp-full" target="_blank" aria-label="Open full resolution image">Full res</a>
@@ -3001,7 +3659,8 @@
       if (analysis) {
         // Lifecycle badges: verified = solid, preliminary = amber "label?",
         // disputed = struck-through (only with "show unconfirmed" on)
-        labelStates(analysis).forEach((st, label) => {
+        labelStates(analysis).forEach((rawSt, label) => {
+          const st = badgeStateFor(rawSt, deepPassesOn);
           if (state.blacklist.includes(label)) return;
           if (st === 'disputed' && !showDisputedLabels(labelOpts())) return;
           let icon = 'eye';
@@ -3019,14 +3678,21 @@
             </span>`;
         });
 
-        if (detectionsHtml === '' && analysis.fast_pass !== 'negative') {
-          detectionsHtml = '<span class="badge" style="background: rgba(255,255,255,0.05); color: var(--text-secondary);">Clear</span>';
+        if (detectionsHtml === '') {
+          // No object badges -> show a calm state instead of an empty middle,
+          // including explicit negatives (the common case).
+          const status = frameStatusBadge(analysis);
+          if (status.text) detectionsHtml = `<span class="badge ${status.cls}">${escapeHtml(status.text)}</span>`;
         }
       }
 
       const caption = entryCaption(analysis);
       const captionHtml = caption
         ? `<div class="card-caption" title="${escapeHtml(caption)}">${escapeHtml(caption)}</div>` : '';
+      // List-row: a right-aligned "Nm/h/d ago" anchors the row's right edge so
+      // caption-less rows don't read as a big empty band.
+      const ago = (meta.dateObj && isFinite(meta.dateObj.getTime()))
+        ? relativeTime(meta.dateObj.getTime() / 1000, Date.now() / 1000) : '';
 
       card.innerHTML = `
         <div class="card-img-wrapper">
@@ -3035,8 +3701,10 @@
         <div class="card-overlay">
           <div class="meta-info">
             <span class="time-stamp">${meta.formattedTime}</span>
+            <span class="date-stamp">${escapeHtml(meta.formattedDate || '')}</span>
             <div class="detection-badges">${detectionsHtml}</div>
             ${captionHtml}
+            <span class="row-ago">${escapeHtml(ago)}</span>
           </div>
           <div class="card-actions" onclick="event.stopPropagation()">
             <button class="action-icon-btn pin-btn ${state.pins.has(filename) ? 'pinned' : ''}" title="Pin (never auto-delete)">
@@ -3052,6 +3720,7 @@
         </div>
       `;
 
+      card.title = listRowSummary(meta, cardLabels, caption); // dense scannable tooltip
       card.querySelector('.pin-btn').onclick = () => togglePin(filename, card);
       card.querySelector('.del-btn').onclick = () => deleteImage(filename);
       card.addEventListener('click', () => openLightbox(index));
@@ -3135,6 +3804,10 @@
       } catch (e) { /* API offline/timeout; controls show defaults */ }
     })();
 
+    // Make the Settings on/off toggles accessible switches (keyboard + aria-checked).
+    ['alias-toggle', 'unconfirmed-toggle', 'deep-passes-toggle', 'backfill-toggle', 'slack-enabled-toggle']
+      .forEach(id => bindSwitch(document.getElementById(id)));
+
     // Resolve the display timezone from the API (WEBCAM_TZ env > settings >
     // default). Defaults match current behaviour, so a late/failed fetch is
     // harmless; if it resolves to something other than the default and the
@@ -3205,12 +3878,22 @@
     }
 
     // Bandwidth-saving Image Observer
+    // Final fallback for a genuinely-missing frame (deleted via the app or a
+    // cleanup race) so a card shows a calm "unavailable" glyph, not the browser's
+    // broken-image icon. Muted image-off mark on the dark card background.
+    const IMG_UNAVAILABLE = "data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='80'%20height='52'%3E%3Crect%20width='80'%20height='52'%20fill='%230b0f14'/%3E%3Cg%20stroke='%234b5563'%20stroke-width='1.5'%20fill='none'%20stroke-linecap='round'%20stroke-linejoin='round'%3E%3Crect%20x='29'%20y='17'%20width='22'%20height='18'%20rx='2'/%3E%3Cpath%20d='M31%2032l5-5%204%203'/%3E%3Cline%20x1='25'%20y1='13'%20x2='55'%20y2='39'/%3E%3C/g%3E%3C/svg%3E";
+    window.IMG_UNAVAILABLE = IMG_UNAVAILABLE;
+
     const imageObserver = new IntersectionObserver((entries, observer) => {
       entries.forEach(entry => {
         if (entry.isIntersecting) {
           const img = entry.target;
-          // Thumbnail first; fall back to the full image if no thumb exists yet
-          img.onerror = () => { img.onerror = null; img.src = img.dataset.full; };
+          // Thumbnail first; fall back to the full image; if that's gone too,
+          // show the calm placeholder instead of a broken-image glyph.
+          img.onerror = () => {
+            img.onerror = () => { img.onerror = null; img.src = IMG_UNAVAILABLE; };
+            img.src = img.dataset.full;
+          };
           img.src = img.dataset.src;
           img.onload = () => img.classList.add('loaded');
           observer.unobserve(img);
@@ -3227,7 +3910,16 @@
 
     function updateSliderLabel() {
       const label = document.getElementById('time-range-display');
-      label.textContent = `${formatHour(state.timeStart)} - ${formatHour(state.timeEnd)}`;
+      if (label) label.textContent = `${formatHour(state.timeStart)} - ${formatHour(state.timeEnd)}`;
+      const wrapper = document.querySelector('.time-slider-wrapper');
+      if (wrapper) {
+        const isDefault = timeRangeIsDefault(state.timeStart, state.timeEnd);
+        // Narrowing the range clears any manual expand so re-defaulting re-folds.
+        if (!isDefault) state.timeRangeExpanded = false;
+        wrapper.classList.toggle('range-default', isDefault);
+        wrapper.classList.toggle('range-collapsed',
+          timeRangeCollapsed(state.timeStart, state.timeEnd, state.timeRangeExpanded));
+      }
     }
 
     // Render chunks for infinite scroll
@@ -3341,12 +4033,22 @@
       const img = document.getElementById('lightbox-image');
       const title = document.getElementById('lightbox-title');
       const footer = document.getElementById('lightbox-footer');
-      
+
+      // Remember the element that opened the dialog (the focused card) BEFORE any
+      // focus moves, so closeLightbox can return focus to it (WCAG 2.4.3). Capture
+      // only on a fresh open, not when arrow-nav re-enters with the dialog open.
+      // Also stash the filename: the grid can re-render (auto-refresh) while the
+      // dialog is open, replacing the card node, so we re-find it by filename.
+      if (!lightbox.classList.contains('active')) {
+        lightboxOpener = document.activeElement;
+        lightboxOpenerFilename = filename;
+      }
+
       // Reset zoom
       resetZoom();
       
       img.src = filename;
-      title.textContent = `File Name: ${meta.original}`;
+      title.textContent = lightboxTitle(meta);
 
       // Preload the neighbouring full-res frames so swipe/arrow nav is instant
       const N = state.filteredImages.length;
@@ -3386,7 +4088,7 @@
 
       footer.innerHTML = `
         <div style="margin-bottom: 8px;">
-          Created: ${meta.formattedDate} at ${meta.formattedTime} | Channel: ${meta.channel} | Event Type: ${meta.eventType} | Camera IP: ${meta.ip}${aiText}
+          ${lightboxFooterMeta(meta, aiText)}
         </div>
         ${captionHtml}
         ${burstHtml}
@@ -3410,6 +4112,8 @@
     }
 
     let lightboxRelease = null;
+    let lightboxOpener = null;
+    let lightboxOpenerFilename = null;
     function closeLightbox() {
       const lightbox = document.getElementById('lightbox');
       lightbox.classList.remove('active');
@@ -3417,6 +4121,18 @@
       pauseSlideshow();
       resetZoom();
       if (lightboxRelease) { lightboxRelease(); lightboxRelease = null; }
+      // Return focus to the card that opened the dialog (WCAG 2.4.3), overriding
+      // trapFocus's own restore. Prefer the exact node; if the grid re-rendered
+      // while the dialog was open, re-find the card by filename so focus lands on
+      // the right place instead of the page top.
+      let opener = (lightboxOpener && document.contains(lightboxOpener)) ? lightboxOpener : null;
+      if (!opener && lightboxOpenerFilename) {
+        const im = document.querySelector(`.image-card img[data-full="${encodeURIComponent(lightboxOpenerFilename)}"]`);
+        opener = im ? im.closest('.image-card') : null;
+      }
+      if (opener && typeof opener.focus === 'function') opener.focus();
+      lightboxOpener = null;
+      lightboxOpenerFilename = null;
     }
 
     function navigateLightbox(direction) {
@@ -3491,11 +4207,11 @@
       
       if (state.isLive) {
         badge.classList.remove('paused');
-        text.textContent = 'Live: ON';
+        text.textContent = 'Auto-refresh: ON';
         startPolling();
       } else {
         badge.classList.add('paused');
-        text.textContent = 'Live: OFF';
+        text.textContent = 'Auto-refresh: OFF';
         stopPolling();
       }
     }
@@ -3675,12 +4391,32 @@
       // Search Query box (debounced)
       let searchTimeout;
       document.getElementById('search-input').addEventListener('input', (e) => {
+        syncSearchClear();
         clearTimeout(searchTimeout);
         searchTimeout = setTimeout(() => {
           state.searchQuery = e.target.value;
           applyFiltersAndSearch();
         }, 300);
       });
+
+      // Inline clear (×) for the search field.
+      const searchClearBtn = document.getElementById('search-clear');
+      function syncSearchClear() {
+        const si = document.getElementById('search-input');
+        if (searchClearBtn && si) searchClearBtn.hidden = !showSearchClear(si.value);
+      }
+      window.syncSearchClear = syncSearchClear;
+      if (searchClearBtn) {
+        searchClearBtn.addEventListener('click', () => {
+          const si = document.getElementById('search-input');
+          si.value = '';
+          state.searchQuery = '';
+          syncSearchClear();
+          applyFiltersAndSearch();
+          si.focus();
+        });
+      }
+      syncSearchClear();
 
       // --- Saved searches (named filter snapshots in localStorage) ---
       const SAVED_KEY = 'webcam_saved_searches';
@@ -3698,11 +4434,15 @@
         state.activeHourChartFilter = (f.activeHourChartFilter == null ? null : f.activeHourChartFilter);
         // Sync DOM controls to the restored state.
         const si = document.getElementById('search-input'); if (si) si.value = state.searchQuery;
+        if (window.syncSearchClear) window.syncSearchClear();
         const ss = document.getElementById('time-start'), se = document.getElementById('time-end');
         if (ss) ss.value = state.timeStart; if (se) se.value = state.timeEnd;
         if (typeof updateSliderLabel === 'function') updateSliderLabel();
-        document.querySelectorAll('#filter-tabs .tab-btn').forEach(btn =>
-          btn.classList.toggle('active', btn.dataset.filter === state.activeFilter));
+        document.querySelectorAll('#filter-tabs .tab-btn').forEach(btn => {
+          const on = btn.dataset.filter === state.activeFilter;
+          btn.classList.toggle('active', on);
+          btn.setAttribute('aria-selected', on ? 'true' : 'false');
+        });
         renderObjectFilters();
         renderDateSidebar();
         applyFiltersAndSearch();
@@ -3742,8 +4482,12 @@
       // Category Event Tabs
       document.getElementById('filter-tabs').addEventListener('click', (e) => {
         if (e.target.classList.contains('tab-btn')) {
-          document.querySelectorAll('#filter-tabs .tab-btn').forEach(btn => btn.classList.remove('active'));
+          document.querySelectorAll('#filter-tabs .tab-btn').forEach(btn => {
+            btn.classList.remove('active');
+            btn.setAttribute('aria-selected', 'false');
+          });
           e.target.classList.add('active');
+          e.target.setAttribute('aria-selected', 'true');
           state.activeFilter = e.target.dataset.filter;
           applyFiltersAndSearch();
         }
@@ -3761,6 +4505,7 @@
           sliderEnd.value = state.timeEnd;
         }
         updateSliderLabel();
+        if (window.syncTimePills) window.syncTimePills();
         applyFiltersAndSearch();
       });
 
@@ -3771,6 +4516,7 @@
           sliderStart.value = state.timeStart;
         }
         updateSliderLabel();
+        if (window.syncTimePills) window.syncTimePills();
         applyFiltersAndSearch();
       });
 
@@ -3780,8 +4526,51 @@
         sliderStart.value = 0;
         sliderEnd.value = 23;
         updateSliderLabel();
+        syncTimePills();
         applyFiltersAndSearch();
       });
+
+      // At the all-day default, clicking the header folds/unfolds the pills +
+      // dual-range (the Reset button is hidden then — it'd be a no-op anyway).
+      const sliderHeader = document.querySelector('.time-slider-wrapper .slider-header');
+      if (sliderHeader) {
+        sliderHeader.addEventListener('click', (e) => {
+          if (e.target.closest('#btn-reset-time')) return;
+          if (!timeRangeIsDefault(state.timeStart, state.timeEnd)) return;
+          state.timeRangeExpanded = !state.timeRangeExpanded;
+          updateSliderLabel();
+        });
+      }
+
+      // Mobile time-of-day quick-pick pills (drive the same range state).
+      const timePills = document.getElementById('time-pills');
+      function syncTimePills() {
+        if (!timePills) return;
+        timePills.querySelectorAll('.time-pill').forEach(b => {
+          const [s, e] = timePillRange(b.dataset.pill);
+          const active = b.dataset.pill === 'all'
+            ? timeRangeIsDefault(state.timeStart, state.timeEnd)
+            : (state.timeStart === s && state.timeEnd === e);
+          b.classList.toggle('active', active);
+          b.setAttribute('aria-pressed', String(active)); // announce active range to SR
+        });
+      }
+      window.syncTimePills = syncTimePills;
+      if (timePills) {
+        timePills.addEventListener('click', (e) => {
+          const btn = e.target.closest('.time-pill'); if (!btn) return;
+          const [s, en] = timePillRange(btn.dataset.pill);
+          state.timeStart = s; state.timeEnd = en;
+          sliderStart.value = s; sliderEnd.value = en;
+          updateSliderLabel();
+          syncTimePills();
+          applyFiltersAndSearch();
+        });
+      }
+      syncTimePills();
+      // Initialize the label + collapse state on load (fresh sessions never hit
+      // the saved-filter restore path that otherwise calls this).
+      updateSliderLabel();
 
       // Blacklist Menu Toggle
       const btnManageBlacklist = document.getElementById('btn-manage-blacklist');
@@ -3792,10 +4581,75 @@
       });
 
       document.addEventListener('click', (e) => {
-        if (!blacklistDropdown.contains(e.target) && e.target !== btnManageBlacklist) {
+        // A click inside the menu can re-render and DETACH its target (e.g.
+        // toggling a label re-renders the list); a detached target isn't an
+        // "outside" click, so don't close the menu on it.
+        if (document.contains(e.target) &&
+            !blacklistDropdown.contains(e.target) && e.target !== btnManageBlacklist) {
           blacklistDropdown.classList.remove('active');
         }
       });
+
+      // Filters popover: progressive disclosure of the object-filter chips
+      const btnFilters = document.getElementById('btn-filters');
+      const filtersDropdown = document.getElementById('filters-dropdown');
+      if (btnFilters && filtersDropdown) {
+        btnFilters.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const open = filtersDropdown.classList.toggle('active');
+          btnFilters.setAttribute('aria-expanded', open ? 'true' : 'false');
+        });
+        document.addEventListener('click', (e) => {
+          // ignore a target detached by a re-render (e.g. clicking a filter chip
+          // re-renders the chips) — that's not an outside click, don't close.
+          if (document.contains(e.target) &&
+              !filtersDropdown.contains(e.target) && !btnFilters.contains(e.target)) {
+            filtersDropdown.classList.remove('active');
+            btnFilters.setAttribute('aria-expanded', 'false');
+          }
+        });
+      }
+
+      // Actions cluster: collapse the secondary action labels to icons when the
+      // toolbar is cramped (content-aware via actionsOverflow, deterministic on
+      // viewport width so it can't oscillate). Replaces the fixed 768px guess.
+      function updateActionsOverflow() {
+        const cluster = document.getElementById('toolbar-actions');
+        if (!cluster) return;
+        const items = ['btn-filters', 'btn-manage-blacklist', 'btn-integrations', 'btn-system-status']
+          .map(id => document.getElementById(id))
+          .filter(el => el && getComputedStyle(el).display !== 'none');
+        // Budget: viewport minus the tabs + slider/search occupying the rest of
+        // the bar; each full-width action ~120px. clientWidth, not innerWidth.
+        const available = Math.max(0, document.documentElement.clientWidth - 440);
+        cluster.classList.toggle('compact', actionsOverflow(items.length, available, 120) > 0);
+      }
+      let _aoRaf = 0;
+      window.addEventListener('resize', () => {
+        clearTimeout(_aoRaf);
+        _aoRaf = setTimeout(updateActionsOverflow, 120);
+      });
+      updateActionsOverflow();
+      window.updateActionsOverflow = updateActionsOverflow; // re-run when filter btn visibility changes
+
+      // Collapsible sidebar: explicit pref persisted; defaults collapsed on
+      // small screens so the feed is visible first.
+      const workspaceEl = document.querySelector('.workspace');
+      const sidebarToggle = document.getElementById('sidebar-toggle');
+      if (workspaceEl && sidebarToggle) {
+        const applySidebarState = (collapsed) => {
+          workspaceEl.classList.toggle('sidebar-collapsed', collapsed);
+          sidebarToggle.setAttribute('aria-pressed', collapsed ? 'true' : 'false');
+          updateActionsOverflow();
+        };
+        const storedSidebar = localStorage.getItem('webcam_sidebar_collapsed');
+        applySidebarState(sidebarDefaultCollapsed(storedSidebar, document.documentElement.clientWidth, 992));
+        sidebarToggle.addEventListener('click', () => {
+          const collapsed = !workspaceEl.classList.contains('sidebar-collapsed');
+          applySidebarState(collapsed);
+          localStorage.setItem('webcam_sidebar_collapsed', String(collapsed));
+        });
+      }
 
       // Integrations panel (Slack, ...): outbound posts of timeline activity
       const btnIntegrations = document.getElementById('btn-integrations');
@@ -3846,7 +4700,8 @@
         if (integrationsDropdown.classList.contains('active')) loadIntegrations();
       });
       document.addEventListener('click', (e) => {
-        if (!integrationsDropdown.contains(e.target) && !btnIntegrations.contains(e.target)) {
+        if (document.contains(e.target) &&
+            !integrationsDropdown.contains(e.target) && !btnIntegrations.contains(e.target)) {
           integrationsDropdown.classList.remove('active');
         }
       });
@@ -4116,7 +4971,8 @@
         }
       });
       document.addEventListener('click', (e) => {
-        if (!systemDropdown.contains(e.target) && e.target !== btnSystemStatus) {
+        if (document.contains(e.target) &&
+            !systemDropdown.contains(e.target) && e.target !== btnSystemStatus) {
           systemDropdown.classList.remove('active');
           clearInterval(systemRefreshTimer);
         }
@@ -4126,8 +4982,9 @@
       document.querySelectorAll('.view-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
           const btnElem = e.currentTarget;
-          document.querySelectorAll('.view-btn').forEach(b => b.classList.remove('active'));
+          document.querySelectorAll('.view-btn').forEach(b => { b.classList.remove('active'); b.setAttribute('aria-pressed', 'false'); });
           btnElem.classList.add('active');
+          btnElem.setAttribute('aria-pressed', 'true');
           
           const view = btnElem.dataset.view;
           const grid = document.getElementById('image-grid');
@@ -4227,6 +5084,23 @@
         if (e.target.id === 'lightbox' || e.target.classList.contains('lightbox-body')) {
           closeLightbox();
         }
+      });
+
+      // Escape closes any open dropdown menu (keyboard parity with click-outside),
+      // resets the trigger's aria-expanded, and returns focus to it.
+      document.addEventListener('keydown', (e) => {
+        if (e.key !== 'Escape') return;
+        [['blacklist-dropdown', 'btn-manage-blacklist'],
+         ['filters-dropdown', 'btn-filters'],
+         ['integrations-dropdown', 'btn-integrations'],
+         ['system-dropdown', 'btn-system-status']].forEach(([menuId, btnId]) => {
+          const menu = document.getElementById(menuId);
+          if (menu && menu.classList.contains('active')) {
+            menu.classList.remove('active');
+            const btn = document.getElementById(btnId);
+            if (btn) { btn.setAttribute('aria-expanded', 'false'); btn.focus(); }
+          }
+        });
       });
 
       // Global Key listener for lightbox controls

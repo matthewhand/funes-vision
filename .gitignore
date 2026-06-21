@@ -10,3 +10,6 @@ integrations.json
 integrations_state.json
 retention_log.json
 alert_state.json
+
+# Local-only user-guide screenshots (contain real webcam footage — never commit)
+docs/img/

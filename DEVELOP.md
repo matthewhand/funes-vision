@@ -64,13 +64,19 @@ no restarts needed). Per camera dir, in order:
    (auto, or via `fast_pass_engine`). YOLO = yolov4-tiny via OpenCV DNN,
    COCO classes mapped to person/car/bird/cat/dog, conf 0.45, ~0.2s/image.
    Haar = legacy frontal-face/fullbody/frontalcatface cascades.
-5. **Deep pass** — the `model_local` vision model through Ollama
-   (`analyze_image_local`, /api/chat with `format: json`). `model_local` can be
+5. **Deep pass** — the `model_primary` vision model through Ollama
+   (`analyze_image_local`, /api/chat with `format: json`). `model_primary` can be
    a local tag *or* an Ollama `:cloud` model (e.g. `minimax-m3:cloud`) — same
    `:11434` path either way. OpenRouter remains a separate fallback when
    `allow_cloud` is true. Budgeted: `max_deep_passes` per camera per sweep
    counts local AND cloud calls. **An LLM verdict replaces the entry
    wholesale — the LLM always trumps the fast-pass detector.**
+   - *Which models run here* (`runnable_chain`): the primary→fallback chain is
+     filtered to what THIS host can serve — a `:cloud` model always (it runs on
+     Ollama's servers, no local RAM), a local model only when free RAM ≥
+     `min_mem_for_local_gb`. This is why a low-RAM box still runs its cloud
+     primary instead of silently doing zero deep passes (the gate used to key on
+     a local-RAM threshold alone). `model_is_cloud(tag)` = `:cloud` suffix.
    - *Rate limiting*: every Ollama chat call goes through `_ollama_chat`, which
      retries HTTP 429/503 with **exponential backoff + jitter** (`backoff_delay`,
      capped at 30 s, honoring `Retry-After`). If still throttled after
@@ -82,8 +88,15 @@ no restarts needed). Per camera dir, in order:
      `gate_ignore_labels` (default `["car"]` — a car parked in frame 24/7)
      is recorded as a partial but does NOT consume urgent budget.
 6. **Idle backfill** (`deep_backfill`) — leftover budget verifies
-   fast-pass negatives and ignored-label partials, newest first, so the
-   entire archive converges on LLM verdicts ("work backwards").
+   fast-pass negatives and ignored-label partials, closest-to-a-detection
+   first then newest, so the archive converges on LLM verdicts. Fanned out
+   across `deep_concurrency` workers (`concurrency_workers` clamps to
+   `[1, len(targets)]`); results are consumed in the main thread so
+   `analysis_data` is never mutated concurrently, and a peer tripping
+   `RATE_LIMITED` short-circuits the rest. The audit-trail files
+   (`inference_status.json`/`inference_log.json`) are written via
+   `_atomic_write_json` under `_IO_LOCK` so concurrent passes and the live
+   API reader never see a half-written file.
 7. **Bursts** — consecutive images < `burst_threshold_seconds` apart form
    a burst; bursts containing a detection get an LLM sequence summary
    (last 3 frames). Invalid cached bursts (missing files, or spans
@@ -92,9 +105,13 @@ no restarts needed). Per camera dir, in order:
 8. **Pruning** — analysis/burst entries whose files no longer exist
    (retention, API delete, external cleanup) are removed.
 
-Inference timing on this box (4-core ARM, no GPU): **~5.5 min/image**.
-`max_deep_passes` = 4 keeps a both-camera sweep (~45 min) under the 1h
-lock timeout.
+Inference timing on this box (4-core, no GPU): **local** vision models don't
+fit RAM here, so the deep pass runs on the cloud primary (`minimax-m3:cloud`)
+at **~7–25 s/image** (rising under `deep_concurrency`, which the endpoint only
+partially parallelizes — ~1.4× at 3). Sustained net catch-up is therefore
+~300–360 frames/hr; the historical backfill of a large archive takes many
+hours and is meant to grind across sweeps. `max_deep_passes` bounds a sweep so
+it can't hold the 1h lock indefinitely.
 
 ### Retention (replaces the old cron cleanups)
 Runs once per sweep inside the lock. Two passes:
@@ -244,13 +261,14 @@ move → verify) lives in [ROADMAP.md](ROADMAP.md).
 | `timezone` | Australia/Sydney | display TZ; `WEBCAM_TZ` env overrides (see [Paths & XDG](#paths--xdg)) |
 | `max_age_days` | 30 | retention: age limit for no-detection images |
 | `max_dir_gb` | 3.0 | retention: per-camera disk budget (code fallback 4.0) |
-| `min_mem_for_local_gb` | 6.0 | min free RAM to attempt local LLM |
-| `allow_cloud` | false | permit OpenRouter fallback |
+| `min_mem_for_local_gb` | 6.0 | min free RAM to attempt a **local** model; a `:cloud` model ignores this (see `runnable_chain`) |
+| `allow_cloud` | false | permit OpenRouter fallback (separate from an Ollama `:cloud` primary) |
 | `ollama_url` | http://localhost:11434 | local LLM endpoint |
 | `model_local` | gemma4:12b | Ollama model tag (back-compat default for `model_primary`) |
 | `model_primary` | (=`model_local`) | primary inference model via Ollama (local tag or a `:cloud` model) |
 | `model_fallback` | "" | optional fallback tried when the primary errors/rate-limits |
 | `max_deep_passes` | 4 | LLM calls per camera per sweep (local+cloud) |
+| `deep_concurrency` | 1 | parallel **backfill** deep passes. Safe only with a `:cloud` model (no local RAM contention); the cloud endpoint partially parallelizes (~1.4× at 3). Rate-limit backoff + per-sweep `RATE_LIMITED` still guard it |
 | `fast_pass_engine` | yolo | `yolo` or `haar` (UI-selectable) |
 | `deep_passes_enabled` | true | master switch for ALL Gemma work (priority+backfill+bursts); false = detector-only, no LLM (UI-toggleable) |
 | `deep_backfill` | true | idle LLM verification of the archive (UI-toggleable) |
@@ -384,7 +402,12 @@ node tests/*.js                          # SPA pure helpers (one file each)
 - **Python** (`tests/test_helpers.py`) imports `api_server` + the `integrations`
   package and covers the pure logic: settings validation, timezone resolution,
   the SSE detection/new-entry extractors, inference-metric rollups, Slack
-  error-friendliness, media sampling, delivery recording.
+  error-friendliness, media sampling, delivery recording. Inference plumbing:
+  `model_chain`/`runnable_chain`/`model_is_cloud` (a low-RAM host still serves a
+  cloud primary; local models filtered until RAM suffices), the rate-limit
+  fallback/backoff, `concurrency_workers` clamping, and `_atomic_write_json` +
+  the `_IO_LOCK`-guarded audit writes (8-thread hammer stays valid JSON, no lost
+  log entries).
 - **Node** suites cover the SPA's pure helpers **without** a headless browser.
   Each function the browser uses is wrapped in sentinel comments in
   `index.html` — `// === pure:NAME ===` … `// === /pure:NAME ===` — and the
@@ -406,8 +429,19 @@ node tests/*.js                          # SPA pure helpers (one file each)
 
 **Workflow (TDD):** write/extend a failing test first (confirm RED), implement
 minimally (confirm GREEN), run both suites, then deploy/commit. DOM behaviour
-that can't be reduced to a pure helper is proven via the deployed app;
-Playwright is [considered but deferred](ROADMAP.md) (no-deps ethos + disk).
+that can't be reduced to a pure helper is proven via the deployed app.
+
+## Screenshots
+
+The README/user-guide images in `docs/img/` are captured from the **live app**
+with Playwright (Chromium) — kept out of the test suite and dependency tree
+(installed into a scratch dir, not the repo). Tooling + run instructions:
+[`tools/screenshots/`](tools/screenshots/README.md). In brief: `proxy.py`
+serves the deployed gallery and reverse-proxies `/api`→:8190 under one local
+origin (bypassing nginx basic-auth and CORS), then `shots.js` drives Chromium
+across views/viewports. The script freezes animations, kills JS timers, and
+pre-loads lazy images so `page.screenshot()` doesn't hang on the SPA's
+continuous repaint. (This supersedes the earlier "Playwright deferred" note.)
 
 ## Services & infrastructure
 

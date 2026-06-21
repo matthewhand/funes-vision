@@ -8,6 +8,8 @@ import numpy as np
 import time
 import random
 import bisect
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
 # CONFIGURATION (defaults; override in settings.json next to this script)
@@ -25,6 +27,8 @@ MAX_DIR_GB = 4.0    # retention: per-camera disk budget
 ALLOW_CLOUD = True  # permit OpenRouter calls when local inference is unavailable
 OLLAMA_URL = "http://localhost:11434"
 MAX_DEEP_PASSES = 15  # LLM calls (local or cloud) per camera per sweep
+DEEP_CONCURRENCY = 1   # parallel backfill deep passes; >1 only sane for a cloud
+                       # model (no local RAM contention). Rate-limit backoff guards it.
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 FAST_PASS_ENGINE = "yolo"  # "yolo" (recommended) or "haar" (legacy cascades)
 YOLO_DIR = os.path.join(BASE_DIR, "models", "yolo")
@@ -48,6 +52,7 @@ if os.path.exists(_settings_path):
         ALLOW_CLOUD = _s.get("allow_cloud", ALLOW_CLOUD)
         OLLAMA_URL = _s.get("ollama_url", OLLAMA_URL)
         MAX_DEEP_PASSES = _s.get("max_deep_passes", MAX_DEEP_PASSES)
+        DEEP_CONCURRENCY = _s.get("deep_concurrency", DEEP_CONCURRENCY)
         MODEL_LOCAL = _s.get("model_local", MODEL_LOCAL)
         MODEL_PRIMARY = _s.get("model_primary", MODEL_LOCAL)  # default to model_local
         MODEL_FALLBACK = _s.get("model_fallback", "")
@@ -173,29 +178,44 @@ def analyze_image_openrouter(image_path, api_key):
 INFERENCE_LOG = os.path.join(BASE_DIR, "inference_log.json")
 INFERENCE_STATUS = os.path.join(BASE_DIR, "inference_status.json")
 
+# Serializes the small audit-trail files so concurrent deep passes (and the
+# live API reader) never see a half-written or interleaved JSON file.
+_IO_LOCK = threading.Lock()
+
+
+def _atomic_write_json(path, data, indent=None):
+    """Write JSON to `path` via temp-file + os.replace so a reader never
+    observes a partially written file, and a crash mid-write can't truncate
+    the real one. Caller holds _IO_LOCK when ordering vs other writers matters."""
+    tmp = f"{path}.tmp.{os.getpid()}.{threading.get_ident()}"
+    with open(tmp, "w") as f:
+        json.dump(data, f, indent=indent)
+    os.replace(tmp, path)
+
+
 def set_inference_status(payload):
     """Live marker of the in-flight LLM call ({} when idle)."""
     try:
-        with open(INFERENCE_STATUS, "w") as f:
-            json.dump(payload or {}, f)
+        with _IO_LOCK:
+            _atomic_write_json(INFERENCE_STATUS, payload or {})
     except OSError:
         pass
 
 def log_inference(image, model, started, duration, labels, ok, trigger):
-    try:
-        log = json.load(open(INFERENCE_LOG)) if os.path.exists(INFERENCE_LOG) else []
-    except (OSError, ValueError):
-        log = []
-    log.append({"image": image, "model": model, "trigger": trigger,
-                "started": started, "duration_s": round(duration, 1),
-                "labels": labels, "ok": ok})
-    try:
-        with open(INFERENCE_LOG, "w") as f:
-            json.dump(log[-200:], f, indent=1)
-    except OSError:
-        pass
+    with _IO_LOCK:
+        try:
+            log = json.load(open(INFERENCE_LOG)) if os.path.exists(INFERENCE_LOG) else []
+        except (OSError, ValueError):
+            log = []
+        log.append({"image": image, "model": model, "trigger": trigger,
+                    "started": started, "duration_s": round(duration, 1),
+                    "labels": labels, "ok": ok})
+        try:
+            _atomic_write_json(INFERENCE_LOG, log[-200:], indent=1)
+        except OSError:
+            pass
 
-def run_deep_pass(image_path, img_name, can_run_local, api_key, trigger, fp_labels=None):
+def run_deep_pass(image_path, img_name, can_run_chain, api_key, trigger, fp_labels=None):
     """One audited LLM deep pass: local first, cloud fallback.
 
     The successful verdict carries a "_yolo" field with the fast-pass
@@ -211,7 +231,7 @@ def run_deep_pass(image_path, img_name, can_run_local, api_key, trigger, fp_labe
                           "trigger": trigger, "started": started})
     result = None
     used = None
-    if can_run_local:
+    if can_run_chain:
         result = analyze_image_local(image_path)
         if result is not None:
             used = LAST_MODEL_USED   # the chain model that actually served
@@ -299,6 +319,31 @@ def model_chain(primary, fallback):
     return out
 
 
+def model_is_cloud(tag):
+    """True for an Ollama cloud model (':cloud' suffix): it runs on Ollama's
+    servers and needs NO local RAM. Pure."""
+    return isinstance(tag, str) and tag.strip().endswith(":cloud")
+
+
+def runnable_chain(primary, fallback, free_gb, min_local_gb):
+    """model_chain() filtered to the models THIS host can actually serve:
+    cloud models always; a local model only when free_gb >= min_local_gb.
+    Pure. Without this, a low-RAM box silently does zero deep passes even
+    though its configured cloud primary needs no local memory."""
+    return [m for m in model_chain(primary, fallback)
+            if model_is_cloud(m) or free_gb >= min_local_gb]
+
+
+def concurrency_workers(requested, n_targets):
+    """Clamp the configured backfill concurrency to a sane worker count:
+    at least 1, never more than the number of targets. Pure."""
+    try:
+        req = int(requested)
+    except (TypeError, ValueError):
+        req = 1
+    return max(1, min(req, n_targets)) if n_targets > 0 else 0
+
+
 def parse_chat_chunk(line):
     """Parse one NDJSON line of an Ollama streaming chat response into
     (text_delta, done). Pure; a malformed line yields ("", False)."""
@@ -355,7 +400,7 @@ def analyze_image_local(image_path):
         "format": "json",
     }
     rate_limited_all, tried = True, 0
-    for model in model_chain(MODEL_PRIMARY, MODEL_FALLBACK):
+    for model in runnable_chain(MODEL_PRIMARY, MODEL_FALLBACK, get_free_mem_gb(), MIN_MEM_FOR_LOCAL_GB):
         tried += 1
         try:
             response = _ollama_chat({**base, "model": model}, timeout=600)
@@ -394,7 +439,7 @@ def analyze_burst_local(image_paths, on_progress=None):
     }
     cb = (lambda delta, acc: on_progress(acc)) if on_progress else None
     rate_limited_all, tried = True, 0
-    for model in model_chain(MODEL_PRIMARY, MODEL_FALLBACK):
+    for model in runnable_chain(MODEL_PRIMARY, MODEL_FALLBACK, get_free_mem_gb(), MIN_MEM_FOR_LOCAL_GB):
         tried += 1
         try:
             full = _ollama_chat_stream({**base, "model": model}, cb, timeout=900)
@@ -511,7 +556,7 @@ def run_health_checks(watch_dirs, api_key):
 
     alerts = {}
     # Inference capability. Only a genuinely DOWN Ollama (server unreachable)
-    # with no cloud fallback is an outage. Don't alert on `can_run_local`
+    # with no cloud fallback is an outage. Don't alert on `can_run_chain`
     # being briefly false — that includes the free-memory gate, which flaps
     # sweep-to-sweep and recovers on its own (false alarms otherwise).
     if DEEP_PASSES_ENABLED and not ollama_available() and not (ALLOW_CLOUD and api_key):
@@ -685,11 +730,16 @@ def main():
     pins = set(json.load(open(pins_file))) if os.path.exists(pins_file) else set()
 
     free_mem = get_free_mem_gb()
-    can_run_local = free_mem >= MIN_MEM_FOR_LOCAL_GB and ollama_available()
+    ollama_up = ollama_available()
+    # The models THIS host can serve right now: cloud models need no RAM, local
+    # models need free_mem >= threshold. A cloud primary works on a low-RAM box.
+    serve_chain = runnable_chain(MODEL_PRIMARY, MODEL_FALLBACK, free_mem, MIN_MEM_FOR_LOCAL_GB)
+    can_run_chain = ollama_up and bool(serve_chain)
     # Master gate for any LLM deep-pass/burst work this sweep
-    llm_ready = DEEP_PASSES_ENABLED and (can_run_local or (ALLOW_CLOUD and api_key))
-    print(f"System Check: Free Memory = {free_mem:.1f}GB. Local LLM Enabled: {can_run_local}. "
-          f"Cloud Enabled: {ALLOW_CLOUD}. Deep passes: {'ON' if DEEP_PASSES_ENABLED else 'OFF (detector-only)'}")
+    llm_ready = DEEP_PASSES_ENABLED and (can_run_chain or (ALLOW_CLOUD and api_key))
+    print(f"System Check: Free Memory = {free_mem:.1f}GB. Ollama up: {ollama_up}. "
+          f"Runnable chain: {serve_chain or '[]'}. OpenRouter cloud: {ALLOW_CLOUD}. "
+          f"Deep passes: {'ON' if DEEP_PASSES_ENABLED else 'OFF (detector-only)'}")
 
     for image_dir in watch_dirs:
         if not os.path.exists(image_dir): continue
@@ -752,7 +802,7 @@ def main():
                         # fresh detector run for the consensus record
                         fresh_fp = None if was_partial else \
                             sorted(k for k, v in fp_results.items() if v is True)
-                        result = run_deep_pass(image_path, img, can_run_local, api_key,
+                        result = run_deep_pass(image_path, img, can_run_chain, api_key,
                                                "priority", fp_labels=fresh_fp)
                         deep_pass_count += 1
 
@@ -816,16 +866,32 @@ def main():
 
             # Closest-to-a-detection first; newest first as the tiebreak
             pool.sort(key=lambda x: (nearest_detection_gap(x), -mtime(x)))
-            for img in pool:
-                if deep_pass_count >= max_deep_passes:
-                    break
-                image_path = os.path.join(image_dir, img)
+            targets = pool[:max(0, max_deep_passes - deep_pass_count)]
+
+            def _backfill_one(img):
+                # A peer thread may trip the per-sweep rate-limit flag; honor it
+                # so we stop spending passes against a throttled endpoint.
+                if RATE_LIMITED:
+                    return (img, None)
                 print(f"Backfill deep pass for {img}")
-                result = run_deep_pass(image_path, img, can_run_local, api_key, "backfill")
+                return (img, run_deep_pass(os.path.join(image_dir, img), img,
+                                           can_run_chain, api_key, "backfill"))
+
+            workers = concurrency_workers(DEEP_CONCURRENCY, len(targets))
+            if workers <= 1:
+                results = (_backfill_one(img) for img in targets)
+            else:
+                # Fan out cloud calls; results consumed here in the main thread,
+                # so analysis_data / counters are never mutated concurrently.
+                ex = ThreadPoolExecutor(max_workers=workers)
+                results = ex.map(_backfill_one, targets)
+            for img, result in results:
                 deep_pass_count += 1
                 if result:
                     analysis_data[img] = result
                     new_analysis = True
+            if workers > 1:
+                ex.shutdown(wait=True)
 
         # 2. Image Bursts Detection
         bursts = []
@@ -862,7 +928,7 @@ def main():
                 set_inference_status(status_base)
                 summary = None
                 used = None
-                if can_run_local and not RATE_LIMITED:
+                if can_run_chain and not RATE_LIMITED:
                     # Stream the caption into inference_status.json so the UI sees
                     # it build live (surfaced via /api/status .inference.partial).
                     summary = analyze_burst_local(

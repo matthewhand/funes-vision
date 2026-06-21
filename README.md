@@ -108,23 +108,48 @@ An honest snapshot — verified against the code, not aspirational.
 | Webcam (front, car in frame) | `http://<host>:8180` |
 | Dogcam | `http://<host>:8280` |
 
+## Screenshots
+
+_Captured from the live app via Playwright (`tools/screenshots/`, see
+[DEVELOP.md](DEVELOP.md#screenshots))._
+
+**Objects tab** — the gallery with the date timeline, motion-activity chart,
+object filter chips, and cards carrying colour-coded detection badges:
+
+![Objects tab with detection badges and sidebar](docs/img/gallery-objects.png)
+
+**Gallery grid** — the core browsing view (medium density):
+
+![Gallery grid view](docs/img/gallery-grid.png)
+
+**Lightbox** — full-screen review with metadata, frame stepping, and controls:
+
+![Full-screen lightbox viewer](docs/img/lightbox.png)
+
 ## Using the gallery
 
 - **Timeline tab** (default) — one card per object "visit" ("Person visit
-  · 7:02–7:08 · 6 min", with an AI caption of what happened). Tap a visit
-  to play it as a short animation; tap the image to step frame-by-frame.
+  · 7:02–7:08 · 6 min · 4 frames"; brief visits read in seconds, e.g.
+  "· 25 sec", with an AI caption of what happened). Tap a visit to play it as
+  a short animation; tap the image to step frame-by-frame.
 - **Objects tab** — only images with AI-verified detections.
 - **All tab** — every snapshot.
-- **Object buttons** (person, dog, cat, car…) appear automatically for
-  whatever the AI has detected. Tap to filter, tap again to clear. Face and
+- **Filters popover** — object filters (person, dog, cat, car…) live behind a
+  **Filters** button with a live count badge and an inline summary of what's
+  active; they're generated automatically from whatever the AI has detected.
+  Pick one or several to filter; clear them from the same popover. Face and
   body detections are merged into **person** by default.
+- **Time range** — the toolbar's time-of-day filter collapses to a single line
+  at the all-day default and expands when you click it (or narrow the range).
 - **Day planner chart** — each bar is a day (top = midnight); red marks show
   *when* the filtered object was seen. Tap a day to drill into its hourly
   histogram below.
-- **Detection lifecycle badges** — solid badge = verified (both AIs agree),
-  amber `label?` = preliminary (fast detector only, awaiting the LLM),
-  struck-through red = disputed (the two AIs disagree; hidden in precision
-  mode unless "Show unconfirmed detections" is on).
+- **Detection badges** — a calm tinted tag per detected object. With the LLM
+  deep-pass enabled a badge can be preliminary (fast detector only, awaiting the
+  LLM) or disputed (the two AIs disagree — struck-through red, hidden in
+  precision mode unless "Show unconfirmed detections" is on). When deep passes
+  are off (detector-only, this box today) the detector is the final verdict, so
+  tags show plainly — no "awaiting" amber state.
 - **Pin** (📌) an image to protect it from automatic cleanup forever.
   **Delete** (🗑) removes an image from the server permanently.
 - **Settings menu** (gear icon) — hide noisy labels, label merging,
