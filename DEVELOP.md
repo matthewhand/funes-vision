@@ -114,13 +114,21 @@ hours and is meant to grind across sweeps. `max_deep_passes` bounds a sweep so
 it can't hold the 1h lock indefinitely.
 
 ### Retention (replaces the old cron cleanups)
-Runs once per sweep inside the lock. Two passes:
+Runs once per sweep inside the lock, **before** analysis. Three passes:
 1. **Age**: analyzed images with no detections older than `max_age_days`.
 2. **Disk budget**: if the camera dir exceeds `max_dir_gb`, delete oldest
    no-detection images first, then oldest detected images only if still
    over budget.
-Never deleted: **pinned** images (pins.json) and **unanalyzed** images.
-Thumbnails are deleted alongside.
+3. **Budget escape**: if *still* over budget (e.g. a large unanalyzed
+   backlog while the catalog was corrupt/down), oldest **unanalyzed**
+   frames are evicted next. Pins are never deleted.
+Never deleted: **pinned** images (`pins.json`). Thumbnails are deleted
+alongside their full-res parents.
+
+`analysis.json` / `bursts.json` are loaded via `load_json_file` (truncation
+recovery) and written with `_atomic_write_json` so an ENOSPC mid-write can
+no longer permanently disable retention. A corrupt catalog recovers in
+place and the sweep continues; it does not abort before cleanup.
 
 > History: legacy `find ... -mtime +10 -exec rm` jobs in *root's* crontab
 > (and `/etc/cron.d/server-maintenance`) used to delete images behind this

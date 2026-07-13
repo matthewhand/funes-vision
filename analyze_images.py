@@ -188,9 +188,97 @@ def _atomic_write_json(path, data, indent=None):
     observes a partially written file, and a crash mid-write can't truncate
     the real one. Caller holds _IO_LOCK when ordering vs other writers matters."""
     tmp = f"{path}.tmp.{os.getpid()}.{threading.get_ident()}"
-    with open(tmp, "w") as f:
-        json.dump(data, f, indent=indent)
-    os.replace(tmp, path)
+    try:
+        with open(tmp, "w") as f:
+            json.dump(data, f, indent=indent)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except Exception:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def _recover_truncated_json(text, default):
+    """Best-effort repair of a truncated JSON object/array (typical ENOSPC
+    mid-write). Drops a trailing incomplete key/value and closes the root."""
+    if not text or not text.strip():
+        return default
+    text = text.strip()
+    try:
+        return json.loads(text)
+    except (ValueError, TypeError):
+        pass
+
+    # Prefer truncating before an incomplete trailing key (`\n  "foo...`).
+    idx = text.rfind("\n  \"")
+    while idx > 0:
+        candidate = text[:idx].rstrip().rstrip(",") + "\n}\n"
+        try:
+            obj = json.loads(candidate)
+            if isinstance(obj, type(default)):
+                return obj
+        except (ValueError, TypeError):
+            pass
+        idx = text.rfind("\n  \"", 0, idx)
+
+    # Walk back through closing braces near the tail (bounded).
+    start = max(0, len(text) - 250_000)
+    for i in range(len(text) - 1, start, -1):
+        if text[i] != "}":
+            continue
+        chunk = text[: i + 1].rstrip().rstrip(",")
+        for suffix in ("", "\n}", "\n]\n}", "]}"):
+            try:
+                obj = json.loads(chunk + suffix)
+                if isinstance(obj, type(default)):
+                    return obj
+            except (ValueError, TypeError):
+                continue
+    return default
+
+
+def load_json_file(path, default=None):
+    """Load JSON from disk. On corruption (e.g. truncated mid-write), attempt
+    recovery and rewrite a clean file so the next sweep does not re-fail.
+    Returns a fresh empty dict/list when the file is missing or unrecoverable
+    — never raises for parse errors."""
+    if default is None:
+        default = {}
+    empty = {} if isinstance(default, dict) else ([] if isinstance(default, list) else default)
+    if not os.path.exists(path):
+        return empty
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            raw = f.read()
+    except OSError as e:
+        print(f"Warning: could not read {path} ({e}); using empty default")
+        return empty
+    if not raw.strip():
+        return empty
+    try:
+        return json.loads(raw)
+    except (ValueError, TypeError) as e:
+        print(f"Warning: {path} is corrupt ({e}); attempting recovery")
+    recovered = _recover_truncated_json(raw, empty)
+    # Sentinel: recovery failed when we got back the empty default object we
+    # passed in *and* the file clearly had substantial content we couldn't parse.
+    n = len(recovered) if hasattr(recovered, "__len__") else 0
+    if n == 0 and len(raw) > 8:
+        # One more check: did recovery genuinely yield an empty container, or
+        # did _recover_truncated_json give up and return `empty`?
+        if recovered is empty:
+            print(f"Could not recover {path}; starting from empty")
+            return empty
+    print(f"Recovered {path}: retained {n} entries; rewriting clean copy")
+    try:
+        _atomic_write_json(path, recovered, indent=2)
+    except OSError as we:
+        print(f"Warning: could not rewrite recovered {path}: {we}")
+    return recovered
 
 
 def set_inference_status(payload):
@@ -499,15 +587,13 @@ RETENTION_LOG = os.path.join(BASE_DIR, "retention_log.json")
 
 def _log_retention(image_dir, count, bytes_freed):
     """Audit trail of deletions so vanishing images are explainable in-UI."""
-    try:
-        log = json.load(open(RETENTION_LOG)) if os.path.exists(RETENTION_LOG) else []
-    except (ValueError, OSError):
+    log = load_json_file(RETENTION_LOG, [])
+    if not isinstance(log, list):
         log = []
     log.append({"ts": time.time(), "dir": os.path.basename(image_dir.rstrip("/")),
                 "count": count, "bytes_freed": bytes_freed})
     try:
-        with open(RETENTION_LOG, "w") as f:
-            json.dump(log[-100:], f, indent=1)
+        _atomic_write_json(RETENTION_LOG, log[-100:], indent=1)
     except OSError:
         pass
 
@@ -584,9 +670,8 @@ def run_health_checks(watch_dirs, api_key):
     if fails >= 3:
         alerts["infer_fail"] = f"⚠️ *{fails} inference failures* in the last hour."
 
-    try:
-        state = json.load(open(ALERT_STATE)) if os.path.exists(ALERT_STATE) else {}
-    except (ValueError, OSError):
+    state = load_json_file(ALERT_STATE, {})
+    if not isinstance(state, dict):
         state = {}
 
     try:
@@ -619,18 +704,20 @@ def run_health_checks(watch_dirs, api_key):
             state[key]["active"] = False
 
     try:
-        with open(ALERT_STATE, "w") as f:
-            json.dump(state, f, indent=1)
+        _atomic_write_json(ALERT_STATE, state, indent=1)
     except OSError:
         pass
 
 def apply_retention(image_dir, analysis_data, pins):
     """Delete images to honor the age and disk budgets.
 
-    Rules: pinned images are never deleted; unanalyzed images are never
-    deleted (they haven't been looked at yet); no-detection images go
-    first, oldest first; images WITH detections are only deleted if the
-    disk budget is still exceeded after that.
+    Rules: pinned images are never deleted.
+    Pass 1 (age): analyzed no-detection images older than max_age_days.
+    Pass 2 (budget): if over max_dir_gb, oldest negatives first, then oldest
+    detections.
+    Pass 3 (budget escape): if still over budget (e.g. large unanalyzed
+    backlog while the catalog was down), oldest unanalyzed frames go next.
+    Unanalyzed frames are otherwise kept so they can be reviewed first.
     Returns the set of deleted filenames."""
     now = time.time()
     deleted = set()
@@ -675,6 +762,23 @@ def apply_retention(image_dir, analysis_data, pins):
                            and has_detection(analysis_data[e[0]])),
                           key=lambda e: e[1])
         for f, mtime, size in negatives + detected:
+            if total <= budget:
+                break
+            delete(f)
+            total -= size
+
+    # Pass 3: still over budget — unanalyzed frames can pin the dir forever
+    # if the catalog/pipeline was down. Drop oldest unanalyzed (never pins).
+    if total > budget:
+        unanalyzed = sorted(
+            (e for e in remaining
+             if e[0] not in deleted and e[0] not in pins
+             and e[0] not in analysis_data),
+            key=lambda e: e[1])
+        if unanalyzed:
+            print(f"Retention: still over budget after analyzed frames; "
+                  f"evicting oldest unanalyzed from {image_dir}")
+        for f, mtime, size in unanalyzed:
             if total <= budget:
                 break
             delete(f)
@@ -725,9 +829,16 @@ def main():
     
     pins_file = os.path.join(base_dir, "pins.json")
 
-    analysis_data = json.load(open(analysis_file)) if os.path.exists(analysis_file) else {}
-    burst_data = json.load(open(burst_file)) if os.path.exists(burst_file) else {}
-    pins = set(json.load(open(pins_file))) if os.path.exists(pins_file) else set()
+    # Resilient load: a truncated analysis.json must not abort the sweep
+    # before retention runs (that was the ENOSPC → corrupt → no cleanup loop).
+    analysis_data = load_json_file(analysis_file, {})
+    if not isinstance(analysis_data, dict):
+        analysis_data = {}
+    burst_data = load_json_file(burst_file, {})
+    if not isinstance(burst_data, dict):
+        burst_data = {}
+    pins_raw = load_json_file(pins_file, [])
+    pins = set(pins_raw) if isinstance(pins_raw, list) else set()
 
     free_mem = get_free_mem_gb()
     ollama_up = ollama_available()
@@ -962,9 +1073,12 @@ def main():
                         print(f"Integration notify failed: {e}")
 
         if new_analysis:
-            with open(analysis_file, 'w') as f: json.dump(analysis_data, f, indent=2)
-            with open(burst_file, 'w') as f: json.dump(burst_data, f, indent=2)
-            print(f"Updated data files.")
+            try:
+                _atomic_write_json(analysis_file, analysis_data, indent=2)
+                _atomic_write_json(burst_file, burst_data, indent=2)
+                print(f"Updated data files.")
+            except OSError as e:
+                print(f"Failed to write analysis/bursts (disk full?): {e}")
 
     # Prune analysis entries for images deleted by retention or the API
     existing = set()
@@ -975,8 +1089,11 @@ def main():
     if stale:
         for k in stale:
             del analysis_data[k]
-        with open(analysis_file, 'w') as f: json.dump(analysis_data, f, indent=2)
-        print(f"Pruned {len(stale)} stale analysis entries.")
+        try:
+            _atomic_write_json(analysis_file, analysis_data, indent=2)
+            print(f"Pruned {len(stale)} stale analysis entries.")
+        except OSError as e:
+            print(f"Failed to write pruned analysis.json: {e}")
 
     # Prune burst entries that reference deleted images or that span
     # longer than the chain rule allows (false groups created before
@@ -999,8 +1116,11 @@ def main():
     if bad_bursts:
         for k in bad_bursts:
             del burst_data[k]
-        with open(burst_file, 'w') as f: json.dump(burst_data, f, indent=2)
-        print(f"Pruned {len(bad_bursts)} invalid burst entries.")
+        try:
+            _atomic_write_json(burst_file, burst_data, indent=2)
+            print(f"Pruned {len(bad_bursts)} invalid burst entries.")
+        except OSError as e:
+            print(f"Failed to write pruned bursts.json: {e}")
 
     # Operational health alerts (debounced; pushed to Slack if configured)
     try:

@@ -35,20 +35,27 @@ run_analysis() {
         fi
         export OPENROUTER_API_KEY
         
-        # We run the analysis script
-        python3 "$BASE_DIR/analyze_images.py"
-        
-        # 3. Sync template and results to web root
-        cp "$BASE_DIR/index.html" "$IMAGE_DIR/index.html"
-        # PWA static assets (installable; no service worker)
-        [ -f "$BASE_DIR/manifest.json" ] && cp "$BASE_DIR/manifest.json" "$IMAGE_DIR/manifest.json"
-        [ -f "$BASE_DIR/icon.svg" ] && cp "$BASE_DIR/icon.svg" "$IMAGE_DIR/icon.svg"
-        [ -f "$BASE_DIR/analysis.json" ] && cp "$BASE_DIR/analysis.json" "$IMAGE_DIR/analysis.json"
-        [ -f "$BASE_DIR/bursts.json" ] && cp "$BASE_DIR/bursts.json" "$IMAGE_DIR/bursts.json"
-        [ -f "$BASE_DIR/pins.json" ] && cp "$BASE_DIR/pins.json" "$IMAGE_DIR/pins.json"
+        # We run the analysis script. Retention runs first inside it; a
+        # non-zero exit must not be reported as a successful sweep.
+        analysis_rc=0
+        python3 "$BASE_DIR/analyze_images.py" || analysis_rc=$?
 
-        touch "$MARKER"
-        echo "$(date): Analysis and sync complete."
+        # 3. Sync template and results to web root (even after a partial run
+        # so a recovered analysis.json still propagates to nginx roots).
+        cp "$BASE_DIR/index.html" "$IMAGE_DIR/index.html" 2>/dev/null || true
+        # PWA static assets (installable; no service worker)
+        [ -f "$BASE_DIR/manifest.json" ] && cp "$BASE_DIR/manifest.json" "$IMAGE_DIR/manifest.json" 2>/dev/null || true
+        [ -f "$BASE_DIR/icon.svg" ] && cp "$BASE_DIR/icon.svg" "$IMAGE_DIR/icon.svg" 2>/dev/null || true
+        [ -f "$BASE_DIR/analysis.json" ] && cp "$BASE_DIR/analysis.json" "$IMAGE_DIR/analysis.json" 2>/dev/null || true
+        [ -f "$BASE_DIR/bursts.json" ] && cp "$BASE_DIR/bursts.json" "$IMAGE_DIR/bursts.json" 2>/dev/null || true
+        [ -f "$BASE_DIR/pins.json" ] && cp "$BASE_DIR/pins.json" "$IMAGE_DIR/pins.json" 2>/dev/null || true
+
+        if [ "$analysis_rc" -eq 0 ]; then
+            touch "$MARKER"
+            echo "$(date): Analysis and sync complete."
+        else
+            echo "$(date): Analysis FAILED (exit $analysis_rc); web root sync attempted, lastrun not advanced."
+        fi
     fi
   ) 200>$LOCKFILE
 }

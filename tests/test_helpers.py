@@ -450,5 +450,131 @@ class TestResolveTimezone(unittest.TestCase):
         self.assertEqual(api_server.resolve_timezone("  ", "America/New_York"), "America/New_York")
 
 
+class TestJsonRecovery(unittest.TestCase):
+    """Corrupt/truncated analysis.json must not kill the sweep (retention)."""
+
+    def test_recover_truncated_object_keeps_complete_entries(self):
+        # Mimic the ENOSPC mid-key truncation we hit in production.
+        truncated = (
+            '{\n'
+            '  "a.jpg": {\n    "fast_pass": "negative"\n  },\n'
+            '  "b.jpg": {\n    "person": true,\n    "fast_pass": "partial"\n  },\n'
+            '  "c.jpg": {\n    "fast_pass": "negat'
+        )
+        recovered = analyze_images._recover_truncated_json(truncated, {})
+        self.assertIsInstance(recovered, dict)
+        self.assertIn("a.jpg", recovered)
+        self.assertIn("b.jpg", recovered)
+        self.assertNotIn("c.jpg", recovered)
+
+    def test_load_json_file_rewrites_clean_copy(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = os.path.join(td, "analysis.json")
+            # Two complete entries + incomplete tail.
+            with open(path, "w") as f:
+                f.write(
+                    '{\n  "x.jpg": {\n    "fast_pass": "negative"\n  },\n'
+                    '  "y.jpg": {\n    "fast_pass": "negative"\n  },\n'
+                    '  "z.jpg": {\n    "fast_pass": "neg'
+                )
+            data = analyze_images.load_json_file(path, {})
+            self.assertEqual(set(data), {"x.jpg", "y.jpg"})
+            # Clean rewrite so the next load is a plain json.loads success.
+            with open(path) as f:
+                reloaded = json.load(f)
+            self.assertEqual(set(reloaded), {"x.jpg", "y.jpg"})
+
+    def test_load_json_file_missing_returns_empty(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = os.path.join(td, "nope.json")
+            self.assertEqual(analyze_images.load_json_file(path, {}), {})
+            self.assertEqual(analyze_images.load_json_file(path, []), [])
+
+
+class TestApplyRetention(unittest.TestCase):
+    def setUp(self):
+        self._age = analyze_images.MAX_AGE_DAYS
+        self._budget = analyze_images.MAX_DIR_GB
+        self._log = analyze_images.RETENTION_LOG
+        self.td = tempfile.TemporaryDirectory()
+        self.dir = self.td.name
+        analyze_images.RETENTION_LOG = os.path.join(self.dir, "retention_log.json")
+
+    def tearDown(self):
+        analyze_images.MAX_AGE_DAYS = self._age
+        analyze_images.MAX_DIR_GB = self._budget
+        analyze_images.RETENTION_LOG = self._log
+        self.td.cleanup()
+
+    def _touch(self, name, size, mtime):
+        path = os.path.join(self.dir, name)
+        with open(path, "wb") as f:
+            f.write(b"x" * size)
+        os.utime(path, (mtime, mtime))
+        return path
+
+    def test_age_deletes_old_negatives_only(self):
+        analyze_images.MAX_AGE_DAYS = 1
+        analyze_images.MAX_DIR_GB = 100  # no budget pressure
+        now = time.time()
+        self._touch("old_neg.jpg", 100, now - 3 * 86400)
+        self._touch("old_hit.jpg", 100, now - 3 * 86400)
+        self._touch("new_neg.jpg", 100, now - 100)
+        analysis = {
+            "old_neg.jpg": {"fast_pass": "negative"},
+            "old_hit.jpg": {"person": True},
+            "new_neg.jpg": {"fast_pass": "negative"},
+        }
+        deleted = analyze_images.apply_retention(self.dir, analysis, set())
+        self.assertEqual(deleted, {"old_neg.jpg"})
+        self.assertFalse(os.path.exists(os.path.join(self.dir, "old_neg.jpg")))
+        self.assertTrue(os.path.exists(os.path.join(self.dir, "old_hit.jpg")))
+        self.assertTrue(os.path.exists(os.path.join(self.dir, "new_neg.jpg")))
+
+    def test_budget_prefers_negatives_then_detected(self):
+        analyze_images.MAX_AGE_DAYS = 3650
+        analyze_images.MAX_DIR_GB = 500 / (1024 ** 3)  # 500 bytes
+        now = time.time()
+        self._touch("n1.jpg", 400, now - 300)
+        self._touch("n2.jpg", 400, now - 200)
+        self._touch("d1.jpg", 400, now - 100)
+        analysis = {
+            "n1.jpg": {"fast_pass": "negative"},
+            "n2.jpg": {"fast_pass": "negative"},
+            "d1.jpg": {"dog": True},
+        }
+        deleted = analyze_images.apply_retention(self.dir, analysis, set())
+        # n1 (oldest neg) must go; may also need n2; d1 only if still over.
+        self.assertIn("n1.jpg", deleted)
+        self.assertNotIn("d1.jpg", deleted)  # still under after negatives
+        total = sum(os.path.getsize(os.path.join(self.dir, f))
+                    for f in os.listdir(self.dir) if f.endswith(".jpg"))
+        self.assertLessEqual(total, 500)
+
+    def test_pins_never_deleted(self):
+        analyze_images.MAX_AGE_DAYS = 1
+        analyze_images.MAX_DIR_GB = 1 / (1024 ** 3)  # ~1 byte budget
+        now = time.time()
+        self._touch("pinned.jpg", 1000, now - 10 * 86400)
+        analysis = {"pinned.jpg": {"fast_pass": "negative"}}
+        deleted = analyze_images.apply_retention(self.dir, analysis, {"pinned.jpg"})
+        self.assertEqual(deleted, set())
+        self.assertTrue(os.path.exists(os.path.join(self.dir, "pinned.jpg")))
+
+    def test_unanalyzed_evicted_only_when_budget_stuck(self):
+        analyze_images.MAX_AGE_DAYS = 3650
+        analyze_images.MAX_DIR_GB = 500 / (1024 ** 3)
+        now = time.time()
+        self._touch("known.jpg", 200, now - 50)
+        self._touch("orphan_old.jpg", 400, now - 200)
+        self._touch("orphan_new.jpg", 400, now - 10)
+        analysis = {"known.jpg": {"fast_pass": "negative"}}
+        deleted = analyze_images.apply_retention(self.dir, analysis, set())
+        # known (analyzed neg) goes first; then oldest unanalyzed until under budget.
+        self.assertIn("known.jpg", deleted)
+        self.assertIn("orphan_old.jpg", deleted)
+        self.assertNotIn("orphan_new.jpg", deleted)
+
+
 if __name__ == "__main__":
     unittest.main()
