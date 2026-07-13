@@ -113,6 +113,17 @@ partially parallelizes — ~1.4× at 3). Sustained net catch-up is therefore
 hours and is meant to grind across sweeps. `max_deep_passes` bounds a sweep so
 it can't hold the 1h lock indefinitely.
 
+### Watchdog cron (belt and braces)
+Systemd runs the live pipeline; `/etc/cron.d/webcam-watchdog` (installed by
+`systemd/install.sh`) independently:
+- every 15 min: `tools/watchdog.sh check` — unit liveness + stale-sweep restart
+- hourly: `tools/watchdog.sh retention` — `python3 analyze_images.py --retention-only`
+
+`--retention-only` applies the same pin-aware age/disk rules from
+`settings.json` and prunes catalogs, then exits (no YOLO/LLM queue). That
+way cleanup does not depend on a multi-hour analyze holding the flock.
+Log: `watchdog.log` next to the app (gitignored `*.log`).
+
 ### Retention (replaces the old cron cleanups)
 Runs once per sweep inside the lock, **before** analysis. Three passes:
 1. **Age**: analyzed images with no detections older than `max_age_days`.

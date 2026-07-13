@@ -1,0 +1,12 @@
+# Webcam pipeline watchdog — independent of systemd unit liveness.
+# Restarts dead/stuck pipeline units and forces pin-aware retention using
+# settings.json (max_age_days / max_dir_gb). Installed by systemd/install.sh.
+#
+# check   every 15 min: units + stale-sweep detection
+# retention top of hour: always run app-configured cleanup (rock-solid backup)
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+MAILTO=""
+
+*/15 * * * * user /home/user/webcam/tools/watchdog.sh check >> /home/user/webcam/watchdog.log 2>&1
+5 * * * * user /home/user/webcam/tools/watchdog.sh retention >> /home/user/webcam/watchdog.log 2>&1

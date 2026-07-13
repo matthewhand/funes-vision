@@ -815,7 +815,7 @@ def generate_thumbnails(image_dir, images):
     if made:
         print(f"Generated {made} thumbnails in {thumb_dir}")
 
-def main():
+def main(retention_only=False):
     global RATE_LIMITED
     RATE_LIMITED = False  # fresh budget each sweep; a throttle only pauses one sweep
     api_key = os.getenv("OPENROUTER_API_KEY")
@@ -848,15 +848,23 @@ def main():
     can_run_chain = ollama_up and bool(serve_chain)
     # Master gate for any LLM deep-pass/burst work this sweep
     llm_ready = DEEP_PASSES_ENABLED and (can_run_chain or (ALLOW_CLOUD and api_key))
+    mode = "retention-only" if retention_only else (
+        "ON" if DEEP_PASSES_ENABLED else "OFF (detector-only)")
     print(f"System Check: Free Memory = {free_mem:.1f}GB. Ollama up: {ollama_up}. "
           f"Runnable chain: {serve_chain or '[]'}. OpenRouter cloud: {ALLOW_CLOUD}. "
-          f"Deep passes: {'ON' if DEEP_PASSES_ENABLED else 'OFF (detector-only)'}")
+          f"Deep passes: {mode}")
 
     for image_dir in watch_dirs:
         if not os.path.exists(image_dir): continue
         print(f"Scanning {image_dir}...")
         
         apply_retention(image_dir, analysis_data, pins)
+
+        # Cron/watchdog path: honor age + disk budgets without re-entering
+        # the multi-hour analysis queue (which can hold the global lock).
+        if retention_only:
+            print(f"Retention-only: skipped analysis for {image_dir}")
+            continue
 
         images = [f for f in os.listdir(image_dir) if f.lower().endswith(('.jpg', '.jpeg', '.png', '.gif'))]
         # Chronological order is REQUIRED for burst detection below:
@@ -1129,4 +1137,7 @@ def main():
         print(f"Health check failed: {e}")
 
 if __name__ == "__main__":
-    main()
+    # --retention-only: apply settings.json age/disk budgets + prune catalogs,
+    # then exit. Used by the cron watchdog so cleanup never depends solely on
+    # the long-lived create-index / analyze loop staying healthy.
+    main(retention_only=("--retention-only" in sys.argv))

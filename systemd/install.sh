@@ -26,8 +26,13 @@ pkill -f "ollama-bin/bin/ollam[a]" || true
 
 systemctl enable --now webcam-pipeline@Webcam21 webcam-pipeline@Webcam22 webcam-api ollama
 
-# The @reboot cron entries are superseded by systemd
-crontab -u user -l 2>/dev/null | grep -v create-index.sh | crontab -u user - || true
+# The @reboot create-index cron entries are superseded by systemd. Keep a
+# separate cron watchdog so a "active" unit that is stuck mid-sweep still
+# gets restarted and retention still runs from settings.json.
+crontab -u user -l 2>/dev/null | grep -v create-index.sh | grep -v webcam/tools/watchdog | crontab -u user - || true
+install -m 644 /home/user/webcam/systemd/webcam-watchdog.cron /etc/cron.d/webcam-watchdog
+chmod +x /home/user/webcam/tools/watchdog.sh
 
 systemctl --no-pager status webcam-pipeline@Webcam21 webcam-pipeline@Webcam22 | head -20
 echo "Done. Logs: journalctl -u webcam-pipeline@Webcam21 -f"
+echo "Watchdog: /etc/cron.d/webcam-watchdog  (log: /home/user/webcam/watchdog.log)"

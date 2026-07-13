@@ -38,6 +38,27 @@ Installed by `sudo bash systemd/install.sh`:
 All run as user **user** (cv2 is installed only for that user — as
 root the pipeline dies with `ModuleNotFoundError: cv2`).
 
+### Cron watchdog (safety net)
+
+Systemd alone can report a unit **active** while a sweep is stuck for
+hours (global flock held by a long analyze, corrupt catalog, etc.). A
+cron job — independent of the service processes — watches and repairs:
+
+| Schedule | Action |
+|----------|--------|
+| `*/15` | `tools/watchdog.sh check` — restart dead units; if last successful sweep is older than 2h, restart both pipeline units |
+| `:05` hourly | `tools/watchdog.sh retention` — run `analyze_images.py --retention-only` under the same flock, using **settings.json** (`max_age_days`, `max_dir_gb`, pins). Not a blind `find -mtime` wipe |
+
+Installed as `/etc/cron.d/webcam-watchdog` by `install.sh`. Log:
+`/home/user/webcam/watchdog.log` (also syslog tag `webcam-watchdog`).
+
+Manual:
+```bash
+/home/user/webcam/tools/watchdog.sh check
+/home/user/webcam/tools/watchdog.sh retention
+/home/user/webcam/tools/watchdog.sh auto   # check + retention if needed
+```
+
 ## Ollama (local LLM)
 
 Standalone binary — NOT the official installer, NOT docker:
