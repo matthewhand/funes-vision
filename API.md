@@ -72,25 +72,38 @@ Send a Slack test message using the stored config.
 
 ### `GET /api/status`
 Live pipeline snapshot. Shape (keys may be absent if a source is unavailable):
-- `watch_dirs`, `settings` (full settings.json)
+- `watch_dirs`, `settings` (full settings.json — includes `max_age_days`,
+  `max_dir_gb`, even though those are not `POST /api/settings`-mutable)
 - `trigger` → `{inotify_active, idle_sweep_seconds, last_sweep_age_s}`
+  (`last_sweep_age_s` is seconds since `/tmp/webcam_analysis.lastrun`; the
+  cron watchdog and `recent_sweep` health check use this)
 - `llm` → `{model, reachable, allow_cloud}`
 - `queue` → `{images_on_disk, unanalyzed, unverified_partials,
   awaiting_backfill, llm_verified}`
 - `cameras[]` → `{name, images, bytes, budget_pct, last_frame_age_s, stale}`
-- `filesystem` → `{free_gb, total_gb, used_pct}`
+  (`budget_pct` = image bytes in that camera dir vs `max_dir_gb`; UI warns
+  above ~85%; pipeline Slack alert and watchdog `auto` kick at ~90%)
+- `filesystem` → `{free_gb, total_gb, used_pct}` (host volume for the data
+  paths — not the per-camera budget)
 - `timezone` (resolved: `WEBCAM_TZ` env > settings > `Australia/Sydney`)
 - `metrics` → inference rollup `{window_min, count, ok, failures, success_rate,
   local, cloud, avg_s, p95_s}` (just `{window_min, count:0}` when idle)
-- `retention` → last retention event, or `null`
+- `retention` → last event from `retention_log.json`, or `null`:
+  `{ts, dir, count, bytes_freed}` (Unix seconds, camera basename, images
+  removed, bytes freed). Written by `apply_retention` on full sweeps and
+  `--retention-only` (cron watchdog).
 - **200** always.
 
 ### `GET /api/health`
-Compact health for an external uptime monitor.
+Compact health for an external uptime monitor (and the cron watchdog).
 - **200** → `{"status": "ok", "checks": {...}, "cameras": [...]}`
-- **503** → same shape with `"status": "degraded"`
+- **503** → same shape with `"status": "degraded"` — **body is still JSON**;
+  clients must not treat HTTP 503 as “no response” (e.g. avoid bare `curl -f`
+  if you need the checks object).
 - `checks` → `{inotify, llm_reachable, recent_sweep, disk_space}` (booleans;
-  `llm_reachable` is skipped/true when deep passes are off)
+  `llm_reachable` is skipped/true when deep passes are off;
+  `recent_sweep` is true when `last_sweep_age_s` &lt; 1 h;
+  `disk_space` is true when host free_gb &gt; 1.0)
 
 ### `GET /api/inference_log`
 The 50 most recent LLM audit entries, newest first.

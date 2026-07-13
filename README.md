@@ -48,11 +48,15 @@ An honest snapshot — verified against the code, not aspirational.
 - **Timeline of visits** — contiguous presence runs grouped into one card each,
   with a Gemma caption and a flipbook animation; plus Objects/All tabs, auto
   object filters, label aliasing, blacklist, and day/hour activity charts.
-- **Retention** — per-camera byte budget (3 GB each) + 30-day age limit; pin to
-  protect forever, delete to remove; detections are pruned only under disk
-  pressure.
+- **Retention (file rotation)** — per-camera byte budget (3 GB each) + 30-day
+  age limit for empty frames; pin to protect forever, delete to remove;
+  detections are pruned only under disk pressure; unanalyzed backlog can be
+  evicted only if still over budget. Catalogs recover from truncated writes.
+- **Cron watchdog** — independent of systemd: every 15 min checks services /
+  stuck sweeps; hourly runs the same pin-aware retention from `settings.json`
+  (not a blind `find | rm`).
 - **Observability** — `/api/status`, `/api/health` (4 checks), a live inference
-  audit trail, camera-liveness and disk stats.
+  audit trail, camera-liveness, disk stats, last retention event.
 - **Live updates (partial)** — an SSE `/api/events` stream pushes
   `image.new` / `new-detection` / `detection.preliminary` / `new-burst` to the
   open gallery (via a 3 s file-mtime bridge), with graceful fallback to polling.
@@ -163,14 +167,23 @@ object filter chips, and cards carrying colour-coded detection badges:
 - New snapshots are detected within seconds and queued for analysis.
 - People/dogs/cats jump the queue; everything else is verified when idle,
   newest first.
-- Old images with no detections are deleted after 30 days, or sooner if a
-  camera exceeds its 3 GB disk budget. Pinned images and images with
-  detections are kept (detections are only pruned under disk pressure).
+- **Retention** (each analysis sweep, and again on an hourly cron):
+  - analyzed frames with **no** detections older than **30 days** are removed;
+  - if a camera dir exceeds its **3 GB** image budget, oldest empty frames go
+    first, then oldest detections if still over budget;
+  - if still over budget (e.g. after a pipeline outage left many unanalyzed
+    files), oldest unanalyzed frames can be removed next;
+  - **pinned** images are never auto-deleted; thumbs go with their parents.
+- A **cron watchdog** restarts dead or stuck pipeline services and forces that
+  same retention path hourly so cleanup does not depend only on a long-lived
+  analyze process staying healthy. Details:
+  [DEVELOP.md — Retention](DEVELOP.md#retention-file-rotation) and
+  [DEVELOP.md — Watchdog](DEVELOP.md#cron-watchdog-toolswatchdogsh).
 
 ## Documentation map
 
 - **[ROADMAP.md](ROADMAP.md)** — what remains, in detail (the live-streaming milestone).
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** — how it fits together today, and how earlier versions looked.
 - **[API.md](API.md)** — REST endpoints + the SSE event schema (request/response payloads).
-- **[DEVELOP.md](DEVELOP.md)** — architecture, configuration, and operations reference.
-- **[DEPLOYMENT.md](DEPLOYMENT.md)** — host/service/proxy setup.
+- **[DEVELOP.md](DEVELOP.md)** — architecture, configuration, retention, watchdog, and operations reference.
+- **[DEPLOYMENT.md](DEPLOYMENT.md)** — host/service/proxy setup and cron install on this box.

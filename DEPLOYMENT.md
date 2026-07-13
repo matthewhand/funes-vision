@@ -41,23 +41,72 @@ root the pipeline dies with `ModuleNotFoundError: cv2`).
 ### Cron watchdog (safety net)
 
 Systemd alone can report a unit **active** while a sweep is stuck for
-hours (global flock held by a long analyze, corrupt catalog, etc.). A
-cron job — independent of the service processes — watches and repairs:
+hours (global flock held by a long analyze, corrupt catalog, etc.). An
+**independent cron** watches health and forces app-configured cleanup so
+we are not solely dependent on the long-lived processes.
 
-| Schedule | Action |
-|----------|--------|
-| `*/15` | `tools/watchdog.sh check` — restart dead units; if last successful sweep is older than 2h, restart both pipeline units |
-| `:05` hourly | `tools/watchdog.sh retention` — run `analyze_images.py --retention-only` under the same flock, using **settings.json** (`max_age_days`, `max_dir_gb`, pins). Not a blind `find -mtime` wipe |
+Full behaviour, env vars, and decision rules:
+**[DEVELOP.md — Cron watchdog](DEVELOP.md#cron-watchdog-toolswatchdogsh)** and
+**[DEVELOP.md — Retention](DEVELOP.md#retention-file-rotation)**.
 
-Installed as `/etc/cron.d/webcam-watchdog` by `install.sh`. Log:
-`/home/user/webcam/watchdog.log` (also syslog tag `webcam-watchdog`).
+#### Install
 
-Manual:
+```bash
+sudo bash /home/user/webcam/systemd/install.sh
+# or only the cron file:
+sudo install -m 644 /home/user/webcam/systemd/webcam-watchdog.cron \
+  /etc/cron.d/webcam-watchdog
+chmod +x /home/user/webcam/tools/watchdog.sh
+```
+
+`install.sh` also strips legacy `@reboot create-index.sh` lines from the
+`user` user crontab (systemd owns those) and any old
+`webcam/tools/watchdog` user-crontab entries (the system cron.d file is
+canonical).
+
+#### Schedule (`/etc/cron.d/webcam-watchdog`)
+
+| When | Command | Purpose |
+|------|---------|---------|
+| Every 15 minutes | `tools/watchdog.sh check` | Restart dead units; if `/tmp/webcam_analysis.lastrun` (or API `last_sweep_age_s`) is older than **2 hours**, restart both pipeline units (at most once per 2h — anti-thrash file `/tmp/webcam_watchdog_last_restart`) |
+| Minute 5 of every hour | `tools/watchdog.sh retention` | Run `analyze_images.py --retention-only` under `/tmp/webcam_analysis.lock`, using **settings.json** (`max_age_days`, `max_dir_gb`) and **pins.json**. Not a blind `find -mtime` wipe |
+
+Both run as user **user**, append to
+`/home/user/webcam/watchdog.log`, and also log with syslog tag
+`webcam-watchdog`.
+
+#### Manual
+
 ```bash
 /home/user/webcam/tools/watchdog.sh check
 /home/user/webcam/tools/watchdog.sh retention
-/home/user/webcam/tools/watchdog.sh auto   # check + retention if needed
+/home/user/webcam/tools/watchdog.sh auto   # check + retention if thresholds trip
 ```
+
+#### Verify
+
+```bash
+# Cron installed?
+cat /etc/cron.d/webcam-watchdog
+
+# Health (503 = degraded but body still valid — do not use curl -f alone)
+curl -sS http://127.0.0.1:8190/api/health | jq .
+curl -sS http://127.0.0.1:8190/api/status | jq '{trigger, cameras, retention, filesystem}'
+
+# Watchdog log
+tail -50 /home/user/webcam/watchdog.log
+journalctl -t webcam-watchdog -n 50
+
+# Force cleanup now
+/home/user/webcam/tools/watchdog.sh retention
+```
+
+#### Prerequisites on this box
+
+- Passwordless `sudo systemctl restart …` for user `user` (unit restarts).
+  Without it, check still runs retention logic but logs restart failures.
+- `curl`, `python3`, `flock`, `fuser` (psmisc) on `PATH`.
+- API listening on `127.0.0.1:8190` (`webcam-api.service`).
 
 ## Ollama (local LLM)
 
@@ -83,7 +132,23 @@ AlexeyAB/darknet GitHub releases; path configured as `yolo_dir`.
   images live in containerd's k8s.io namespace (kubelet inactive,
   microk8s uninstalled); free with:
   `sudo bash -c 'ctr -n k8s.io images ls -q | xargs -r ctr -n k8s.io images rm'`
-- `/mnt/models` (45G) — camera images, thumbnails, Ollama blobs, YOLO.
+- `/mnt/models` (45G) — camera images, thumbnails, Ollama blobs, YOLO,
+  plus other projects/cache. Typical large consumers (orders vary):
+  `ollama/`, `projects/`, `Webcam21/`, `Webcam22/`, `ollama-bin/`,
+  `cache/`, swap files.
+
+### How retention maps to this disk
+
+- **`max_dir_gb` (default 3.0)** applies **per camera directory** (sum of
+  image files only), not to the whole volume and not to `/`.
+- Two cameras at budget ≈ 6 GB of JPEGs; the rest of `/mnt/models` is
+  models and other data. Host ENOSPC can still happen while each camera
+  looks “under budget”.
+- Control-plane JSON (`analysis.json` etc.) lives under
+  `/home/user/webcam` on **`/`**. Atomic rewrites need free space on
+  root; a full root disk is how catalogs used to truncate mid-write.
+- Hourly `tools/watchdog.sh retention` is the rock-solid cleanup path
+  when the long analyze holds the flock for hours.
 
 ## History / scar tissue
 
@@ -91,6 +156,13 @@ AlexeyAB/darknet GitHub releases; path configured as `yolo_dir`.
   (`find ... -mtime +10 -exec rm`) silently deleted images — including
   verified person shots — behind the retention system's back. Removed
   2026-06-12. If images vanish without `Retention: removed` log lines,
-  check other users' crontabs first.
+  check other users' crontabs first. **Do not reintroduce blind find/rm**
+  for camera dirs; use `analyze_images.py --retention-only` /
+  `tools/watchdog.sh retention`.
+- **Corrupt `analysis.json` (ENOSPC mid-write)** used to crash every sweep
+  before retention. Fixed with atomic writes + load-time recovery; the
+  watchdog hourly path is the operational backstop. See DEVELOP retention
+  section.
 - `/etc/cron.d/server-maintenance` still runs a monthly
-  `docker system prune -af` (1st, 3:30am).
+  `docker system prune -af` (1st, 3:30am) and a weekly disk `df` report —
+  neither should touch camera JPEGs.

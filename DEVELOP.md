@@ -48,6 +48,11 @@ Watcher + orchestrator, one instance per camera (`webcam-pipeline@.service`).
 - **Global lock** `/tmp/webcam_analysis.lock` (flock, 1h timeout): the
   Python script scans BOTH camera dirs and writes shared JSON, so two
   instances must never run it concurrently. Do not make this per-camera.
+- **Success marker** `/tmp/webcam_analysis.lastrun` is touched only when
+  `analyze_images.py` exits 0. A failed Python run still attempts web-root
+  sync (so a recovered catalog can propagate) but does **not** advance
+  lastrun — `/api/health` `recent_sweep` and the cron watchdog key off that
+  mtime.
 
 ### analyze_images.py
 Single sweep, run fresh each time (config/code changes apply next sweep,
@@ -113,39 +118,196 @@ partially parallelizes — ~1.4× at 3). Sustained net catch-up is therefore
 hours and is meant to grind across sweeps. `max_deep_passes` bounds a sweep so
 it can't hold the 1h lock indefinitely.
 
-### Watchdog cron (belt and braces)
-Systemd runs the live pipeline; `/etc/cron.d/webcam-watchdog` (installed by
-`systemd/install.sh`) independently:
-- every 15 min: `tools/watchdog.sh check` — unit liveness + stale-sweep restart
-- hourly: `tools/watchdog.sh retention` — `python3 analyze_images.py --retention-only`
+### Retention (file rotation)
 
-`--retention-only` applies the same pin-aware age/disk rules from
-`settings.json` and prunes catalogs, then exits (no YOLO/LLM queue). That
-way cleanup does not depend on a multi-hour analyze holding the flock.
-Log: `watchdog.log` next to the app (gitignored `*.log`).
+Retention is the app’s **file rotation** — not classic log rotate, and not
+a blind `find -mtime | rm`. It runs **first** in every full sweep (and on
+demand via `--retention-only` / the cron watchdog) under the global flock.
 
-### Retention (replaces the old cron cleanups)
-Runs once per sweep inside the lock, **before** analysis. Three passes:
-1. **Age**: analyzed images with no detections older than `max_age_days`.
-2. **Disk budget**: if the camera dir exceeds `max_dir_gb`, delete oldest
-   no-detection images first, then oldest detected images only if still
-   over budget.
-3. **Budget escape**: if *still* over budget (e.g. a large unanalyzed
-   backlog while the catalog was corrupt/down), oldest **unanalyzed**
-   frames are evicted next. Pins are never deleted.
-Never deleted: **pinned** images (`pins.json`). Thumbnails are deleted
-alongside their full-res parents.
+#### Configuration (`settings.json`)
 
-`analysis.json` / `bursts.json` are loaded via `load_json_file` (truncation
-recovery) and written with `_atomic_write_json` so an ENOSPC mid-write can
-no longer permanently disable retention. A corrupt catalog recovers in
-place and the sweep continues; it does not abort before cleanup.
+| Key | Live default | Meaning |
+|-----|--------------|---------|
+| `max_age_days` | 30 | Age pass: delete **analyzed negatives** older than this |
+| `max_dir_gb` | 3.0 | Per-camera dir budget (sum of image file sizes in that dir) |
+| `pins.json` | `[]` | Filenames never deleted by retention |
 
-> History: legacy `find ... -mtime +10 -exec rm` jobs in *root's* crontab
-> (and `/etc/cron.d/server-maintenance`) used to delete images behind this
-> system's back — including verified person images. Removed 2026-06-12.
-> If images vanish without `Retention: removed`/`Pruned` log lines, check
-> other users' crontabs first.
+These knobs are **not** in the UI/`POST /api/settings` allow-list — edit
+`settings.json` on disk (or extend `MUTABLE_SETTINGS` if you want them
+API-writable). Code fallbacks if the keys are missing: `max_age_days=30`,
+`max_dir_gb=4.0`.
+
+#### Three passes (`apply_retention`)
+
+For each path in `watch_dirs`, after listing image files (`.jpg/.jpeg/.png/.gif`):
+
+1. **Age** — delete if mtime &lt; now − `max_age_days` **and** the file is in
+   `analysis.json` **and** `has_detection` is false (no non-`fast_pass` key
+   is `true`) **and** not pinned.
+2. **Disk budget** — if total image bytes in the dir &gt; `max_dir_gb` GiB:
+   delete oldest **negatives** first, then oldest **detected** frames, until
+   under budget (still never pins; still only files present in analysis for
+   this pass).
+3. **Budget escape** — if *still* over budget after pass 2 (typical when a
+   large **unanalyzed** backlog accumulated while the catalog/pipeline was
+   down), delete oldest **unanalyzed** frames next. Pins remain sacred.
+
+Thumbnails at `<dir>/thumbs/<filename>` are removed with each parent image.
+
+**Never deleted by retention:** pinned filenames.  
+**Not counted toward `max_dir_gb`:** thumbnails, JSON catalogs, host free
+space on `/` or the whole `/mnt/models` volume (Ollama/models/projects sit
+outside the per-camera budget — see [DEPLOYMENT.md](DEPLOYMENT.md)).
+
+#### When it runs
+
+| Path | When |
+|------|------|
+| Full sweep | Every `analyze_images.py` run (inotify / idle / startup), step 1 |
+| `--retention-only` | Cron hourly + manual; age/budget + catalog prune only — **no** YOLO/LLM queue |
+| Manual API delete | `POST /api/delete` (also unpins); not retention, but same disk effect |
+
+After deletes, the sweep **prunes** stale keys from `analysis.json` /
+`bursts.json` (files gone → entries removed) and appends to
+`retention_log.json` (last 100 events: `ts`, `dir`, `count`, `bytes_freed`).
+The UI status panel shows the latest event; `GET /api/status` exposes
+`retention`.
+
+#### Catalog durability (why retention used to die)
+
+`analysis.json` is shared across cameras and required for pin-aware rules.
+A historical failure mode:
+
+1. Non-atomic write (`open(w)` + `json.dump`) during **ENOSPC** truncated the
+   file mid-key.
+2. Next sweep did bare `json.load` → **uncaught** `JSONDecodeError`.
+3. Process exited **before** `apply_retention` → no cleanup → disks kept
+   growing → more write failures.
+
+Mitigations now in code:
+
+- **`load_json_file`** — on parse error, `_recover_truncated_json` drops an
+  incomplete trailing entry, closes the root object, rewrites a clean file
+  via `_atomic_write_json`, and continues. Missing/unrecoverable → empty
+  dict (retention still runs; budget escape can clear unanalyzed backlog).
+- **`_atomic_write_json`** — temp file + `fsync` + `os.replace` for
+  `analysis.json`, `bursts.json`, `retention_log.json`, `alert_state.json`
+  (same pattern already used for inference audit files).
+- **create-index.sh** — does not stamp `lastrun` on Python failure.
+
+Journal lines to grep: `Retention: removed`, `Recovered … analysis.json`,
+`Warning: … is corrupt`, `Pruned N stale analysis entries`.
+
+#### CLI
+
+```bash
+# Full sweep (retention + analysis) — usually run by create-index.sh
+python3 analyze_images.py
+
+# Cleanup only (used by tools/watchdog.sh retention)
+python3 analyze_images.py --retention-only
+```
+
+> **History:** legacy `find … -mtime +10 -exec rm` in *root’s* crontab and
+> `/etc/cron.d/server-maintenance` deleted images — including verified
+> person shots — behind this system. Removed 2026-06-12. If images vanish
+> without `Retention: removed` / `Pruned` log lines, check other crontabs
+> first. Do **not** reintroduce blind find/rm for camera dirs.
+
+### Cron watchdog (`tools/watchdog.sh`)
+
+Systemd keeps the long-lived pipeline up, but a unit can stay **active**
+while a sweep is stuck for hours (global flock held by a multi-hour analyze,
+corrupt catalog that used to abort before retention, etc.). The watchdog is
+an **independent cron safety net** so cleanup and liveness do not depend
+solely on those processes remaining healthy.
+
+#### Install & schedule
+
+Installed by `sudo bash systemd/install.sh` as
+`/etc/cron.d/webcam-watchdog` (user **user**):
+
+| Cron | Mode | Behaviour |
+|------|------|-----------|
+| `*/15 * * * *` | `check` | Ensure units active; restart if last successful sweep older than 2h (anti-thrash) |
+| `5 * * * *` | `retention` | Always run app-configured cleanup (`--retention-only`) |
+
+Manual:
+
+```bash
+tools/watchdog.sh check        # units + stale-sweep only
+tools/watchdog.sh retention    # force retention-only under the flock
+tools/watchdog.sh auto         # check, then retention if thresholds say so
+tools/watchdog.sh help
+```
+
+Log: `watchdog.log` in the app dir (gitignored `*.log`) and syslog tag
+`webcam-watchdog`.
+
+#### What `check` does
+
+1. `systemctl is-active` for `webcam-pipeline@Webcam21`,
+   `@Webcam22`, `webcam-api` — restart any that are not `active`
+   (`sudo -n systemctl restart …` when passwordless sudo is available).
+2. `GET /api/health` and `GET /api/status` (note: health may return **503**
+   when degraded; the client must **not** use `curl -f`, or the body is
+   discarded).
+3. If the API is unreachable → restart `webcam-api` and re-probe.
+4. If last successful sweep age ≥ `WATCHDOG_STALE_S` (default **7200** s) →
+   restart both pipeline units, but at most once per that window
+   (`/tmp/webcam_watchdog_last_restart`) so a stuck `lastrun` does not
+   thrash restarts every 15 minutes.
+5. Logs a one-line summary: health, sweep age, max camera `budget_pct`,
+   free GB, whether restart/retention are indicated.
+
+#### What `retention` does
+
+1. If `/tmp/webcam_analysis.lock` is held (usually a long analyze), stop
+   in-flight `analyze_images.py` and free lock holders with `fuser -k` on
+   the lock file (**from outside** any open fd on that path — killing from
+   inside the flock subshell would kill the watchdog itself).
+2. Acquire the same global flock, run
+   `python3 analyze_images.py --retention-only`.
+3. On success: touch `/tmp/webcam_analysis.lastrun`, copy
+   `analysis.json` / `bursts.json` / `pins.json` into each `watch_dirs` web
+   root.
+
+This uses **only** the app’s retention rules (pins, age, budget) — never a
+raw `find` wipe.
+
+#### What `auto` does
+
+Runs `check`, then runs `retention` if any of:
+
+- any camera `budget_pct` ≥ `WATCHDOG_BUDGET_PCT` (default **90**)
+- host free space &lt; 1 GB (from `/api/status` filesystem)
+- sweep considered stale / restart indicated
+- `recent_sweep` false and sweep age &gt; 1 h
+- last `retention_log` event older than 1 h (or missing)
+
+The hourly cron already forces retention; `auto` is for ad-hoc “fix if
+needed” runs.
+
+#### Environment overrides
+
+| Env | Default | Meaning |
+|-----|---------|---------|
+| `WATCHDOG_API` | `http://127.0.0.1:8190` | Status/health base URL |
+| `WATCHDOG_STALE_S` | `7200` | Restart pipelines if lastrun older than this (seconds) |
+| `WATCHDOG_BUDGET_PCT` | `90` | `auto` retention kick threshold |
+| `WATCHDOG_LOG` | `$BASE/watchdog.log` | Log path |
+| `WATCHDOG_LOCK` / `WATCHDOG_MARKER` | `/tmp/webcam_analysis.{lock,lastrun}` | Flock + success marker |
+
+#### Operational notes
+
+- The watchdog does **not** replace systemd; it complements it.
+- Restart requires passwordless sudo for `systemctl` (this box grants it to
+  `user`). Without sudo, unit restarts are logged as errors; retention
+  still runs as the same user as the pipeline.
+- After a lock steal, create-index’s long-lived inotify parent stays up;
+  idle/inotify will start a fresh analyze on the next trigger.
+- Box-specific install paths and disk layout:
+  [DEPLOYMENT.md](DEPLOYMENT.md#cron-watchdog-safety-net).
 
 ### api_server.py (port 8190)
 Stdlib-only HTTP server, the single write channel (nginx mounts are ro). It
@@ -278,8 +440,8 @@ move → verify) lives in [ROADMAP.md](ROADMAP.md).
 | `burst_threshold_seconds` | 300 | max gap between burst frames |
 | `idle_sweep_seconds` | 60 | idle re-scan cadence (UI-settable, 15–3600) |
 | `timezone` | Australia/Sydney | display TZ; `WEBCAM_TZ` env overrides (see [Paths & XDG](#paths--xdg)) |
-| `max_age_days` | 30 | retention: age limit for no-detection images |
-| `max_dir_gb` | 3.0 | retention: per-camera disk budget (code fallback 4.0) |
+| `max_age_days` | 30 | retention: age limit for **analyzed no-detection** images (not UI-mutable; edit file) |
+| `max_dir_gb` | 3.0 | retention: per-camera image-byte budget in GiB (code fallback 4.0; not UI-mutable) |
 | `min_mem_for_local_gb` | 6.0 | min free RAM to attempt a **local** model; a `:cloud` model ignores this (see `runnable_chain`) |
 | `allow_cloud` | false | permit OpenRouter fallback (separate from an Ollama `:cloud` primary) |
 | `ollama_url` | http://localhost:11434 | local LLM endpoint |
@@ -510,10 +672,28 @@ should be reachable from outside the LAN.
   blacklist) or no verified detections for the filter; the empty state
   offers "Unhide all labels" / "Show all images".
 - **Images vanishing** — grep journals for `Retention: removed` and
-  `Pruned`; if absent, check root's crontab and `/etc/cron.d/`.
+  `Pruned`; check `retention_log.json` and the UI “Last cleanup” line. If
+  those are absent, check root’s crontab and `/etc/cron.d/` for a foreign
+  `find … rm` (legacy problem). Watchdog log: `watchdog.log`.
+- **Disk full / retention not running** — confirm
+  `python3 -c 'import json; json.load(open("analysis.json"))'` succeeds
+  (corrupt file used to abort every sweep). Force cleanup:
+  `tools/watchdog.sh retention` or
+  `python3 analyze_images.py --retention-only`. Check per-camera
+  `budget_pct` via `curl -s localhost:8190/api/status | jq .cameras`.
+  Remember host free space can be exhausted by Ollama/projects even when
+  each camera dir is under `max_dir_gb`.
+- **`/api/health` is 503 / `recent_sweep: false`** — no successful
+  `lastrun` within the health window (1 h). Inspect
+  `journalctl -u webcam-pipeline@Webcam21` for crashes; run
+  `tools/watchdog.sh check` (restarts stuck units if sweep age ≥ 2 h).
+- **Watchdog restarts looping** — should be limited by
+  `/tmp/webcam_watchdog_last_restart`. If units flap, inspect analyze
+  errors (missing YOLO weights, disk full, import errors).
 - **No deep passes happening** — `curl localhost:11434/api/version`
-  (Ollama up?), check journal `System Check` line for
-  `Local LLM Enabled: True`, and free RAM vs `min_mem_for_local_gb`.
+  (Ollama up?), check journal `System Check` line for runnable chain /
+  `Deep passes: ON|OFF`, and free RAM vs `min_mem_for_local_gb`. Also
+  confirm `deep_passes_enabled` in settings.
 - **Pin/delete/settings/integrations failing in UI** — `webcam-api` down;
   or, over the public URL, the vhost is missing the `/api/` proxy block
   (symptom: the panel hangs at "checking…" because `/api/…` 404s or the
@@ -521,5 +701,8 @@ should be reachable from outside the LAN.
   reach `:8190` directly.
 - **False bursts spanning days** — the chronological sort in
   analyze_images.py was removed at some point; see step 3 above.
-- Logs: `journalctl -u webcam-pipeline@Webcam21 -f` (and `@Webcam22`,
-  `webcam-api`, `ollama`).
+- Logs:
+  - Pipeline: `journalctl -u webcam-pipeline@Webcam21 -f` (and `@Webcam22`,
+    `webcam-api`, `ollama`)
+  - Watchdog: `tail -f /home/user/webcam/watchdog.log` /
+    `journalctl -t webcam-watchdog -f`

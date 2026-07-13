@@ -8,28 +8,33 @@ still planned see [ROADMAP.md](ROADMAP.md).
 
 ## Current architecture
 
-Three processes cooperate through the shared image directory and a handful of
-JSON files. Nothing talks to the internet by default.
+Long-lived services cooperate through the shared image directories and a handful
+of JSON files. A **cron watchdog** is the independent safety net for cleanup
+and stuck sweeps. Nothing leaves the box by default.
 
 ```
  Cameras ──(motion JPEGs)──▶ /mnt/models/Webcam2{1,2}
                                   │
-            inotifywait -m -e create  (create-index.sh)
-                                  │  new file
+            inotifywait -m -e create  (create-index.sh @ systemd)
+                                  │  new file / idle loop
                                   ▼
-                       analyze_images.py  ── fast pass: YOLO (person/car/bird/cat/dog)
-                          │   │              deep pass: Gemma vision LLM via local Ollama
-                          │   │              consensus → preliminary / verified / disputed
-                          │   └──▶ analysis.json, bursts.json, images.json,
-                          │         inference_log.json, inference_status.json
-                          ▼
+                       analyze_images.py  (global flock)
+                          │  1. retention (age + max_dir_gb + pin-aware)
+                          │  2. fast pass: YOLO (person/car/bird/cat/dog)
+                          │  3. deep pass: vision LLM via Ollama (optional)
+                          │  4. bursts + prune catalogs
+                          └──▶ analysis.json, bursts.json, images.json,
+                                inference_log.json, inference_status.json,
+                                retention_log.json
+                                  │
+ cron ── tools/watchdog.sh ───────┼── check units / stale lastrun (*/15)
+                                  └── retention-only hourly (:05)
+                                  │
                     Integrations (Slack…) on burst/contextual events
                                   │
- Browser ◀── index.html (SPA) ◀── api_server.py (:8190)  ── REST: pins/settings/status/health
-                          ▲           │                     SSE /api/events:
-                          │           │                       image.new / new-detection /
-                          │           │                       detection.preliminary / new-burst
-                          └───────────┘  same-origin /api proxy (nginx, basic-auth, TLS)
+ Browser ◀── index.html (SPA) ◀── api_server.py (:8190)  ── REST + SSE
+                          ▲           │
+                          └───────────┘  same-origin /api proxy (nginx, auth, TLS)
 ```
 
 ### The pieces
@@ -37,21 +42,27 @@ JSON files. Nothing talks to the internet by default.
 - **`create-index.sh <DIR>`** — runs per camera. An `inotifywait -m` watcher
   reacts to each new snapshot (event-driven, not interval-scanned), regenerates
   the `images.json` catalog, and triggers analysis. Also re-syncs `index.html`
-  to the web root each sweep.
+  to the web root each sweep. Touches `/tmp/webcam_analysis.lastrun` only on
+  successful analysis exit.
 - **`analyze_images.py`** — the analysis pipeline. A **fast pass** (YOLO
   `yolov4-tiny`, COCO classes mapped to person/car/bird/cat/dog) labels subjects
-  in well under a second; a **deep pass** sends the frame to a local Gemma
-  vision LLM (`gemma4:12b`) through Ollama for a reasoned verdict and a short
-  caption. A **consensus** rule reconciles the two into the
-  preliminary/verified/disputed lifecycle. People/animals jump the queue;
-  everything else is backfilled when the box is idle, newest first. Handles
-  retention (byte budget + age) and writes the audit trail.
+  in well under a second; a **deep pass** sends the frame to a vision LLM
+  through Ollama for a reasoned verdict and a short caption. A **consensus**
+  rule reconciles the two into the preliminary/verified/disputed lifecycle.
+  People/animals jump the queue; everything else is backfilled when the box is
+  idle, newest first. **Retention** (age + per-dir byte budget, pin-aware) runs
+  first every sweep; `--retention-only` is the fast cleanup entry point for
+  cron. Catalogs load with truncation recovery and write atomically.
+- **`tools/watchdog.sh` + `/etc/cron.d/webcam-watchdog`** — independent of
+  systemd process health: restart dead/stuck pipeline units, force hourly
+  retention from `settings.json`. See [DEVELOP.md](DEVELOP.md#cron-watchdog-toolswatchdogsh).
 - **`api_server.py` (:8190)** — a stdlib `ThreadingHTTPServer`. REST endpoints
   for pins, delete, settings, integrations, status, and health; an SSE
   `/api/events` stream for live gallery updates. No framework, no build step.
 - **`index.html`** — a single-file vanilla-JS SPA (no build). Reads the JSON
   catalogs, renders the Timeline/Objects/All views, and subscribes to
-  `/api/events` with graceful fallback to polling.
+  `/api/events` with graceful fallback to polling. Surfaces last retention
+  event and per-camera budget %.
 - **`integrations/`** — a pluggable dispatcher (`notify_burst` / `notify_image`
   / `notify_alert`); Slack is the first provider. Secrets live in a gitignored,
   0600 `integrations.json` that is never synced to the web root.
@@ -67,6 +78,11 @@ JSON files. Nothing talks to the internet by default.
   LLM (~minutes per image on this box) confirms and narrates when it can. The
   lifecycle (preliminary → verified/disputed) makes that latency visible instead
   of hiding it.
+- **App-owned retention + cron backstop.** Cleanup uses the same pin-aware
+  rules as the pipeline (not a foreign `find | rm`). Cron exists so a “green”
+  systemd unit that is stuck mid-analyze cannot silently fill the disk.
+- **Durable catalogs.** Atomic JSON writes and load-time recovery so one
+  ENOSPC event cannot permanently disable retention.
 
 ---
 
