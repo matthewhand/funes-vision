@@ -5,7 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#080c14">
   <title>Camera Stream Viewer</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='5' fill='%230b0f14'/%3E%3Ccircle cx='12' cy='12' r='4.5' fill='none' stroke='%2310b981' stroke-width='2'/%3E%3Ccircle cx='12' cy='12' r='1.6' fill='%2310b981'/%3E%3C/svg%3E">
+  <link rel="icon" href="favicon.ico" sizes="any">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icon.svg">
 
@@ -116,6 +117,10 @@
     .chip--active { background: var(--accent-10); color: var(--accent-fg); border-color: var(--accent-25); }
     .chip--removable { padding-right: var(--space-15); }
     .chip__x { border: none; background: none; color: inherit; cursor: pointer; line-height: 1; padding: 0 2px; }
+    .chip-count {
+      margin-left: var(--space-1); opacity: 0.85; font-variant-numeric: tabular-nums;
+      font-size: 0.68rem; font-weight: 700;
+    }
     /* The canonical button is .btn (token-based, see below) + .btn-switch accent
        variant + the icon-button classes; no separate .btn-c primitive needed. */
 
@@ -614,6 +619,44 @@
       max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
     .active-filters-summary:empty { display: none; }
+    .filter-active-banner {
+      display: inline-flex; align-items: center; gap: var(--space-1);
+      padding: var(--space-1) var(--space-2);
+      border-radius: var(--radius-pill);
+      background: var(--accent-10); border: 1px solid var(--accent-25);
+      color: var(--accent-fg); font-size: var(--fs-chip); font-weight: 600;
+    }
+    .filter-active-banner[hidden] { display: none !important; }
+    .filter-active-banner .chip__x {
+      color: var(--accent-fg); font-weight: 700; padding: 0 4px;
+    }
+    #stats-label.stats-info {
+      font-size: 0.78rem;
+      color: var(--text-secondary);
+      font-variant-numeric: tabular-nums;
+      font-weight: 500;
+    }
+    .image-card, .card {
+      box-shadow: var(--elevation-1);
+      transition: box-shadow var(--transition-speed), transform var(--transition-speed);
+    }
+    .image-card:hover, .card:hover {
+      box-shadow: var(--elevation-2);
+      transform: translateY(-1px);
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .image-card:hover, .card:hover { transform: none; }
+    }
+    /* Lightbox / player control bars: wrap on narrow viewports; drop redundant zoom */
+    .lightbox-controls {
+      display: flex; flex-wrap: wrap; gap: var(--space-1); justify-content: flex-end;
+      max-width: 100%;
+    }
+    @media (max-width: 768px) {
+      .lightbox-header { flex-wrap: wrap; gap: var(--space-2); }
+      .lightbox-controls { width: 100%; justify-content: center; }
+      #lightbox-zoom-in, #lightbox-zoom-out { display: none; }
+    }
     /* Right-aligned toolbar actions cluster (Filters + Settings/Integrations/AI).
        In .compact (set by JS when space is tight, via actionsOverflow), the
        secondary action labels collapse to icons; the AI status keeps its text. */
@@ -1765,7 +1808,7 @@
 
           <div class="search-box">
             <i data-lucide="search"></i>
-            <input type="text" id="search-input" class="search-input" placeholder="Filter by timestamp or event...">
+            <input type="text" id="search-input" class="search-input" placeholder="Search time, labels, or caption…">
             <button id="search-clear" class="search-clear" type="button" aria-label="Clear search" hidden>
               <i data-lucide="x"></i>
             </button>
@@ -1847,12 +1890,17 @@
 
         <!-- Right-aligned actions cluster: Filters + Settings/Integrations/AI -->
         <div class="toolbar-actions" id="toolbar-actions">
-          <div class="filters-menu" style="position: relative; display: flex; gap: 8px; align-items: center;">
+          <div class="filters-menu" style="position: relative; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
             <button class="btn" id="btn-filters" aria-haspopup="true" aria-expanded="false" style="display: none;" title="Filter the gallery by detected object">
               <i data-lucide="filter"></i><span>Filters</span>
               <span id="filters-active-count" class="filters-count" hidden></span>
             </button>
             <span id="active-filters-summary" class="active-filters-summary" aria-live="polite"></span>
+            <!-- Always-visible when any filter dimension is active (search/date/time/objects) -->
+            <span id="filter-active-banner" class="filter-active-banner" hidden>
+              <span id="filter-active-banner-text"></span>
+              <button type="button" id="filter-active-clear" class="chip__x" title="Clear all filters" aria-label="Clear all filters">✕</button>
+            </span>
             <div class="menu" id="filters-dropdown" style="left: 0; right: auto; min-width: 280px; max-width: min(360px, calc(100vw - 24px));">
               <div class="menu-section-title">Filter by object</div>
               <div id="object-filter-panel" style="display: none; flex-direction: column; gap: 4px; align-items: flex-start;">
@@ -2540,8 +2588,10 @@
         barWrapper.innerHTML = `
           <div class="chart-bar day-bar ${activeDay}" style="height: 100%; background: rgba(59, 130, 246, ${intensity.toFixed(2)})" title="${title}">${segs}</div>
         `;
-        barWrapper.addEventListener('click', () => {
-          // Drill into that day; clicking the active day clears it
+        barWrapper.setAttribute('aria-label', title);
+        barWrapper.setAttribute('aria-pressed', String(!!activeDay));
+        bindActivatable(barWrapper, () => {
+          // Drill into that day; activating the active day clears it
           state.activeDateFilter = state.activeDateFilter === dayStr ? 'all' : dayStr;
           renderDateSidebar();
           applyFiltersAndSearch();
@@ -2593,8 +2643,9 @@
         barWrapper.innerHTML = `
           <div class="chart-bar ${activeClass}" style="height: ${barPct}%" title="${labelStr}">${matchHtml}</div>
         `;
-
-        barWrapper.addEventListener('click', () => {
+        barWrapper.setAttribute('aria-label', labelStr);
+        barWrapper.setAttribute('aria-pressed', String(!!activeClass));
+        bindActivatable(barWrapper, () => {
           if (state.activeHourChartFilter === h) {
             state.activeHourChartFilter = null; // Toggle off
           } else {
@@ -2734,6 +2785,130 @@
       return (typeof n === 'number' && isFinite(n)) ? n.toLocaleString('en-US') : '';
     }
     // === /pure:formatCount ===
+
+    // === pure:formatGb ===
+    // Human disk size: under 1 GB shows whole MB ("512 MB"), else one decimal GB.
+    // `unit` is 'B' (bytes) or 'GB' (already gigabytes). Bad input -> ''.
+    function formatGb(value, unit) {
+      if (typeof value !== 'number' || !isFinite(value) || value < 0) return '';
+      const gb = (unit === 'B') ? value / (1024 ** 3) : value;
+      if (gb < 1) return `${Math.max(0, Math.round(gb * 1024))} MB`;
+      return `${gb.toFixed(1)} GB`;
+    }
+    // === /pure:formatGb ===
+
+    // === pure:countActiveFilters ===
+    // How many filter dimensions are non-default (search, date, time range,
+    // hour chart, object chips). Used for the always-visible filter banner.
+    function countActiveFilters(snap) {
+      snap = snap || {};
+      let n = 0;
+      if (snap.searchQuery) n += 1;
+      if (snap.activeDateFilter && snap.activeDateFilter !== 'all') n += 1;
+      // Time-of-day range is one dimension (either bound non-default).
+      const ts = Number.isInteger(snap.timeStart) ? snap.timeStart : 0;
+      const te = Number.isInteger(snap.timeEnd) ? snap.timeEnd : 23;
+      if (ts !== 0 || te !== 23) n += 1;
+      if (snap.activeHourChartFilter != null && snap.activeHourChartFilter !== undefined) n += 1;
+      const objs = snap.objectFilters;
+      if (objs) {
+        if (typeof objs.size === 'number') n += objs.size;
+        else if (Array.isArray(objs)) n += objs.length;
+      }
+      return n;
+    }
+    // === /pure:countActiveFilters ===
+
+    // === pure:activeFilterBanner ===
+    // Banner copy for the always-visible active-filter strip.
+    function activeFilterBanner(snap) {
+      const count = countActiveFilters(snap);
+      if (count === 0) return { count: 0, text: '' };
+      return { count, text: `${count} filter${count === 1 ? '' : 's'} active` };
+    }
+    // === /pure:activeFilterBanner ===
+
+    // === pure:prefersReducedMotion ===
+    // Gate flipbook autoplay on the OS "reduce motion" preference.
+    function prefersReducedMotion(matches) {
+      return !!matches;
+    }
+    // === /pure:prefersReducedMotion ===
+
+    // === pure:spaceTogglesPlayback ===
+    // Space should toggle play only when focus is NOT already on a control that
+    // handles activation (button/link/input/switch). Pure: pass event.target.
+    function spaceTogglesPlayback(target) {
+      if (!target || typeof target.closest !== 'function') return true;
+      return !target.closest('button, input, select, textarea, a, [role="button"], [role="switch"]');
+    }
+    // === /pure:spaceTogglesPlayback ===
+
+    // === pure:frameErrorFallbackSrc ===
+    // Full-res path for the frame that failed to load (capture index at error
+    // time so a later idx advance does not show the wrong frame).
+    function frameErrorFallbackSrc(requestedIdx, frames) {
+      if (!Array.isArray(frames) || frames.length === 0) return '';
+      const i = Math.max(0, Math.min(requestedIdx | 0, frames.length - 1));
+      return frames[i] || '';
+    }
+    // === /pure:frameErrorFallbackSrc ===
+
+    // === pure:shouldRefreshSystemPanel ===
+    // Skip a full status-panel rebuild while the user is interacting with the
+    // audit trail (hover/focus/scrolled) so scroll position is not destroyed.
+    function shouldRefreshSystemPanel(flags) {
+      flags = flags || {};
+      if (flags.hovered || flags.focused) return false;
+      if (typeof flags.scrollTop === 'number' && flags.scrollTop > 0) return false;
+      return true;
+    }
+    // === /pure:shouldRefreshSystemPanel ===
+
+    // === pure:emptyStateKind ===
+    // Pick empty-state copy: error > analyzing > filtered > empty archive.
+    function emptyStateKind(opts) {
+      opts = opts || {};
+      if (opts.error) {
+        return { kind: 'error', title: 'Something went wrong',
+          message: String(opts.error) };
+      }
+      if (opts.analyzing) {
+        return { kind: 'analyzing', title: 'Analyzing…',
+          message: 'New frames are being processed. This view will fill in as results land.' };
+      }
+      if (opts.filtersActive) {
+        return { kind: 'filtered', title: 'No matches',
+          message: 'Nothing matches the current filters. Clear them to see more.' };
+      }
+      return { kind: 'empty', title: 'No snapshots yet',
+        message: 'Motion captures will appear here when the camera uploads frames.' };
+    }
+    // === /pure:emptyStateKind ===
+
+    // === pure:sparklineHasData ===
+    // True when any hour bucket is non-zero (drives "no activity yet" copy).
+    function sparklineHasData(buckets) {
+      if (!Array.isArray(buckets)) return false;
+      return buckets.some(c => c > 0);
+    }
+    // === /pure:sparklineHasData ===
+
+    // === pure:labelCounts ===
+    // Tally labels across images. Input: array of iterables (Set/array) of
+    // labels. Returns [{label, count}] sorted by count desc, then label asc.
+    function labelCounts(labelSets) {
+      const m = new Map();
+      if (Array.isArray(labelSets)) {
+        for (const set of labelSets) {
+          if (!set) continue;
+          for (const l of set) m.set(l, (m.get(l) || 0) + 1);
+        }
+      }
+      return [...m.entries()].map(([label, count]) => ({ label, count }))
+        .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+    }
+    // === /pure:labelCounts ===
 
     // === pure:visitsSummary ===
     // Timeline count label that reveals the render cap: "N visits detected", or
@@ -3014,6 +3189,9 @@
       // Collapsed "Filters" control: hidden entirely when nothing is detectable,
       // otherwise shows a count badge + inline summary of the ACTIVE filters
       // (updated here so it's correct even when the chip popover is collapsed).
+      // Always refresh the cross-dimension banner (search/date/time/objects).
+      if (typeof updateFilterActiveBanner === 'function') updateFilterActiveBanner();
+
       if (whitelisted.length === 0) {
         panel.style.display = 'none';
         if (btnFilters) btnFilters.style.display = 'none';
@@ -3059,6 +3237,12 @@
       const refocusObj = (fa && fa.parentElement === container && fa.dataset && fa.dataset.obj) ? fa.dataset.obj : null;
       container.innerHTML = '';
 
+      // Per-label frequency across analysed frames (for chip counts).
+      const freqMap = new Map(
+        labelCounts(Object.values(state.analysis).map(a => effectiveLabels(a)))
+          .map(({ label, count }) => [label, count])
+      );
+
       // "All AI" clears every active filter
       const allBtn = document.createElement('button');
       allBtn.className = `chip ${state.objectFilters.size === 0 ? 'chip--active' : ''}`;
@@ -3086,7 +3270,10 @@
         if (obj === 'cat') icon = 'cat';
         if (obj === 'bird') icon = 'bird';
 
-        btn.innerHTML = `<i data-lucide="${icon}" style="width:14px;height:14px;vertical-align:middle;"></i>${obj}`;
+        const n = freqMap.get(obj) || 0;
+        const countHtml = n ? `<span class="chip-count">${formatCount(n)}</span>` : '';
+        btn.innerHTML = `<i data-lucide="${icon}" style="width:14px;height:14px;vertical-align:middle;"></i>${obj}${countHtml}`;
+        btn.setAttribute('aria-label', n ? `${obj}, ${n}` : obj);
         btn.onclick = () => {
           if (state.stickySelect) {
             // accumulate: toggle this label in/out, others stay
@@ -3233,6 +3420,7 @@
 
       // Render chart to reflect current counts
       renderActivityChart();
+      if (typeof updateFilterActiveBanner === 'function') updateFilterActiveBanner();
 
       // The card-layout toggles (small/medium/large/list) only drive the
       // image grid; the Timeline tab is a bespoke visit list that ignores
@@ -3255,26 +3443,32 @@
       document.getElementById('stats-label').textContent = `Showing ${state.filteredImages.length} of ${state.allImages.length} logs`;
 
       if (state.filteredImages.length === 0) {
-        // Explain WHY it's empty and offer one-tap escapes
-        let msg = 'No snapshots found matching the current timeline filter or search criteria.';
-        let actions = '';
-        const filtersActive = state.searchQuery || state.objectFilters.size ||
+        const filtersActive = !!(state.searchQuery || state.objectFilters.size ||
           state.activeDateFilter !== 'all' || state.timeStart !== 0 || state.timeEnd !== 23 ||
-          state.activeHourChartFilter !== null;
-        if (state.activeFilter === 'objects') {
+          state.activeHourChartFilter !== null);
+        const kind = emptyStateKind({
+          filtersActive: filtersActive || state.activeFilter === 'objects',
+          analyzing: false,
+          error: null
+        });
+        let msg = kind.message;
+        let title = kind.title;
+        let actions = '';
+        if (state.activeFilter === 'objects' && filtersActive) {
           msg = 'No images with AI detections match the current filters.';
-          if (state.blacklist.length > 0) {
-            msg += ` (${state.blacklist.length} label${state.blacklist.length !== 1 ? 's are' : ' is'} hidden via the Hidden menu.)`;
-            actions += '<button class="btn" id="empty-unhide">Unhide all labels</button>';
-          }
+          title = 'No matches';
+        } else if (state.activeFilter === 'objects' && !filtersActive) {
+          msg = 'No frames with AI detections yet. New detections will show here as they are analyzed.';
+          title = 'No detections yet';
         }
-        // Always offer a real escape when any filter is narrowing the view, on
-        // any tab — clears EVERY filter (tab/objects/date/time/search), not just
-        // the tab, so it can never dead-end to an empty grid.
+        if (state.blacklist.length > 0 && state.activeFilter === 'objects') {
+          msg += ` (${state.blacklist.length} label${state.blacklist.length !== 1 ? 's are' : ' is'} hidden via Settings.)`;
+          actions += '<button class="btn" id="empty-unhide">Unhide all labels</button>';
+        }
         if (filtersActive || state.activeFilter === 'objects') {
           actions += '<button class="btn" id="empty-reset">Clear all filters</button>';
         }
-        showEmptyState(msg, actions);
+        showEmptyState(msg, actions, title);
       } else {
         renderNextPage();
       }
@@ -3447,8 +3641,9 @@
           state.activeDateFilter !== 'all' || state.timeStart !== 0 || state.timeEnd !== 23 ||
           state.activeHourChartFilter !== null);
         const es = timelineEmptyState(filtersActive);
+        const kind = emptyStateKind({ filtersActive, analyzing: false });
         const actions = es.showReset ? '<button class="btn" id="empty-reset">Clear all filters</button>' : '';
-        showEmptyState(es.message, actions);
+        showEmptyState(es.message, actions, filtersActive ? kind.title : 'No visits yet');
         return;
       }
 
@@ -3525,8 +3720,15 @@
       const scrubEl = overlay.querySelector('#evp-scrub');
       scrubEl.max = Math.max(0, frames.length - 1);
 
+      let clipAbort = null;
       const show = () => {
-        imgEl.onerror = () => { imgEl.onerror = null; imgEl.src = frames[idx]; };
+        // Capture idx at bind time so a late error does not advance the wrong frame.
+        const loadIdx = idx;
+        imgEl.onerror = () => {
+          imgEl.onerror = null;
+          const fallback = frameErrorFallbackSrc(loadIdx, frames);
+          if (fallback) imgEl.src = fallback;
+        };
         imgEl.src = `thumbs/${frames[idx]}`;
         const meta = parseFilename(frames[idx]);
         labelEl.innerHTML = `<span style="text-transform:capitalize;">${escapeHtml(ev.label)}</span> ${escapeHtml(ev.type)} &middot; frame ${idx + 1}/${frames.length}` +
@@ -3550,41 +3752,59 @@
       overlay.querySelector('#evp-toggle').onclick = () => timer ? pause() : play();
       // Tap the image to step a frame (pauses playback)
       imgEl.onclick = () => { pause(); idx = (idx + 1) % frames.length; show(); };
-      // Keyboard control while the player is open: Esc closes, arrows step
-      // frames, Space toggles playback. Removed on close so it can't leak.
+      // Keyboard: Esc closes, arrows step, Space toggles only when focus is not
+      // already on a control that handles activation (avoids double-toggle).
       const onKey = (e) => {
         if (e.key === 'Escape') close();
         else if (e.key === 'ArrowRight') { pause(); idx = (idx + 1) % frames.length; show(); }
         else if (e.key === 'ArrowLeft') { pause(); idx = (idx - 1 + frames.length) % frames.length; show(); }
-        else if (e.key === ' ' || e.code === 'Space') { e.preventDefault(); timer ? pause() : play(); }
+        else if ((e.key === ' ' || e.code === 'Space') && spaceTogglesPlayback(e.target)) {
+          e.preventDefault();
+          timer ? pause() : play();
+        }
       };
-      const close = () => { pause(); document.removeEventListener('keydown', onKey); releaseFocus(); overlay.remove(); };
+      const close = () => {
+        pause();
+        if (clipAbort) { try { clipAbort.abort(); } catch (_) {} clipAbort = null; }
+        document.removeEventListener('keydown', onKey);
+        releaseFocus();
+        overlay.remove();
+      };
       document.addEventListener('keydown', onKey);
       overlay.querySelector('#evp-close').onclick = close;
-      // Download the whole sequence as a clip (server builds it from the frames
-      // via media.py; works for any multi-frame visit). Only present when >1 frame.
+      // Download the whole sequence as a clip. Abort + isConnected guard so a
+      // late response cannot complete into a closed player.
       const dlBtn = overlay.querySelector('#evp-download');
       if (dlBtn) dlBtn.onclick = async () => {
         const orig = dlBtn.textContent;
         dlBtn.textContent = 'Building…'; dlBtn.disabled = true;
+        if (clipAbort) { try { clipAbort.abort(); } catch (_) {} }
+        clipAbort = new AbortController();
         try {
           const resp = await fetch(`${API_BASE}/api/clip`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ files: frames, format: 'gif' })
+            body: JSON.stringify({ files: frames, format: 'gif' }),
+            signal: clipAbort.signal
           });
           if (!resp.ok) throw new Error('clip ' + resp.status);
           const blob = await resp.blob();
+          if (!overlay.isConnected) return; // player closed while building
           const url = URL.createObjectURL(blob);
           const a = document.createElement('a');
           a.href = url;
           a.download = (ev.label || 'visit').toLowerCase().replace(/\s+/g, '-') + '.gif';
           document.body.appendChild(a); a.click(); a.remove();
           setTimeout(() => URL.revokeObjectURL(url), 4000);
-          dlBtn.textContent = orig;
+          if (overlay.isConnected) dlBtn.textContent = orig;
         } catch (e) {
-          dlBtn.textContent = orig;
-          showToast('Clip build failed — is the API up (and PIL installed)?');
-        } finally { dlBtn.disabled = false; }
+          if (e && e.name === 'AbortError') return;
+          if (overlay.isConnected) {
+            dlBtn.textContent = orig;
+            showToast('Clip build failed — is the API up (and PIL installed)?');
+          }
+        } finally {
+          if (overlay.isConnected) dlBtn.disabled = false;
+        }
       };
       // Share the exact frame being viewed (same deep link Slack posts use)
       overlay.querySelector('#evp-share').onclick = () => shareLink('?image=' + frames[idx]);
@@ -3594,7 +3814,12 @@
       frames.forEach(f => { const im = new Image(); im.src = `thumbs/${f}`; });
 
       show();
-      play();
+      // Honor prefers-reduced-motion: do not autoplay the flipbook.
+      const reduceMotion = prefersReducedMotion(
+        typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
+      );
+      if (!reduceMotion) play();
+      else overlay.querySelector('#evp-toggle').textContent = 'Play';
     }
 
     // Copy a same-origin deep link (?event=/?image=) to the clipboard so a
@@ -3953,13 +4178,14 @@
       }
     }
 
-    // Empty state UI helper
-    function showEmptyState(message, actionsHtml = '') {
+    // Empty state UI helper — title comes from emptyStateKind when provided.
+    function showEmptyState(message, actionsHtml = '', title) {
       const grid = document.getElementById('image-grid');
+      const h = title || 'No Snapshots Found';
       grid.innerHTML = `
         <div class="empty-state">
           <i data-lucide="image-off"></i>
-          <h3>No Snapshots Found</h3>
+          <h3>${escapeHtml(h)}</h3>
           <p>${message}</p>
           <div style="display:flex; gap:8px; justify-content:center; margin-top:12px;">${actionsHtml}</div>
         </div>
@@ -3977,6 +4203,22 @@
       if (resetBtn) resetBtn.onclick = () => resetAllFilters();
 
       lucide.createIcons();
+    }
+
+    // Always-visible filter banner (any dimension: search/date/time/objects).
+    function updateFilterActiveBanner() {
+      const banner = document.getElementById('filter-active-banner');
+      const textEl = document.getElementById('filter-active-banner-text');
+      if (!banner || !textEl) return;
+      const snap = filterSnapshot(state);
+      const b = activeFilterBanner(snap);
+      if (b.count === 0) {
+        banner.hidden = true;
+        textEl.textContent = '';
+      } else {
+        banner.hidden = false;
+        textEl.textContent = b.text;
+      }
     }
 
     // Check if sentinel is in viewport
@@ -4326,7 +4568,8 @@
         pill.setAttribute('role', 'status');      // announce new activity to
         pill.setAttribute('aria-live', 'polite');  // screen readers
         pill.setAttribute('aria-atomic', 'true');
-        pill.style.cssText = 'position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:2500;background:#ef4444;color:#fff;border:none;border-radius:999px;padding:8px 16px;font-size:0.8rem;font-weight:600;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,0.4);';
+        // Accent (not danger-red): benign "N new" activity, not a fault.
+        pill.style.cssText = 'position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:2500;background:var(--accent);color:#fff;border:none;border-radius:var(--radius-pill);padding:8px 16px;font-size:0.8rem;font-weight:600;cursor:pointer;box-shadow:var(--elevation-2);';
         pill.onclick = () => {
           state.newActivity = 0;
           document.title = BASE_TITLE;
@@ -4336,7 +4579,7 @@
         document.body.appendChild(pill);
       }
       const n = state.newActivity;
-      pill.textContent = `🔴 ${n} new ${n === 1 ? 'event' : 'events'}${state.lastActivity ? ` · ${state.lastActivity}` : ''} — tap to view`;
+      pill.textContent = `${n} new ${n === 1 ? 'event' : 'events'}${state.lastActivity ? ` · ${state.lastActivity}` : ''} — tap to view`;
     }
 
     // Back-to-top button: appears after scrolling down a long grid
@@ -4609,6 +4852,15 @@
           }
         });
       }
+      // Always-visible filter banner clear (any dimension)
+      const filterClearBtn = document.getElementById('filter-active-clear');
+      if (filterClearBtn) {
+        filterClearBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          resetAllFilters();
+        });
+      }
+      if (typeof updateFilterActiveBanner === 'function') updateFilterActiveBanner();
 
       // Actions cluster: collapse the secondary action labels to icons when the
       // toolbar is cramped (content-aware via actionsOverflow, deterministic on
@@ -4777,21 +5029,8 @@
       }
       // === /pure:bucketByHour ===
 
-      // === pure:labelCounts ===
-      // Tally labels across images. Input: array of iterables (Set/array) of
-      // labels. Returns [{label, count}] sorted by count desc, then label asc.
-      function labelCounts(labelSets) {
-        const m = new Map();
-        if (Array.isArray(labelSets)) {
-          for (const set of labelSets) {
-            if (!set) continue;
-            for (const l of set) m.set(l, (m.get(l) || 0) + 1);
-          }
-        }
-        return [...m.entries()].map(([label, count]) => ({ label, count }))
-          .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
-      }
-      // === /pure:labelCounts ===
+      // labelCounts is defined once at module scope (pure:labelCounts) so chips
+      // and the status panel share the same tally helper.
 
       // === pure:busiestHour ===
       // Index (0-23) of the peak hour in a 24-bucket array; -1 if all zero or
@@ -4823,6 +5062,16 @@
 
       async function renderSystemPanel() {
         const el = document.getElementById('system-status-content');
+        // Preserve audit-trail interaction: skip full rebuild while hovered,
+        // focused, or scrolled (would jump the scroll position every 5s).
+        const trailEl = el && el.querySelector('[data-audit-trail]');
+        if (trailEl && !shouldRefreshSystemPanel({
+          hovered: trailEl.matches(':hover'),
+          focused: trailEl.contains(document.activeElement),
+          scrollTop: trailEl.scrollTop
+        })) {
+          return;
+        }
         try {
           const [s, log] = await Promise.all([
             apiFetch('/api/status'),
@@ -4899,13 +5148,14 @@
               const dot = c.stale ? '<span style="color:#ef4444;">&#9679;</span>' : '<span style="color:#10b981;">&#9679;</span>';
               const age = c.last_frame_age_s == null ? 'no frames' : fmtDur(c.last_frame_age_s) + ' ago';
               const pct = c.budget_pct == null ? '' : ` <span style="color:${c.budget_pct > 85 ? '#ef4444' : 'inherit'};">(${c.budget_pct}%)</span>`;
-              return `<div>${dot} <b>${escapeHtml(c.name)}</b>: last frame ${age} &middot; ${(c.bytes / 1e9).toFixed(1)}GB${pct} &middot; ${formatCount(c.images)} imgs</div>`;
+              return `<div>${dot} <b>${escapeHtml(c.name)}</b>: last frame ${age} &middot; ${formatGb(c.bytes, 'B')}${pct} &middot; ${formatCount(c.images)} imgs</div>`;
             }).join('')}
             ${s.retention ? `<div style="color:var(--text-secondary);">Last cleanup: removed ${s.retention.count} img${s.retention.count !== 1 ? 's' : ''} (${(s.retention.bytes_freed / 1e6).toFixed(0)} MB) ${fmtDur(Math.max(0, Math.round(Date.now() / 1000 - s.retention.ts)))} ago</div>` : ''}
-            ${s.filesystem ? `<div style="color:${s.filesystem.free_gb < 1 ? '#ef4444' : 'var(--text-secondary)'};">Host disk: ${s.filesystem.free_gb} GB free of ${s.filesystem.total_gb} GB (${s.filesystem.used_pct}% used)</div>` : ''}
+            ${s.filesystem ? `<div style="color:${s.filesystem.free_gb < 1 ? '#ef4444' : 'var(--text-secondary)'};">Host disk: ${formatGb(s.filesystem.free_gb, 'GB')} free of ${formatGb(s.filesystem.total_gb, 'GB')} (${s.filesystem.used_pct}% used)</div>` : ''}
             <div style="margin-top:8px;font-weight:700;text-transform:uppercase;font-size:0.7rem;color:var(--text-secondary);border-bottom:1px solid var(--border-color);padding-bottom:3px;">Insights</div>
             <div title="computed from the frames loaded in this view, not the full on-disk set">${insTotal.toLocaleString()} loaded frames${insPeak >= 0 ? ` &middot; busiest ${String(insPeak).padStart(2, '0')}:00` : ''}</div>
             <div style="margin:3px 0;line-height:0;">${insSpark}</div>
+            ${sparklineHasData(insBuckets) ? '' : '<div style="color:var(--text-secondary);font-size:0.75rem;">no activity yet</div>'}
             <div><b>Most seen:</b> ${insTopHtml}</div>
             <div style="margin-top:8px;font-weight:700;text-transform:uppercase;font-size:0.7rem;color:var(--text-secondary);border-bottom:1px solid var(--border-color);padding-bottom:3px;">Inference (last ${(s.metrics && s.metrics.window_min) || 60}m)</div>
             ${s.metrics && s.metrics.count ? `
@@ -4913,7 +5163,7 @@
               <div>${s.metrics.local} local / ${s.metrics.cloud} cloud &middot; avg ${fmtDur(s.metrics.avg_s)} &middot; p95 ${fmtDur(s.metrics.p95_s)}</div>`
               : '<div style="color:var(--text-secondary);">no inferences in window</div>'}
             <div style="margin-top:8px;font-weight:700;text-transform:uppercase;font-size:0.7rem;color:var(--text-secondary);border-bottom:1px solid var(--border-color);padding-bottom:3px;">AI Audit Trail</div>
-            <div style="max-height:200px;overflow-y:auto;">${trail}</div>`;
+            <div data-audit-trail style="max-height:200px;overflow-y:auto;">${trail}</div>`;
         } catch (err) {
           el.textContent = err.message === 'timeout'
             ? 'API not reachable (request timed out).'
@@ -5111,7 +5361,7 @@
         if (e.key === 'Escape') closeLightbox();
         if (e.key === 'ArrowLeft') navigateLightbox(-1);
         if (e.key === 'ArrowRight') navigateLightbox(1);
-        if (e.key === 'Space' || e.code === 'Space') {
+        if ((e.key === 'Space' || e.code === 'Space') && spaceTogglesPlayback(e.target)) {
           e.preventDefault();
           toggleSlideshow();
         }

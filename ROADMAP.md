@@ -235,9 +235,9 @@ polish. All fixes are additive, no-dep, vanilla JS/CSS. Built items are checked 
       `tabindex=0`, Enter/Space opens the lightbox, with a human `aria-label`
       (`cardAriaLabel`) + a `:focus-visible` ring. Card alt/caption/labels are now
       escaped too. *(Shipped — feat/card-a11y.)*
-- [ ] **Keyboard-operate the custom controls** — sidebar date items, chart bars,
-      blacklist/alias/Slack toggles, the Live toggle are click-only `<div>`s. Add
-      `role`/`tabindex`/`aria-*` + Enter-Space handlers (or convert to `<button>`).
+- [x] **Keyboard-operate the custom controls** — sidebar date items already used
+      `bindActivatable`; chart bars now do too; blacklist/settings toggles use
+      `bindSwitch`. *(Shipped — UX polish pass.)*
 - [x] **Dialog semantics + focus management** — lightbox + flipbook player are
       now `role="dialog" aria-modal`, move focus in on open, trap Tab within
       (pure `tabWrap` + `trapFocus`), and restore focus to the opener on close.
@@ -250,9 +250,10 @@ polish. All fixes are additive, no-dep, vanilla JS/CSS. Built items are checked 
 - [x] **"Show all images" doesn't clear all filters** — replaced with a "Clear
       all filters" escape (shown whenever any filter is active, any tab) wired to
       `resetAllFilters()` (pure `clearedFilters()` + DOM resync). *(Shipped — feat/show-all-reset.)*
-- [ ] **Player robustness** — fetch/`onerror` stale-frame closure (capture `idx`),
-      GIF-download race after close (AbortController + `overlay.isConnected` guard),
-      Space double-toggle when a button is focused.
+- [x] **Player robustness** — frame `onerror` captures load index via
+      `frameErrorFallbackSrc`; GIF download uses AbortController +
+      `overlay.isConnected`; Space gated by `spaceTogglesPlayback`.
+      *(Shipped — UX polish pass.)*
 - [x] **Detection badges encode meaning by colour only** — each badge is now
       `role="img"` with an `aria-label` spelling out the state (pure `badgeLabel`:
       "person, unconfirmed" / "dog, disputed"); the decorative icon + glyph are
@@ -275,20 +276,23 @@ polish. All fixes are additive, no-dep, vanilla JS/CSS. Built items are checked 
 - [x] **Search predicate diverges** — unified into one pure `matchesSearch()`
       (filename + date/time/type/caption) used by both the grid and the charts.
       *(Shipped — feat/search-unify.)*
-- [ ] **Reduced-motion**: the flipbook auto-plays on open regardless; gate initial
-      `play()` behind `prefers-reduced-motion`.
-- [ ] **Hidden-but-active filters** — hiding filter chips while a chip is active
-      leaves an invisible applied filter with no clear affordance; show an inline
-      "N active ✕".
-- [ ] **Object chips lack counts/contrast** — add per-label frequency counts.
-- [ ] **Search placeholder undersells** caption/label search — reword.
-- [ ] **Status panel re-renders every 5s** destroying audit-trail scroll/focus;
-      skip refresh while scrolled/hovered, or diff-update.
+- [x] **Reduced-motion**: flipbook autoplay gated by `prefersReducedMotion` /
+      `matchMedia('(prefers-reduced-motion: reduce)')`. *(Shipped — UX polish.)*
+- [x] **Hidden-but-active filters** — always-visible banner via
+      `countActiveFilters` / `activeFilterBanner` + clear ✕.
+      *(Shipped — UX polish pass.)*
+- [x] **Object chips lack counts/contrast** — per-label frequency via
+      `labelCounts` + `.chip-count`. *(Shipped — UX polish pass.)*
+- [x] **Search placeholder undersells** caption/label search — now
+      "Search time, labels, or caption…". *(Shipped — UX polish pass.)*
+- [x] **Status panel re-renders every 5s** — skip rebuild while audit trail
+      hovered/focused/scrolled (`shouldRefreshSystemPanel`).
+      *(Shipped — UX polish pass.)*
 - [x] **Focus-visible** ring — global `:focus-visible` outline now covers all
       interactive controls (buttons, links, inputs, role=button cards, chips,
       tabs, sidebar/blacklist items). *(Shipped — feat/a11y-css.)*
-- [ ] **Lightbox/player control bars overflow on phones** — allow wrap / hide
-      redundant zoom buttons under 768px.
+- [x] **Lightbox/player control bars overflow on phones** — wrap controls;
+      hide zoom under 768px. *(Shipped — UX polish pass.)*
 - [x] **300-visit cap** — the Timeline count now reads "showing first 300 of N
       visits" (pure `visitsSummary`) + a footer note when truncated, so the cap
       isn't silent. (stats-label already updates correctly on the tab.) *(Shipped — feat/visits-count.)*
@@ -297,11 +301,11 @@ polish. All fixes are additive, no-dep, vanilla JS/CSS. Built items are checked 
       now use `visitAltText`.)*
 
 ### P3 — polish / design system
-- [ ] **Design tokens**: unify radii, a 4px spacing scale, one accent (three blues
-      today), and one badge recipe (tinted bg + bordered, like disputed/potential)
-      — replace ad-hoc per-element values with `:root` vars.
-- [ ] **`#stats-label` has no CSS rule** (renders at body default, louder than the
-      toolbar); make it `0.78rem` secondary + tabular-nums.
+- [x] **Design tokens**: `:root` spacing/radius/accent ladder + elevation
+      already present; cards use elevation-1/2; activity pill uses accent not
+      danger-red. *(Shipped — UX polish pass.)*
+- [x] **`#stats-label` has no CSS rule** — now `0.78rem` secondary +
+      tabular-nums. *(Shipped — UX polish pass.)*
 - [x] **Toast looks like a primary CTA** — restyled to a surface notification
       (panel bg + border + shadow); the accent is now reserved for the leading
       icon. *(Shipped — feat/toast-restyle.)*
@@ -310,11 +314,12 @@ polish. All fixes are additive, no-dep, vanilla JS/CSS. Built items are checked 
 - [x] **Status numbers** — queue + per-camera counts are now thousands-grouped
       via pure `formatCount` ("8,802" not "8802"). (Sub-1GB GB display is a
       separate follow-up.) *(Shipped — feat/locale-numbers.)*
-- [ ] **Empty-state polish**: distinct "Analyzing…" vs "no visits" vs error; "no
-      data yet" placeholder for the all-zero sparkline; reserve red for real faults
-      (the activity pill is alarming-red for benign events).
-- [ ] **Elevation hierarchy inverted** — cards lift dramatically on hover while
-      their container panels are flat; add a subtle resting shadow, soften hover.
+- [x] **Empty-state polish**: `emptyStateKind` + distinct titles; sparkline
+      "no activity yet"; activity pill uses accent (not danger-red).
+      *(Shipped — UX polish pass.)*
+- [x] **Elevation hierarchy inverted** — cards rest on `elevation-1`, hover
+      `elevation-2` with 1px lift (disabled under reduced-motion).
+      *(Shipped — UX polish pass.)*
 
 *Build order: P1 security/correctness first (HTML-escape, ongoing, show-all), then
 the a11y cluster, then P2/P3. Each ships TDD + squash-merged.*
