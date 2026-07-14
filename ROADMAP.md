@@ -235,9 +235,10 @@ polish. All fixes are additive, no-dep, vanilla JS/CSS. Built items are checked 
       `tabindex=0`, Enter/Space opens the lightbox, with a human `aria-label`
       (`cardAriaLabel`) + a `:focus-visible` ring. Card alt/caption/labels are now
       escaped too. *(Shipped — feat/card-a11y.)*
-- [x] **Keyboard-operate the custom controls** — sidebar date items already used
-      `bindActivatable`; chart bars now do too; blacklist/settings toggles use
-      `bindSwitch`. *(Shipped — UX polish pass.)*
+- [x] **Keyboard-operate the custom controls** — sidebar date items + chart bars
+      use `bindActivatable`; blacklist/settings toggles use `bindSwitch`; Live
+      auto-refresh badge is a keyboard `role=switch` via `bindActivatable`.
+      *(Shipped — UX polish pass.)*
 - [x] **Dialog semantics + focus management** — lightbox + flipbook player are
       now `role="dialog" aria-modal`, move focus in on open, trap Tab within
       (pure `tabWrap` + `trapFocus`), and restore focus to the opener on close.

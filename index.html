@@ -1819,8 +1819,9 @@
             <span>Refresh</span>
           </button>
 
-          <div id="live-toggle" class="live-badge" aria-label="Toggle real-time auto-polling" title="Toggle real-time auto-polling">
-            <div class="live-dot"></div>
+          <div id="live-toggle" class="live-badge" role="switch" tabindex="0" aria-checked="true"
+               aria-label="Toggle real-time auto-polling" title="Toggle real-time auto-polling">
+            <div class="live-dot" aria-hidden="true"></div>
             <span id="live-text">Auto-refresh: ON</span>
           </div>
         </div>
@@ -2377,8 +2378,9 @@
     // === /pure:isActivateKey ===
 
     // Make a div-based control keyboard-operable: button semantics + Enter/Space.
+    // Preserves an existing role (e.g. role=switch on the Live toggle).
     function bindActivatable(el, onActivate) {
-      el.setAttribute('role', 'button');
+      if (!el.getAttribute('role')) el.setAttribute('role', 'button');
       el.tabIndex = 0;
       el.addEventListener('click', onActivate);
       el.addEventListener('keydown', (e) => {
@@ -2434,6 +2436,11 @@
     async function loadData(silent = false) {
       if (!silent) {
         document.getElementById('refresh-icon').classList.add('lucide-animate-spin');
+        // Distinct "Analyzing…" empty state while the first catalog loads
+        if (state.allImages.length === 0) {
+          const k = emptyStateKind({ analyzing: true });
+          showEmptyState(k.message, '', k.title);
+        }
       }
       
       try {
@@ -2457,7 +2464,10 @@
         }
         
         if (!imagesList || !Array.isArray(imagesList)) {
-          showEmptyState('Invalid file format. Scaffold images.json output is corrupted.');
+          const k = emptyStateKind({
+            error: 'Invalid file format. Scaffold images.json output is corrupted.'
+          });
+          showEmptyState(k.message, '', k.title);
           return;
         }
 
@@ -2474,7 +2484,10 @@
       } catch (err) {
         console.error('Error fetching data:', err);
         if (state.allImages.length === 0) {
-          showEmptyState('Could not find image listings. Run index scraper and check directory permissions.');
+          const k = emptyStateKind({
+            error: 'Could not find image listings. Run index scraper and check directory permissions.'
+          });
+          showEmptyState(k.message, '', k.title);
         }
       } finally {
         document.getElementById('refresh-icon').classList.remove('lucide-animate-spin');
@@ -3447,9 +3460,7 @@
           state.activeDateFilter !== 'all' || state.timeStart !== 0 || state.timeEnd !== 23 ||
           state.activeHourChartFilter !== null);
         const kind = emptyStateKind({
-          filtersActive: filtersActive || state.activeFilter === 'objects',
-          analyzing: false,
-          error: null
+          filtersActive: filtersActive || state.activeFilter === 'objects'
         });
         let msg = kind.message;
         let title = kind.title;
@@ -3641,9 +3652,11 @@
           state.activeDateFilter !== 'all' || state.timeStart !== 0 || state.timeEnd !== 23 ||
           state.activeHourChartFilter !== null);
         const es = timelineEmptyState(filtersActive);
-        const kind = emptyStateKind({ filtersActive, analyzing: false });
+        const kind = emptyStateKind({ filtersActive });
         const actions = es.showReset ? '<button class="btn" id="empty-reset">Clear all filters</button>' : '';
-        showEmptyState(es.message, actions, filtersActive ? kind.title : 'No visits yet');
+        // Prefer emptyStateKind titles (filtered vs empty archive); keep
+        // timelineEmptyState's visit-specific message body.
+        showEmptyState(es.message, actions, kind.title === 'No snapshots yet' ? 'No visits yet' : kind.title);
         return;
       }
 
@@ -4450,10 +4463,12 @@
       if (state.isLive) {
         badge.classList.remove('paused');
         text.textContent = 'Auto-refresh: ON';
+        badge.setAttribute('aria-checked', 'true');
         startPolling();
       } else {
         badge.classList.add('paused');
         text.textContent = 'Auto-refresh: OFF';
+        badge.setAttribute('aria-checked', 'false');
         stopPolling();
       }
     }
@@ -4629,7 +4644,8 @@
 
       // Top control listeners
       document.getElementById('btn-refresh').addEventListener('click', () => loadData(false));
-      document.getElementById('live-toggle').addEventListener('click', toggleLiveMode);
+      // Live auto-refresh: keyboard-operable switch (Enter/Space + click)
+      bindActivatable(document.getElementById('live-toggle'), toggleLiveMode);
 
       // Search Query box (debounced)
       let searchTimeout;

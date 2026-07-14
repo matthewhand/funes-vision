@@ -19,6 +19,7 @@ eval(block('frameErrorFallbackSrc'));
 eval(block('shouldRefreshSystemPanel'));
 eval(block('emptyStateKind'));
 eval(block('sparklineHasData'));
+eval(block('labelCounts'));
 
 // --- formatGb ---
 assert.strictEqual(formatGb(512 * 1024 * 1024, 'B'), '512 MB');
@@ -100,5 +101,20 @@ assert.ok(/filter/i.test(emptyStateKind({ filtersActive: true }).message));
 assert.strictEqual(sparklineHasData([0, 0, 0]), false);
 assert.strictEqual(sparklineHasData([0, 3, 0]), true);
 assert.strictEqual(sparklineHasData(null), false);
+
+// --- labelCounts (chip frequency helper — shipped + used by renderObjectFilters) ---
+const lc = labelCounts([
+  new Set(['person', 'dog']),
+  new Set(['person']),
+  ['cat', 'person'],
+]);
+assert.strictEqual(lc[0].label, 'person');
+assert.strictEqual(lc[0].count, 3);
+assert.deepStrictEqual(
+  lc.find(x => x.label === 'dog'),
+  { label: 'dog', count: 1 }
+);
+assert.deepStrictEqual(labelCounts([]), []);
+assert.deepStrictEqual(labelCounts(null), []);
 
 console.log('ux_polish_helpers: all assertions passed');
