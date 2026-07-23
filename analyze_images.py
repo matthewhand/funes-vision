@@ -598,7 +598,12 @@ def _log_retention(image_dir, count, bytes_freed):
         pass
 
 ALERT_STATE = os.path.join(BASE_DIR, "alert_state.json")
-ALERT_COOLDOWN_S = 6 * 3600  # don't re-alert a persistent condition more often
+# Belt-and-braces Slack rate limiting for health alerts (esp. disk/space spam)
+ALERT_BASE_COOLDOWN_S = 1800          # 30 min base; doubles with each re-fire of same key
+ALERT_MAX_COOLDOWN_S = 12 * 3600      # 12 h ceiling
+RECOVERY_COOLDOWN_S = 3600            # 1 h between recovery notices for the same key
+MAX_ALERTS_PER_WINDOW = 4             # hard global cap on alert/recovery sends per window
+ALERT_WINDOW_S = 3600                 # the window for the global max
 
 def _scan_dir(image_dir):
     """Newest image mtime and total bytes for a camera dir (one scandir)."""
@@ -686,22 +691,59 @@ def run_health_checks(watch_dirs, api_key):
             except Exception as e:
                 print(f"Alert send failed: {e}")
 
-    # Fire new alerts (or re-fire after the cooldown)
+    def _recent_sends(state):
+        meta = state.get("_meta", {})
+        recent = [t for t in meta.get("recent_sends", []) if now - t < ALERT_WINDOW_S]
+        return recent
+
+    def _record_send(state):
+        meta = state.setdefault("_meta", {})
+        recent = [t for t in meta.get("recent_sends", []) if now - t < ALERT_WINDOW_S]
+        recent.append(now)
+        meta["recent_sends"] = recent[-MAX_ALERTS_PER_WINDOW:]
+        state["_meta"] = meta
+
+    def _can_send(state):
+        return len(_recent_sends(state)) < MAX_ALERTS_PER_WINDOW
+
+    # Fire new alerts with exponential backoff + global max-queue
     for key, msg in alerts.items():
         prev = state.get(key, {})
-        if (not prev.get("active")) or (now - prev.get("last_fired", 0) > ALERT_COOLDOWN_S):
-            print(f"Health alert: {key}")
+        fire_count = int(prev.get("fire_count", 0))
+        cooldown = min(ALERT_BASE_COOLDOWN_S * (2 ** min(fire_count, 5)), ALERT_MAX_COOLDOWN_S)
+        due = (not prev.get("active")) or (now - prev.get("last_fired", 0) > cooldown)
+        if due and _can_send(state):
+            print(f"Health alert: {key} (fire#{fire_count + 1}, cooldown={int(cooldown)}s)")
             send(msg)
-            state[key] = {"active": True, "last_fired": now}
+            _record_send(state)
+            state[key] = {"active": True, "last_fired": now, "fire_count": fire_count + 1}
         else:
-            state[key]["active"] = True
+            # Keep active so recovery logic stays correct; do not re-fire
+            entry = dict(prev) if prev else {}
+            entry["active"] = True
+            if "fire_count" not in entry:
+                entry["fire_count"] = fire_count
+            state[key] = entry
 
-    # Recovery: previously active, no longer tripped
+    # Recovery: previously active, no longer tripped (with its own cooldown)
     for key, prev in list(state.items()):
+        if key == "_meta":
+            continue
         if prev.get("active") and key not in alerts:
-            print(f"Health recovered: {key}")
-            send(_recovery_text(key))
-            state[key]["active"] = False
+            last_rec = prev.get("last_recovery", 0)
+            time_since_fire = now - prev.get("last_fired", 0)
+            if (now - last_rec > RECOVERY_COOLDOWN_S and time_since_fire > 600
+                    and _can_send(state)):
+                print(f"Health recovered: {key}")
+                send(_recovery_text(key))
+                _record_send(state)
+                state[key] = {"active": False, "last_fired": prev.get("last_fired", now),
+                              "fire_count": 0, "last_recovery": now}
+            else:
+                # Silence recovery spam on rapid flaps; clear active for next cycle
+                state[key] = {"active": False, "last_fired": prev.get("last_fired", now),
+                              "fire_count": prev.get("fire_count", 0),
+                              "last_recovery": last_rec}
 
     try:
         _atomic_write_json(ALERT_STATE, state, indent=1)
