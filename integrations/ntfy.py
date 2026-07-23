@@ -63,9 +63,11 @@ def _post(cfg, body, title=None, click=None, tags=None):
         return False, str(e)
 
 
-def send_message(cfg, text):
-    """Plain push (used for health alerts). Returns (ok, detail)."""
-    return _post(cfg, text, title="Webcam", tags="warning")
+def send_message(cfg, text, update_ts=None):
+    """Plain push (used for health alerts). Returns (ok, detail, ts).
+    ntfy has no message-update concept, so update_ts is ignored and ts is None."""
+    ok, detail = _post(cfg, text, title="Webcam", tags="warning")
+    return ok, detail, None
 
 
 def send_test_message(cfg):

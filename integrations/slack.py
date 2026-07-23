@@ -65,22 +65,36 @@ def _call(method, token, **kwargs):
     return data
 
 
-def send_message(cfg, text):
-    """Post a plain text message (used for health alerts). Returns (ok, detail)."""
+def send_message(cfg, text, update_ts=None):
+    """Post a plain text message (used for health alerts). Returns (ok, detail, ts).
+
+    If ``update_ts`` is provided, tries ``chat.update`` first so the same
+    logical alert is deduplicated in-channel (preferred for flapping conditions
+    such as disk budget). Falls back to a fresh ``chat.postMessage`` when
+    update is impossible or fails.
+    """
     cfg = cfg or {}
     token, channel = cfg.get("bot_token"), cfg.get("channel_id")
     if not token or not channel:
-        return False, "bot_token and channel_id are required"
+        return False, "bot_token and channel_id are required", None
     try:
-        _call("chat.postMessage", token, json={"channel": channel, "text": text})
-        return True, "sent"
+        if update_ts:
+            try:
+                data = _call("chat.update", token,
+                             json={"channel": channel, "ts": update_ts, "text": text})
+                return True, "updated", data.get("ts") or update_ts
+            except Exception as upd_err:
+                # Fall through to a fresh post if the old message is gone / uneditable
+                print(f"[slack] chat.update failed ({upd_err}); posting new message")
+        data = _call("chat.postMessage", token, json={"channel": channel, "text": text})
+        return True, "sent", data.get("ts")
     except Exception as e:
-        return False, str(e)
+        return False, str(e), None
 
 
 def send_test_message(cfg):
     """Post a plain confirmation message to verify creds. Returns (ok, detail)."""
-    ok, detail = send_message(cfg, ":white_check_mark: Webcam gallery connected to Slack.")
+    ok, detail, _ts = send_message(cfg, ":white_check_mark: Webcam gallery connected to Slack.")
     return ok, ("Test message sent" if ok else detail)
 
 

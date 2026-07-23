@@ -684,12 +684,20 @@ def run_health_checks(watch_dirs, api_key):
     except Exception:
         notify_alert = None
 
-    def send(msg):
-        if notify_alert:
-            try:
-                notify_alert(msg)
-            except Exception as e:
-                print(f"Alert send failed: {e}")
+    def send(msg, update_ts=None):
+        """Send (or update) a health alert. Returns the Slack ts when available."""
+        if not notify_alert:
+            return None
+        try:
+            result = notify_alert(msg, update_ts=update_ts)
+            # notify_alert now returns (ok, ts)
+            if isinstance(result, tuple) and len(result) == 2:
+                ok, ts = result
+                return ts if ok else None
+            return None
+        except Exception as e:
+            print(f"Alert send failed: {e}")
+            return None
 
     def _recent_sends(state):
         meta = state.get("_meta", {})
@@ -706,26 +714,39 @@ def run_health_checks(watch_dirs, api_key):
     def _can_send(state):
         return len(_recent_sends(state)) < MAX_ALERTS_PER_WINDOW
 
-    # Fire new alerts with exponential backoff + global max-queue
+    def _with_count(base_msg, count):
+        if count <= 1:
+            return base_msg
+        return f"{base_msg}  _(×{count})"
+
+    # Fire / update alerts — prefer editing the previous Slack message
     for key, msg in alerts.items():
         prev = state.get(key, {})
         fire_count = int(prev.get("fire_count", 0))
+        prev_ts = prev.get("slack_ts")
         cooldown = min(ALERT_BASE_COOLDOWN_S * (2 ** min(fire_count, 5)), ALERT_MAX_COOLDOWN_S)
         due = (not prev.get("active")) or (now - prev.get("last_fired", 0) > cooldown)
+
         if due and _can_send(state):
-            print(f"Health alert: {key} (fire#{fire_count + 1}, cooldown={int(cooldown)}s)")
-            send(msg)
+            count = fire_count + 1
+            text = _with_count(msg, count)
+            print(f"Health alert: {key} (#{count}, cooldown={int(cooldown)}s, update={bool(prev_ts)})")
+            new_ts = send(text, update_ts=prev_ts)
             _record_send(state)
-            state[key] = {"active": True, "last_fired": now, "fire_count": fire_count + 1}
+            state[key] = {
+                "active": True,
+                "last_fired": now,
+                "fire_count": count,
+                "slack_ts": new_ts or prev_ts,
+            }
         else:
-            # Keep active so recovery logic stays correct; do not re-fire
             entry = dict(prev) if prev else {}
             entry["active"] = True
             if "fire_count" not in entry:
                 entry["fire_count"] = fire_count
             state[key] = entry
 
-    # Recovery: previously active, no longer tripped (with its own cooldown)
+    # Recovery: previously active, no longer tripped
     for key, prev in list(state.items()):
         if key == "_meta":
             continue
@@ -735,15 +756,25 @@ def run_health_checks(watch_dirs, api_key):
             if (now - last_rec > RECOVERY_COOLDOWN_S and time_since_fire > 600
                     and _can_send(state)):
                 print(f"Health recovered: {key}")
-                send(_recovery_text(key))
+                # Prefer updating the original alert message to a recovery note
+                recovery = _recovery_text(key)
+                new_ts = send(recovery, update_ts=prev.get("slack_ts"))
                 _record_send(state)
-                state[key] = {"active": False, "last_fired": prev.get("last_fired", now),
-                              "fire_count": 0, "last_recovery": now}
+                state[key] = {
+                    "active": False,
+                    "last_fired": prev.get("last_fired", now),
+                    "fire_count": 0,
+                    "last_recovery": now,
+                    "slack_ts": new_ts or prev.get("slack_ts"),
+                }
             else:
-                # Silence recovery spam on rapid flaps; clear active for next cycle
-                state[key] = {"active": False, "last_fired": prev.get("last_fired", now),
-                              "fire_count": prev.get("fire_count", 0),
-                              "last_recovery": last_rec}
+                state[key] = {
+                    "active": False,
+                    "last_fired": prev.get("last_fired", now),
+                    "fire_count": prev.get("fire_count", 0),
+                    "last_recovery": last_rec,
+                    "slack_ts": prev.get("slack_ts"),
+                }
 
     try:
         _atomic_write_json(ALERT_STATE, state, indent=1)

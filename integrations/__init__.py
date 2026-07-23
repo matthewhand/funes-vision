@@ -96,20 +96,34 @@ def notify_burst(burst_id, summary, frame_paths):
             print(f"[integrations] {name} failed: {e}")
 
 
-def notify_alert(message):
+def notify_alert(message, update_ts=None):
     """Push an operational health alert (text-only) to enabled integrations.
     Independent of notify_mode - alerts are about the pipeline, not detections.
-    Returns True if any integration accepted it."""
+
+    ``update_ts`` (Slack message timestamp) is forwarded so providers that
+    support it can edit an existing message instead of posting a duplicate.
+    Returns (any_ok, last_ts) where last_ts is the Slack ts of the message
+    that was posted or updated (or None).
+    """
     any_ok = False
+    last_ts = None
     for name, c in _enabled_providers(load_config()):
         try:
-            ok, detail = _provider(name).send_message(c, message)
+            result = _provider(name).send_message(c, message, update_ts=update_ts)
+            # Back-compat: older providers may still return (ok, detail)
+            if len(result) == 3:
+                ok, detail, ts = result
+            else:
+                ok, detail = result
+                ts = None
             _record_delivery(name, "alert", ok, detail)
             any_ok = any_ok or ok
+            if ok and ts:
+                last_ts = ts
         except Exception as e:
             _record_delivery(name, "alert", False, str(e))
             print(f"[integrations] {name} alert failed: {e}")
-    return any_ok
+    return any_ok, last_ts
 
 
 def notify_image(filename, labels, caption, image_path):
