@@ -758,7 +758,12 @@ def run_health_checks(watch_dirs, api_key):
         identical = (alert_base_text(msg) == alert_base_text(prev_text)) and bool(prev_text)
 
         cooldown = alert_cooldown(fire_count, identical=identical, has_slack_ts=bool(prev_ts))
-        due = (not prev.get("active")) or (now - prev.get("last_fired", 0) > cooldown)
+        # Identical text with an existing Slack message must always respect the
+        # short update interval — even if active briefly flipped false (rapid flap).
+        if identical and prev_ts:
+            due = (now - prev.get("last_fired", 0) > cooldown)
+        else:
+            due = (not prev.get("active")) or (now - prev.get("last_fired", 0) > cooldown)
 
         if due and _can_send(state):
             count = alert_next_count(fire_count, identical)
