@@ -737,7 +737,14 @@ def run_health_checks(watch_dirs, api_key):
         prev_text = prev.get("last_text") or ""
         identical = (_base_text(msg) == _base_text(prev_text)) and bool(prev_text)
 
-        cooldown = min(ALERT_BASE_COOLDOWN_S * (2 ** min(fire_count, 5)), ALERT_MAX_COOLDOWN_S)
+        # Brand-new / different text → full exponential backoff.
+        # Identical text with an existing Slack message → shorter fixed interval
+        # so the counter tally can update without posting a new message.
+        IDENTICAL_UPDATE_S = 600  # 10 min between counter bumps on the same message
+        if identical and prev_ts:
+            cooldown = IDENTICAL_UPDATE_S
+        else:
+            cooldown = min(ALERT_BASE_COOLDOWN_S * (2 ** min(fire_count, 5)), ALERT_MAX_COOLDOWN_S)
         due = (not prev.get("active")) or (now - prev.get("last_fired", 0) > cooldown)
 
         if due and _can_send(state):
@@ -745,7 +752,8 @@ def run_health_checks(watch_dirs, api_key):
             text = _with_count(msg, count)
             action = "update-identical" if (identical and prev_ts) else ("update" if prev_ts else "post")
             print(f"Health alert: {key} (#{count}, {action}, cooldown={int(cooldown)}s)")
-            new_ts = send(text, update_ts=prev_ts if (identical or prev_ts) else None)
+            # Prefer chat.update whenever we have a previous ts (especially for identical)
+            new_ts = send(text, update_ts=prev_ts)
             _record_send(state)
             state[key] = {
                 "active": True,
