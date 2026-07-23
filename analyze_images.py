@@ -719,31 +719,49 @@ def run_health_checks(watch_dirs, api_key):
             return base_msg
         return f"{base_msg}  _(×{count})"
 
+    def _base_text(text):
+        """Strip the optional _(×N) suffix so we can compare pure message text."""
+        if not text:
+            return ""
+        # remove trailing "  _(×123)" if present
+        import re
+        return re.sub(r"  _\(×\d+\)$", "", text).rstrip()
+
     # Fire / update alerts — prefer editing the previous Slack message
+    # Explicit identical-text check: if the new base message is identical to
+    # the last one we sent for this key, we only bump the count (or suppress).
     for key, msg in alerts.items():
         prev = state.get(key, {})
         fire_count = int(prev.get("fire_count", 0))
         prev_ts = prev.get("slack_ts")
+        prev_text = prev.get("last_text") or ""
+        identical = (_base_text(msg) == _base_text(prev_text)) and bool(prev_text)
+
         cooldown = min(ALERT_BASE_COOLDOWN_S * (2 ** min(fire_count, 5)), ALERT_MAX_COOLDOWN_S)
         due = (not prev.get("active")) or (now - prev.get("last_fired", 0) > cooldown)
 
         if due and _can_send(state):
-            count = fire_count + 1
+            count = fire_count + 1 if identical else 1
             text = _with_count(msg, count)
-            print(f"Health alert: {key} (#{count}, cooldown={int(cooldown)}s, update={bool(prev_ts)})")
-            new_ts = send(text, update_ts=prev_ts)
+            action = "update-identical" if (identical and prev_ts) else ("update" if prev_ts else "post")
+            print(f"Health alert: {key} (#{count}, {action}, cooldown={int(cooldown)}s)")
+            new_ts = send(text, update_ts=prev_ts if (identical or prev_ts) else None)
             _record_send(state)
             state[key] = {
                 "active": True,
                 "last_fired": now,
                 "fire_count": count,
                 "slack_ts": new_ts or prev_ts,
+                "last_text": msg,          # pure base text for next identical check
             }
         else:
+            # Still active but not due / rate-limited — keep state, no send
             entry = dict(prev) if prev else {}
             entry["active"] = True
             if "fire_count" not in entry:
                 entry["fire_count"] = fire_count
+            if "last_text" not in entry:
+                entry["last_text"] = msg
             state[key] = entry
 
     # Recovery: previously active, no longer tripped
@@ -766,6 +784,7 @@ def run_health_checks(watch_dirs, api_key):
                     "fire_count": 0,
                     "last_recovery": now,
                     "slack_ts": new_ts or prev.get("slack_ts"),
+                    "last_text": "",          # clear so next alert starts count at 1
                 }
             else:
                 state[key] = {
@@ -774,6 +793,7 @@ def run_health_checks(watch_dirs, api_key):
                     "fire_count": prev.get("fire_count", 0),
                     "last_recovery": last_rec,
                     "slack_ts": prev.get("slack_ts"),
+                    "last_text": prev.get("last_text", ""),
                 }
 
     try:
