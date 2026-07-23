@@ -604,6 +604,40 @@ ALERT_MAX_COOLDOWN_S = 12 * 3600      # 12 h ceiling
 RECOVERY_COOLDOWN_S = 3600            # 1 h between recovery notices for the same key
 MAX_ALERTS_PER_WINDOW = 4             # hard global cap on alert/recovery sends per window
 ALERT_WINDOW_S = 3600                 # the window for the global max
+IDENTICAL_UPDATE_S = 600               # 10 min between counter bumps on same Slack message
+
+
+def alert_with_count(base_msg, count):
+    """Append _(×N) suffix when count > 1. Pure."""
+    if count <= 1:
+        return base_msg
+    return f"{base_msg}  _(×{count})"
+
+
+def alert_base_text(text):
+    """Strip optional _(×N) suffix for identical-text comparison. Pure."""
+    if not text:
+        return ""
+    import re
+    return re.sub(r"  _\(×\d+\)$", "", text).rstrip()
+
+
+def alert_cooldown(fire_count, identical=False, has_slack_ts=False):
+    """Seconds to wait before next send/update for this key. Pure.
+
+    Identical text with an existing Slack message uses a short fixed interval
+    so the counter can tally without full exponential backoff. Brand-new or
+    different text uses exponential backoff (base × 2^n, capped).
+    """
+    if identical and has_slack_ts:
+        return IDENTICAL_UPDATE_S
+    return min(ALERT_BASE_COOLDOWN_S * (2 ** min(int(fire_count), 5)), ALERT_MAX_COOLDOWN_S)
+
+
+def alert_next_count(fire_count, identical):
+    """Next fire_count value. Identical → increment; different → reset to 1. Pure."""
+    return (int(fire_count) + 1) if identical else 1
+
 
 def _scan_dir(image_dir):
     """Newest image mtime and total bytes for a camera dir (one scandir)."""
@@ -714,45 +748,23 @@ def run_health_checks(watch_dirs, api_key):
     def _can_send(state):
         return len(_recent_sends(state)) < MAX_ALERTS_PER_WINDOW
 
-    def _with_count(base_msg, count):
-        if count <= 1:
-            return base_msg
-        return f"{base_msg}  _(×{count})"
-
-    def _base_text(text):
-        """Strip the optional _(×N) suffix so we can compare pure message text."""
-        if not text:
-            return ""
-        # remove trailing "  _(×123)" if present
-        import re
-        return re.sub(r"  _\(×\d+\)$", "", text).rstrip()
-
-    # Fire / update alerts — prefer editing the previous Slack message
-    # Explicit identical-text check: if the new base message is identical to
-    # the last one we sent for this key, we only bump the count (or suppress).
+    # Fire / update alerts — prefer editing the previous Slack message.
+    # Identical text → counter tally via chat.update; different text → full backoff.
     for key, msg in alerts.items():
         prev = state.get(key, {})
         fire_count = int(prev.get("fire_count", 0))
         prev_ts = prev.get("slack_ts")
         prev_text = prev.get("last_text") or ""
-        identical = (_base_text(msg) == _base_text(prev_text)) and bool(prev_text)
+        identical = (alert_base_text(msg) == alert_base_text(prev_text)) and bool(prev_text)
 
-        # Brand-new / different text → full exponential backoff.
-        # Identical text with an existing Slack message → shorter fixed interval
-        # so the counter tally can update without posting a new message.
-        IDENTICAL_UPDATE_S = 600  # 10 min between counter bumps on the same message
-        if identical and prev_ts:
-            cooldown = IDENTICAL_UPDATE_S
-        else:
-            cooldown = min(ALERT_BASE_COOLDOWN_S * (2 ** min(fire_count, 5)), ALERT_MAX_COOLDOWN_S)
+        cooldown = alert_cooldown(fire_count, identical=identical, has_slack_ts=bool(prev_ts))
         due = (not prev.get("active")) or (now - prev.get("last_fired", 0) > cooldown)
 
         if due and _can_send(state):
-            count = fire_count + 1 if identical else 1
-            text = _with_count(msg, count)
+            count = alert_next_count(fire_count, identical)
+            text = alert_with_count(msg, count)
             action = "update-identical" if (identical and prev_ts) else ("update" if prev_ts else "post")
             print(f"Health alert: {key} (#{count}, {action}, cooldown={int(cooldown)}s)")
-            # Prefer chat.update whenever we have a previous ts (especially for identical)
             new_ts = send(text, update_ts=prev_ts)
             _record_send(state)
             state[key] = {
@@ -760,10 +772,9 @@ def run_health_checks(watch_dirs, api_key):
                 "last_fired": now,
                 "fire_count": count,
                 "slack_ts": new_ts or prev_ts,
-                "last_text": msg,          # pure base text for next identical check
+                "last_text": msg,
             }
         else:
-            # Still active but not due / rate-limited — keep state, no send
             entry = dict(prev) if prev else {}
             entry["active"] = True
             if "fire_count" not in entry:
