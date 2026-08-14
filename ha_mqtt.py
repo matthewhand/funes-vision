@@ -92,19 +92,47 @@ def record_ts(img_name, image_path=None):
     return now.isoformat()
 
 
-def should_publish(rec):
-    """Person/dog analyses and their skips. Not car-only / negatives."""
+SKIP_ONLY_REASONS = (
+    "llm_failed", "low_mem", "budget", "ollama_down", "llm_disabled",
+)
+
+
+def is_analysed(rec):
+    """True when the record has a successful e2b/HA flag analysis.
+
+    Skip-only rows (llm_failed / low_mem / budget / ...) must not count, even
+    if they still have a leftover _llm_skip and were re-queued as partials.
+    """
     if not isinstance(rec, dict):
         return False
     skip = rec.get("_llm_skip") or ""
-    if skip == "no_trigger":
+    if skip == "no_trigger" or skip in SKIP_ONLY_REASONS:
         return False
     if rec.get("fast_pass") == "negative":
         return False
-    ai = _ai()
-    if rec.get("_llm") or skip:
+    if isinstance(rec.get("_llm"), dict) and rec.get("_llm"):
         return True
+    ai = _ai()
     return any(k in rec for k in ai.FRONT_FLAG_KEYS + ai.BACK_FLAG_KEYS)
+
+
+def should_publish(rec):
+    """Retained compare-topic: successful HA flag analyses only.
+
+    llm_failed / low_mem / budget / no_trigger must never overwrite a
+    retained success — HA's compare card goes empty without flag keys.
+    """
+    return is_analysed(rec)
+
+
+def _flag_default(schema, key):
+    prop = (schema.get("properties") or {}).get(key) or {}
+    if prop.get("type") == "boolean":
+        return False
+    enum = prop.get("enum") or []
+    if "none" in enum:
+        return "none"
+    return ""
 
 
 def ha_vision_payload(img_name, rec, image_path=None, e2b_loaded=None):
@@ -112,15 +140,17 @@ def ha_vision_payload(img_name, rec, image_path=None, e2b_loaded=None):
     ai = _ai()
     kind = ai.camera_kind(image_path or img_name)
     cam = HA_CAMERA.get(kind, "front_door")
+    schema = ai.BACK_SCHEMA if kind == "back" else ai.FRONT_SCHEMA
     keys = ai.BACK_FLAG_KEYS if kind == "back" else ai.FRONT_FLAG_KEYS
     skip = rec.get("_llm_skip") or ""
-    analysed = isinstance(rec.get("_llm"), dict)
+    llm = rec.get("_llm") if isinstance(rec.get("_llm"), dict) else {}
+    analysed = is_analysed(rec)
     model = rec.get("_llm_model") or getattr(ai, "MODEL_PRIMARY", None) or DEFAULT_MODEL
     payload = {
         "camera": cam,
         "ts": record_ts(img_name, image_path),
         "model": model,
-        "_llm": analysed,
+        "_llm": bool(analysed),
         "_llm_model": rec.get("_llm_model") if analysed else rec.get("_llm_model"),
         "_llm_ms": rec.get("_llm_ms") if rec.get("_llm_ms") is not None else None,
         "skip_reason": "" if analysed else skip,
@@ -128,9 +158,14 @@ def ha_vision_payload(img_name, rec, image_path=None, e2b_loaded=None):
     }
     if not analysed and not skip:
         payload["skip_reason"] = ""
-    for k in keys:
-        if k in rec:
-            payload[k] = rec[k]
+    if analysed:
+        for k in keys:
+            if k in rec:
+                payload[k] = rec[k]
+            elif k in llm:
+                payload[k] = llm[k]
+            else:
+                payload[k] = _flag_default(schema, k)
     return payload
 
 
@@ -228,10 +263,17 @@ def _e2b_loaded():
 
 
 def publish_record(img_name, rec, image_path=None, e2b_loaded=None):
-    """Hook: publish one persisted person/dog analysis or skip. Guarded."""
+    """Hook: publish one persisted successful HA flag analysis. Guarded.
+
+    Skip-only persists (llm_failed / low_mem / ...) are not published to the
+    retained compare topic so they cannot clobber a good flag payload.
+    """
     try:
         if not should_publish(rec):
-            return False, "skip: not a person/dog analysis"
+            skip = (rec or {}).get("_llm_skip") if isinstance(rec, dict) else ""
+            if skip:
+                return False, f"skip: not overwriting retained flags ({skip})"
+            return False, "skip: not an analysed HA flag record"
         if e2b_loaded is None:
             e2b_loaded = _e2b_loaded()
         payload = ha_vision_payload(img_name, rec, image_path, e2b_loaded=e2b_loaded)
@@ -266,7 +308,11 @@ def _name_sort_key(name):
 
 
 def latest_records(analysis_data):
-    """Newest FRONT and BACK records worth publishing (prefer real LLM)."""
+    """Newest FRONT and BACK records with a successful e2b/HA flag analysis.
+
+    Never returns llm_failed / no_trigger / low_mem rows — those used to win
+    by filename recency and then overwrite retained compare payloads.
+    """
     latest = {"front": None, "back": None}
     ai = _ai()
     for name, rec in (analysis_data or {}).items():
@@ -274,16 +320,7 @@ def latest_records(analysis_data):
             continue
         kind = ai.camera_kind(name)
         prev = latest.get(kind)
-        if prev is None:
-            latest[kind] = (name, rec)
-            continue
-        prev_llm = isinstance(prev[1].get("_llm"), dict)
-        this_llm = isinstance(rec.get("_llm"), dict)
-        newer = _name_sort_key(name) > _name_sort_key(prev[0])
-        # Prefer any analysed record over skip-only; else take the newest.
-        if this_llm and not prev_llm:
-            latest[kind] = (name, rec)
-        elif this_llm == prev_llm and newer:
+        if prev is None or _name_sort_key(name) > _name_sort_key(prev[0]):
             latest[kind] = (name, rec)
     return latest
 

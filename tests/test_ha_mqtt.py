@@ -24,9 +24,15 @@ class TestShouldPublish(unittest.TestCase):
             "_llm": {"postal_delivery": False},
         }))
 
-    def test_skip_budget(self):
-        self.assertTrue(ha_mqtt.should_publish({
+    def test_skip_budget_does_not_clobber(self):
+        self.assertFalse(ha_mqtt.should_publish({
             "person": True, "fast_pass": "partial", "_llm_skip": "budget",
+        }))
+
+    def test_llm_failed_does_not_publish(self):
+        self.assertFalse(ha_mqtt.should_publish({
+            "person": True, "fast_pass": "partial", "_llm_skip": "llm_failed",
+            "_llm_ms": 45,
         }))
 
 
@@ -85,6 +91,23 @@ class TestPayload(unittest.TestCase):
         self.assertEqual(p["skip_reason"], "")
         self.assertFalse(p["e2b_loaded"])
 
+    def test_front_emits_all_flag_keys(self):
+        rec = {
+            "animal_detected": True,
+            "animal_type": "dog",
+            "_llm": {"animal_detected": True, "animal_type": "dog"},
+            "_llm_model": "gemma4:e2b",
+            "_llm_ms": 12,
+        }
+        p = ha_mqtt.ha_vision_payload("10.0.0.21_x.jpg", rec, e2b_loaded=True)
+        import analyze_images as ai
+        for k in ai.FRONT_FLAG_KEYS:
+            self.assertIn(k, p)
+        self.assertEqual(p["skip_reason"], "")
+        self.assertTrue(p["_llm"])
+        self.assertTrue(p["animal_detected"])
+        self.assertFalse(p["postal_delivery"])
+
     def test_skip_reason_on_fail(self):
         rec = {"person": True, "fast_pass": "partial", "_llm_skip": "low_mem"}
         p = ha_mqtt.ha_vision_payload("10.0.0.21_01_20260814100051444_MOTDEC.jpg", rec)
@@ -118,6 +141,26 @@ class TestLatest(unittest.TestCase):
         }
         latest = ha_mqtt.latest_records(data)
         self.assertIsNone(latest["front"])
+
+    def test_ignores_newer_llm_failed_even_if_only_recent(self):
+        data = {
+            "10.0.0.21_01_20260623100000000_MOTDEC.jpg": {
+                "person": True, "fast_pass": "partial",
+                "_llm_skip": "llm_failed", "_llm_ms": 45,
+            },
+            "10.0.0.22_01_20260813201652150_MOTDEC.jpg": {
+                "dog": True, "fast_pass": "partial",
+                "_llm_skip": "llm_failed", "_llm_ms": 36,
+            },
+            "10.0.0.21_01_20260814100051444_MOTDEC.jpg": {
+                "postal_delivery": False, "animal_detected": True,
+                "animal_type": "dog",
+                "_llm": {"postal_delivery": False, "animal_detected": True},
+            },
+        }
+        latest = ha_mqtt.latest_records(data)
+        self.assertEqual(latest["front"][0], "10.0.0.21_01_20260814100051444_MOTDEC.jpg")
+        self.assertIsNone(latest["back"])
 
 
 if __name__ == "__main__":

@@ -1353,7 +1353,16 @@ def main(retention_only=False):
                     new_analysis = True
                     try:
                         import ha_mqtt
-                        ha_mqtt.publish_record(img, analysis_data[img], image_path)
+                        rec = analysis_data[img]
+                        # Only retained-publish successful flag JSON. Skip-only
+                        # (llm_failed / low_mem / ...) must not clobber HA.
+                        if ha_mqtt.is_analysed(rec):
+                            ha_mqtt.publish_record(img, rec, image_path)
+                        else:
+                            print(
+                                "ha mqtt: not overwriting retained flags "
+                                f"({rec.get('_llm_skip') or 'no analysis'})"
+                            )
                     except Exception as e:
                         print(f"ha mqtt publish failed: {e}")
                 elif needs_deep:
