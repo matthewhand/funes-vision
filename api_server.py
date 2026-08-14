@@ -360,6 +360,20 @@ class Handler(BaseHTTPRequestHandler):
             except (OSError, ValueError):
                 log = []
             self._send(200, list(reversed(log[-50:])))  # newest first
+        elif self.path == "/api/llm-schema":
+            # Serve the LLM prompt and output schemas for UI display
+            try:
+                from analyze_images import DETECT_PROMPT, FRONT_SCHEMA, BACK_SCHEMA
+                self._send(200, {
+                    "prompt": DETECT_PROMPT,
+                    "schemas": {
+                        "front_door": FRONT_SCHEMA,
+                        "dog_cam": BACK_SCHEMA
+                    },
+                    "note": "Schema is enforced by the Ollama chat API 'format' parameter, not included in the prompt."
+                })
+            except Exception as e:
+                self._send(500, {"error": f"Failed to load schemas: {str(e)}"})
         elif self.path == "/api/events":
             self.stream_events()
         else:

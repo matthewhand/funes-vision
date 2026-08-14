@@ -142,6 +142,100 @@ def encode_image(image_path):
 
 DETECT_PROMPT = "Analyze this webcam image. Specifically detect if any PERSON, FACE, BODY, DOG, CAT, or BIRD is visible. If you see a human (even partial), use keys 'person', 'face', or 'body'. For an animal use 'dog', 'cat', or 'bird'. If you see something unusual (e.g. alien_ufo), add a descriptive key for it. Return ONLY a valid JSON object with boolean keys for detected items, PLUS - only if a person, animal, bird, or vehicle is present - a 'description' key with a brief (max 12 words) caption of what is happening. Omit 'description' for empty scenes. Example: {\"person\": true, \"face\": true, \"dog\": false, \"description\": \"person in dark jacket walking toward the gate\"}"
 
+# Home Assistant vision schemas for structured e2b deep-pass analysis
+# (enforced via Ollama API `format` parameter, not in the prompt)
+FRONT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "postal_delivery": {
+            "type": "boolean",
+            "description": "Is a postal worker or delivery person at the front door?"
+        },
+        "postal_how": {
+            "type": "string",
+            "description": "If postal_delivery is true, describe what they are doing (e.g., 'placing package', 'knocking', 'leaving')"
+        },
+        "dog_walked": {
+            "type": "boolean",
+            "description": "Is someone walking a dog past or near the property?"
+        },
+        "car_access": {
+            "type": "boolean",
+            "description": "Is a vehicle accessing the driveway or parking area?"
+        },
+        "enters_car": {
+            "type": "boolean",
+            "description": "Is someone entering a vehicle?"
+        },
+        "exits_car": {
+            "type": "boolean",
+            "description": "Is someone exiting a vehicle?"
+        },
+        "car_outfit": {
+            "type": "string",
+            "description": "Brief description of clothing worn by person entering/exiting car"
+        },
+        "car_color": {
+            "type": "string",
+            "description": "Color of the vehicle if visible"
+        },
+        "car_make": {
+            "type": "string",
+            "description": "Make/model of the vehicle if identifiable"
+        },
+        "opens_box": {
+            "type": "boolean",
+            "description": "Is someone opening a package or delivery box?"
+        },
+        "porch_access": {
+            "type": "boolean",
+            "description": "Is someone accessing or standing on the porch/entrance?"
+        },
+        "animal_detected": {
+            "type": "boolean",
+            "description": "Is any animal visible in the frame?"
+        },
+        "animal_type": {
+            "type": "string",
+            "description": "Type of animal if animal_detected is true (e.g., 'cat', 'dog', 'bird')"
+        }
+    }
+}
+
+BACK_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "dog_walked": {
+            "type": "boolean",
+            "description": "Is someone walking a dog near the back area?"
+        },
+        "approaching_house": {
+            "type": "boolean",
+            "description": "Is someone approaching the back of the house?"
+        },
+        "leaving_house": {
+            "type": "boolean",
+            "description": "Is someone leaving from the back of the house?"
+        },
+        "weapon_detected": {
+            "type": "boolean",
+            "description": "Is any weapon or weapon-like object visible?"
+        },
+        "clothes_drying": {
+            "type": "boolean",
+            "description": "Are clothes hanging on a line or drying rack?"
+        },
+        "animal_detected": {
+            "type": "boolean",
+            "description": "Is any animal visible in the frame?"
+        },
+        "animal_type": {
+            "type": "string",
+            "description": "Type of animal if animal_detected is true (e.g., 'cat', 'dog', 'bird')"
+        }
+    }
+}
+
 def analyze_image_openrouter(image_path, api_key):
     base64_image = encode_image(image_path)
     headers = { "Authorization": f"Bearer {api_key}", "Content-Type": "application/json" }
