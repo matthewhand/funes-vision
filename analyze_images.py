@@ -65,13 +65,19 @@ if os.path.exists(_settings_path):
     except (ValueError, OSError) as e:
         print(f"Warning: could not read settings.json ({e}); using defaults")
 
-# Initialize Haar Cascades
-face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
-body_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_fullbody.xml')
-cat_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalcatface.xml')
+# Haar is legacy fallback only; do not fail import if the wheel lacks it.
+face_cascade = body_cascade = cat_cascade = None
+try:
+    face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+    body_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_fullbody.xml')
+    cat_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalcatface.xml')
+except Exception as e:
+    print(f"Haar cascades unavailable ({e}); YOLO-only fast pass")
 
 def fast_pass(image_path):
     try:
+        if face_cascade is None or body_cascade is None or cat_cascade is None:
+            return {}
         img = cv2.imread(image_path)
         if img is None: return {}
         h, w = img.shape[:2]
@@ -136,11 +142,158 @@ def fast_pass_dispatch(image_path):
         print("YOLO unavailable; falling back to Haar cascades")
     return fast_pass(image_path)
 
-def encode_image(image_path):
-    with open(image_path, "rb") as image_file:
-        return base64.b64encode(image_file.read()).decode('utf-8')
+LLM_STILL_WIDTH = 1280
 
-DETECT_PROMPT = "Analyze this webcam image. Specifically detect if any PERSON, FACE, BODY, DOG, CAT, or BIRD is visible. If you see a human (even partial), use keys 'person', 'face', or 'body'. For an animal use 'dog', 'cat', or 'bird'. If you see something unusual (e.g. alien_ufo), add a descriptive key for it. Return ONLY a valid JSON object with boolean keys for detected items, PLUS - only if a person, animal, bird, or vehicle is present - a 'description' key with a brief (max 12 words) caption of what is happening. Omit 'description' for empty scenes. Example: {\"person\": true, \"face\": true, \"dog\": false, \"description\": \"person in dark jacket walking toward the gate\"}"
+def encode_image(image_path):
+    """Full still as JPEG, resized to ~1280 wide (never a YOLO crop)."""
+    try:
+        img = cv2.imread(image_path)
+        if img is not None:
+            h, w = img.shape[:2]
+            if w > LLM_STILL_WIDTH:
+                nh = max(1, int(round(h * LLM_STILL_WIDTH / float(w))))
+                img = cv2.resize(img, (LLM_STILL_WIDTH, nh), interpolation=cv2.INTER_AREA)
+            ok, buf = cv2.imencode(".jpg", img, [int(cv2.IMWRITE_JPEG_QUALITY), 85])
+            if ok:
+                return base64.b64encode(buf.tobytes()).decode("utf-8")
+    except Exception:
+        pass
+    with open(image_path, "rb") as image_file:
+        return base64.b64encode(image_file.read()).decode("utf-8")
+
+DETECT_PROMPT = "Look at this image and answer the questions."
+
+# HA front/back schemas — do not replace with person_at_car
+# Structured flags are enforced by the inference API `format` field
+# (Ollama /api/chat JSON Schema). Question text lives in each property
+# `description` — never in the prompt.
+FRONT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": [
+        "postal_delivery",
+        "postal_how",
+        "dog_walked",
+        "car_access",
+        "enters_car",
+        "exits_car",
+        "car_outfit",
+        "car_color",
+        "car_make",
+        "opens_box",
+        "porch_access",
+        "animal_detected",
+        "animal_type",
+    ],
+    "properties": {
+        "postal_delivery": {"type": "boolean", "description": 'Is a postie, mailman, courier, or parcel delivery happening?'},
+        "postal_how": {"type": "string", "enum": ["van", "bike", "on foot", "truck", "scooter", "car", "unknown", "none"], "description": 'When postal_delivery is true, how the delivery arrives as a short lowercase phrase (van, bike, on foot, truck, scooter, car). If unknown use unknown. If postal_delivery is false, none.'},
+        "dog_walked": {"type": "boolean", "description": 'Is a person walking a dog visible? A dog alone is animal_detected only.'},
+        "car_access": {"type": "boolean", "description": 'Is a car driving into or accessing the driveway/street area?'},
+        "enters_car": {"type": "boolean", "description": 'Is a person getting into / entering a car (opening door and boarding)? Mutually exclusive with exits_car when clear.'},
+        "exits_car": {"type": "boolean", "description": 'Is a person getting out / exiting a car? Mutually exclusive with enters_car when clear.'},
+        "car_outfit": {"type": "string", "maxLength": 24, "description": 'When enters_car or exits_car is true, person outfit in at most TWO lowercase words. Else none.'},
+        "car_color": {"type": "string", "maxLength": 16, "description": 'When car_access or enters_car or exits_car is true, vehicle colour as ONE short lowercase word. Else none.'},
+        "car_make": {"type": "string", "maxLength": 16, "description": 'When car_access or enters_car or exits_car is true, vehicle make as ONE short lowercase word if reasonably identifiable. Else none or unknown.'},
+        "opens_box": {"type": "boolean", "description": 'Is a person actively opening a package, parcel, cardboard box, delivery box, or letterbox/mailbox? Not merely carrying a parcel.'},
+        "porch_access": {"type": "boolean", "description": 'Is a person or visitor walking onto or accessing the front porch/entrance?'},
+        "animal_detected": {"type": "boolean", "description": 'Is any animal visible (dog, cat, bird, wildlife), with or without a person?'},
+        "animal_type": {"type": "string", "enum": ["dog", "cat", "bird", "wildlife", "other", "none"], "description": 'Short lowercase: dog, cat, bird, wildlife, other, or none. Must be none if animal_detected is false.'},
+    },
+}
+BACK_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": [
+        "dog_walked",
+        "approaching_house",
+        "leaving_house",
+        "weapon_detected",
+        "clothes_drying",
+        "animal_detected",
+        "animal_type",
+    ],
+    "properties": {
+        "dog_walked": {"type": "boolean", "description": 'Is a person walking a dog visible in the yard/back area? A dog alone is animal_detected only.'},
+        "approaching_house": {"type": "boolean", "description": 'Is a person approaching the house (walking toward the house/door/porch, or arriving onto the property)? Mutually exclusive with leaving_house when direction is clear.'},
+        "leaving_house": {"type": "boolean", "description": 'Is a person leaving the house (walking away toward the gate/street/off property)?'},
+        "weapon_detected": {"type": "boolean", "description": 'Is a person holding or brandishing any weapon (knife, gun, bat, object)?'},
+        "clothes_drying": {"type": "boolean", "description": 'Is a person hanging, pegging, or collecting clothes/laundry on a clothesline or drying rack?'},
+        "animal_detected": {"type": "boolean", "description": 'Is any animal visible (dog, cat, bird, wildlife), with or without a person?'},
+        "animal_type": {"type": "string", "enum": ["dog", "cat", "bird", "wildlife", "other", "none"], "description": 'Short lowercase: dog, cat, bird, wildlife, other, or none. Must be none if animal_detected is false.'},
+    },
+}
+LLM_SCHEMA = FRONT_SCHEMA
+FRONT_FLAG_KEYS = tuple(FRONT_SCHEMA["required"])
+BACK_FLAG_KEYS = tuple(BACK_SCHEMA["required"])
+LLM_ACTIVITY_KEYS = tuple(dict.fromkeys(FRONT_FLAG_KEYS + BACK_FLAG_KEYS))
+LLM_ALL_FLAG_KEYS = set(LLM_ACTIVITY_KEYS)
+LLM_TRIGGER_LABELS = ("person", "dog", "cat", "bird", "face", "body")
+YOLO_PRESENCE_KEYS = ("person", "dog", "car", "cat", "bird", "face", "body")
+LLM_META_KEYS = (
+    "fast_pass", "_yolo", "description", "_llm", "_llm_skip",
+    "_llm_model", "_llm_ms", "_llm_raw",
+)
+FRONT_MAX_TOKENS = 220
+BACK_MAX_TOKENS = 160
+
+LLM_RAM_FLOOR_LOADED_GB = 0.8
+
+
+def camera_kind(path):
+    """Webcam21 / 10.0.0.21 = front (HA front_door). Webcam22 / 10.0.0.22 = back."""
+    blob = (path or "").replace("\\", "/").lower()
+    if "webcam22" in blob or "10.0.0.22" in blob:
+        return "back"
+    if "webcam21" in blob or "10.0.0.21" in blob:
+        return "front"
+    return "front"
+
+
+def schema_for_kind(kind):
+    return BACK_SCHEMA if kind == "back" else FRONT_SCHEMA
+
+
+def max_tokens_for_kind(kind):
+    return BACK_MAX_TOKENS if kind == "back" else FRONT_MAX_TOKENS
+
+
+def llm_should_trigger(fp_results):
+    """LLM on person/dog/animal hits. Car-only does not trigger."""
+    return any(k in LLM_TRIGGER_LABELS and k not in GATE_IGNORE_LABELS and v is True
+               for k, v in (fp_results or {}).items())
+
+
+def detector_labels(fp_results):
+    return {k: v for k, v in (fp_results or {}).items()
+            if k not in LLM_META_KEYS and k not in LLM_ALL_FLAG_KEYS}
+
+
+def ollama_model_loaded(tag):
+    """True if Ollama already has this local model resident (/api/ps)."""
+    if not tag or model_is_cloud(tag):
+        return False
+    try:
+        r = requests.get(f"{OLLAMA_URL}/api/ps", timeout=2)
+        if not r.ok:
+            return False
+        want = tag.strip()
+        for m in (r.json() or {}).get("models", []) or []:
+            name = (m.get("name") or m.get("model") or "").strip()
+            if name == want or name.startswith(want):
+                return True
+    except Exception:
+        return False
+    return False
+
+
+def local_mem_threshold():
+    """If e2b is already loaded, only require a small decode floor.
+    If it is not loaded, require min_mem_for_local_gb so we skip rather than OOM."""
+    for tag in (MODEL_PRIMARY, MODEL_FALLBACK):
+        if isinstance(tag, str) and tag.strip() and ollama_model_loaded(tag):
+            return LLM_RAM_FLOOR_LOADED_GB
+    return MIN_MEM_FOR_LOCAL_GB
 
 # Home Assistant vision schemas for structured e2b deep-pass analysis
 # (enforced via Ollama API `format` parameter, not in the prompt)
@@ -397,6 +550,44 @@ def log_inference(image, model, started, duration, labels, ok, trigger):
         except OSError:
             pass
 
+def merge_llm_into_fastpass(fp_results, llm_result, skip_reason=None, model=None, duration_s=None, raw=None, schema=None):
+    """Keep YOLO/detector flags; attach structured LLM flags or a skip reason.
+
+    Schema keys are merged onto the existing record. Detector person/dog/car
+    (and other YOLO labels) are never overwritten by the LLM.
+    """
+    rec = detector_labels(fp_results)
+    if skip_reason or not isinstance(llm_result, dict):
+        rec["fast_pass"] = "partial"
+        rec["_llm_skip"] = skip_reason or "llm_failed"
+        if model:
+            rec["_llm_model"] = model
+        if duration_s is not None:
+            rec["_llm_ms"] = int(duration_s * 1000)
+        return rec
+    flags = {}
+    for k, v in llm_result.items():
+        if k in LLM_META_KEYS or str(k).startswith("_"):
+            continue
+        if k in YOLO_PRESENCE_KEYS:
+            flags[k] = v  # keep under _llm only; do not overwrite YOLO
+            continue
+        rec[k] = v
+        flags[k] = v
+    rec["_llm"] = flags
+    if model:
+        rec["_llm_model"] = model
+    if duration_s is not None:
+        rec["_llm_ms"] = int(duration_s * 1000)
+    if raw is not None:
+        rec["_llm_raw"] = raw
+    if "_yolo" in llm_result:
+        rec["_yolo"] = llm_result["_yolo"]
+    elif "_yolo" not in rec:
+        rec["_yolo"] = sorted(k for k, v in rec.items() if k in YOLO_PRESENCE_KEYS and v is True)
+    return rec
+
+
 def run_deep_pass(image_path, img_name, can_run_chain, api_key, trigger, fp_labels=None):
     """One audited LLM deep pass: local first, cloud fallback.
 
@@ -404,6 +595,7 @@ def run_deep_pass(image_path, img_name, can_run_chain, api_key, trigger, fp_labe
     detector's labels so the UI can require detector+LLM consensus.
     fp_labels=None means "run the detector fresh" (used for re-queued
     partials whose stored labels may be stale, and for backfill)."""
+    global LAST_DURATION_S
     # Once the endpoint has throttled us this sweep, stop spending deep passes
     # against it — resume on the next sweep (~60s later). No hammering.
     if RATE_LIMITED:
@@ -427,7 +619,8 @@ def run_deep_pass(image_path, img_name, can_run_chain, api_key, trigger, fp_labe
             fp_labels = sorted(k for k, v in fp.items() if v is True)
         result["_yolo"] = fp_labels
     labels = sorted(k for k, v in (result or {}).items() if v is True)
-    log_inference(img_name, used, started, time.time() - started,
+    LAST_DURATION_S = time.time() - started
+    log_inference(img_name, used, started, LAST_DURATION_S,
                   labels, result is not None, trigger)
     # Per-image notify (objects/all modes) — ONLY for freshly-queued frames,
     # never the idle backfill of the historical archive (would be a flood).
@@ -456,6 +649,7 @@ def ollama_available():
 #     deep passes (RATE_LIMITED flag) and resumes on the next sweep (~60s).
 RATE_LIMITED = False          # set per-sweep when the LLM endpoint throttles us
 LAST_MODEL_USED = None        # the chain model that actually served the last call
+LAST_DURATION_S = None        # seconds for the last deep pass (ok or fail)
                               # (so logs/status show real cloud-vs-local, not a guess)
 LLM_MAX_RETRIES = 4           # attempts before giving up a single call
 LLM_BACKOFF_BASE = 2.0        # seconds; doubles each retry
@@ -572,6 +766,8 @@ def analyze_image_local(image_path):
     Falls through on rate-limit/error; only bails the sweep (RATE_LIMITED) if the
     WHOLE chain was throttled."""
     global RATE_LIMITED, LAST_MODEL_USED
+    kind = camera_kind(image_path)
+    schema = schema_for_kind(kind)
     base = {
         "messages": [{
             "role": "user",
@@ -579,10 +775,12 @@ def analyze_image_local(image_path):
             "images": [encode_image(image_path)],
         }],
         "stream": False,
-        "format": "json",
+        "format": schema,
+        "think": False,
+        "options": {"num_predict": max_tokens_for_kind(kind), "temperature": 0},
     }
     rate_limited_all, tried = True, 0
-    for model in runnable_chain(MODEL_PRIMARY, MODEL_FALLBACK, get_free_mem_gb(), MIN_MEM_FOR_LOCAL_GB):
+    for model in runnable_chain(MODEL_PRIMARY, MODEL_FALLBACK, get_free_mem_gb(), local_mem_threshold()):
         tried += 1
         try:
             response = _ollama_chat({**base, "model": model}, timeout=600)
@@ -621,7 +819,7 @@ def analyze_burst_local(image_paths, on_progress=None):
     }
     cb = (lambda delta, acc: on_progress(acc)) if on_progress else None
     rate_limited_all, tried = True, 0
-    for model in runnable_chain(MODEL_PRIMARY, MODEL_FALLBACK, get_free_mem_gb(), MIN_MEM_FOR_LOCAL_GB):
+    for model in runnable_chain(MODEL_PRIMARY, MODEL_FALLBACK, get_free_mem_gb(), local_mem_threshold()):
         tried += 1
         try:
             full = _ollama_chat_stream({**base, "model": model}, cb, timeout=900)
@@ -1055,7 +1253,7 @@ def main(retention_only=False):
     ollama_up = ollama_available()
     # The models THIS host can serve right now: cloud models need no RAM, local
     # models need free_mem >= threshold. A cloud primary works on a low-RAM box.
-    serve_chain = runnable_chain(MODEL_PRIMARY, MODEL_FALLBACK, free_mem, MIN_MEM_FOR_LOCAL_GB)
+    serve_chain = runnable_chain(MODEL_PRIMARY, MODEL_FALLBACK, free_mem, local_mem_threshold())
     can_run_chain = ollama_up and bool(serve_chain)
     # Master gate for any LLM deep-pass/burst work this sweep
     llm_ready = DEEP_PASSES_ENABLED and (can_run_chain or (ALLOW_CLOUD and api_key))
@@ -1092,8 +1290,9 @@ def main(retention_only=False):
         missing = [i for i in images if i not in analysis_data]
         partials = [i for i in images if i in analysis_data and analysis_data[i].get("fast_pass") == "partial"]
         
-        # Combine: newest missing first, then partials
-        queue = sorted(missing, key=lambda x: os.path.getmtime(os.path.join(image_dir, x)), reverse=True) + partials
+        # Combine: newest missing first, then newest partials (live hits first)
+        _mtime = lambda x: os.path.getmtime(os.path.join(image_dir, x))
+        queue = sorted(missing, key=_mtime, reverse=True) + sorted(partials, key=_mtime, reverse=True)
         
         if not queue:
             print(f"No pending analysis for {image_dir}")
@@ -1108,17 +1307,14 @@ def main(retention_only=False):
             # If it's a partial, we already have fp_results
             was_partial = img in analysis_data and analysis_data[img].get("fast_pass") == "partial"
             if was_partial:
-                fp_results = {k:v for k,v in analysis_data[img].items()
-                              if k not in ("fast_pass", "_yolo", "description")}
+                fp_results = detector_labels(analysis_data[img])
             else:
                 fp_results = fast_pass_dispatch(image_path)
 
             if fp_results:
                 needs_deep = img not in analysis_data or analysis_data[img].get("fast_pass") == "partial"
-                # A hit consisting only of ignored labels (e.g. the
-                # permanently parked car) is recorded but not urgent -
-                # the idle backfill verifies it later.
-                urgent = any(k not in GATE_IGNORE_LABELS for k, v in fp_results.items() if v is True)
+                # YOLO person/dog/animal hits go to e2b. Car-only does not.
+                urgent = llm_should_trigger(fp_results)
 
                 if needs_deep and urgent:
                     print(f"Deep Pass Required for {img}: {fp_results}")
@@ -1135,18 +1331,33 @@ def main(retention_only=False):
                         result = run_deep_pass(image_path, img, can_run_chain, api_key,
                                                "priority", fp_labels=fresh_fp)
                         deep_pass_count += 1
-
-                    if result:
-                        analysis_data[img] = result
-                        new_analysis = True
+                        if result:
+                            analysis_data[img] = merge_llm_into_fastpass(
+                                fp_results, result, model=LAST_MODEL_USED,
+                                duration_s=LAST_DURATION_S)
+                        else:
+                            analysis_data[img] = merge_llm_into_fastpass(
+                                fp_results, None, skip_reason="llm_failed",
+                                duration_s=LAST_DURATION_S)
                     else:
-                        # Still partial (limit reached or failed)
-                        analysis_data[img] = {**fp_results, "fast_pass": "partial"}
-                        new_analysis = True
+                        if not DEEP_PASSES_ENABLED:
+                            skip = "llm_disabled"
+                        elif not ollama_up:
+                            skip = "ollama_down"
+                        elif not serve_chain:
+                            skip = "low_mem"
+                        else:
+                            skip = "budget"
+                        analysis_data[img] = merge_llm_into_fastpass(
+                            fp_results, None, skip_reason=skip)
+                    new_analysis = True
                 elif needs_deep:
-                    partial = {**fp_results, "fast_pass": "partial"}
-                    if analysis_data.get(img) != partial:
-                        analysis_data[img] = partial
+                    # Car-only / other non-trigger labels: persist detector
+                    # and a skip reason. Do NOT mark partial (would re-queue).
+                    rec = detector_labels(fp_results)
+                    rec["_llm_skip"] = "no_trigger"
+                    if analysis_data.get(img) != rec:
+                        analysis_data[img] = rec
                         new_analysis = True
             else:
                 # Negative fast pass
@@ -1218,7 +1429,10 @@ def main(retention_only=False):
             for img, result in results:
                 deep_pass_count += 1
                 if result:
-                    analysis_data[img] = result
+                    prior = detector_labels(analysis_data.get(img) or {})
+                    analysis_data[img] = merge_llm_into_fastpass(
+                        prior, result, model=LAST_MODEL_USED,
+                        duration_s=LAST_DURATION_S)
                     new_analysis = True
             if workers > 1:
                 ex.shutdown(wait=True)

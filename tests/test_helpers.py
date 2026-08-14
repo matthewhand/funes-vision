@@ -578,3 +578,89 @@ class TestApplyRetention(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestE2bSchema(unittest.TestCase):
+    def test_camera_kind(self):
+        ck = analyze_images.camera_kind
+        self.assertEqual(ck("/mnt/models/Webcam21/10.0.0.21_01_x.jpg"), "front")
+        self.assertEqual(ck("/mnt/models/Webcam22/10.0.0.22_01_x.jpg"), "back")
+
+    def test_tokens_and_schema(self):
+        self.assertEqual(analyze_images.max_tokens_for_kind("front"), 220)
+        self.assertEqual(analyze_images.max_tokens_for_kind("back"), 160)
+        front = analyze_images.schema_for_kind("front")["required"]
+        back = analyze_images.schema_for_kind("back")["required"]
+        self.assertIn("postal_delivery", front)
+        self.assertIn("porch_access", front)
+        self.assertNotIn("weapon_detected", front)
+        self.assertIn("weapon_detected", back)
+        self.assertIn("approaching_house", back)
+        self.assertNotIn("postal_delivery", back)
+
+    def test_trigger_person_dog_car(self):
+        trig = analyze_images.llm_should_trigger
+        self.assertTrue(trig({"person": True}))
+        self.assertTrue(trig({"dog": True}))
+        self.assertTrue(trig({"cat": True}))
+        self.assertTrue(trig({"bird": True}))
+        self.assertTrue(trig({"person": True, "car": True}))
+        self.assertFalse(trig({"car": True}))
+        self.assertFalse(trig({}))
+        self.assertFalse(trig(None))
+
+    def test_merge_keeps_yolo(self):
+        fp = {"person": True, "car": True, "fast_pass": "partial"}
+        llm = {"postal_delivery": False, "postal_how": "none",
+               "porch_access": True, "animal_detected": True,
+               "animal_type": "dog", "_yolo": ["person", "car"]}
+        rec = analyze_images.merge_llm_into_fastpass(
+            fp, llm, model="gemma4:e2b", duration_s=1.2, schema=analyze_images.FRONT_SCHEMA)
+        self.assertTrue(rec["person"])
+        self.assertTrue(rec["car"])
+        self.assertTrue(rec["porch_access"])
+        self.assertEqual(rec["animal_type"], "dog")
+        self.assertEqual(rec["_llm_model"], "gemma4:e2b")
+        self.assertEqual(rec["_llm_ms"], 1200)
+        self.assertNotIn("fast_pass", rec)
+        self.assertEqual(rec["_yolo"], ["person", "car"])
+
+    def test_merge_skip_low_mem(self):
+        fp = {"person": True, "dog": True}
+        rec = analyze_images.merge_llm_into_fastpass(fp, None, skip_reason="ram_tight")
+        self.assertTrue(rec["person"])
+        self.assertTrue(rec["dog"])
+        self.assertEqual(rec["fast_pass"], "partial")
+        self.assertEqual(rec["_llm_skip"], "ram_tight")
+
+    def test_analyze_local_payload_uses_schema_not_prompt(self):
+        ai = analyze_images
+        ai.MODEL_PRIMARY, ai.MODEL_FALLBACK = "gemma4:e2b", ""
+        ai.MIN_MEM_FOR_LOCAL_GB = 0.0
+        ai.encode_image = lambda p: "x"
+        captured = {}
+
+        class OK:
+            def json(self):
+                return {"message": {"content": '{"postal_delivery": false, "postal_how": "none", "dog_walked": false, "car_access": false, "enters_car": false, "exits_car": false, "car_outfit": "none", "car_color": "none", "car_make": "none", "opens_box": false, "porch_access": true, "animal_detected": false, "animal_type": "none"}'}}
+
+        def fake_chat(payload, timeout):
+            captured.update(payload)
+            return OK()
+
+        orig, ai._ollama_chat = ai._ollama_chat, fake_chat
+        orig_thr, ai.local_mem_threshold = ai.local_mem_threshold, (lambda: 0.0)
+        ai.RATE_LIMITED = False
+        try:
+            res = ai.analyze_image_local("/mnt/models/Webcam21/10.0.0.21_x.jpg")
+        finally:
+            ai._ollama_chat = orig
+            ai.local_mem_threshold = orig_thr
+        self.assertEqual(captured["format"], ai.FRONT_SCHEMA)
+        self.assertEqual(captured["think"], False)
+        self.assertEqual(captured["options"]["num_predict"], 220)
+        self.assertEqual(captured["messages"][0]["content"], "Look at this image and answer the questions.")
+        self.assertNotIn("postal_delivery", captured["messages"][0]["content"])
+        self.assertNotIn("JSON", captured["messages"][0]["content"])
+        self.assertEqual(res["porch_access"], True)
+        self.assertEqual(res["postal_how"], "none")
