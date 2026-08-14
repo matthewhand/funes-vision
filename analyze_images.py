@@ -254,6 +254,18 @@ def schema_for_kind(kind):
     return BACK_SCHEMA if kind == "back" else FRONT_SCHEMA
 
 
+def get_llm_schema():
+    """Read-only export of the live prompt + HA schemas for the UI viewer."""
+    return {
+        "prompt": DETECT_PROMPT,
+        "schemas": {
+            "front_door": FRONT_SCHEMA,
+            "dog_cam": BACK_SCHEMA,
+        },
+        "note": "Schema is enforced by the Ollama chat API 'format' parameter, not included in the prompt.",
+    }
+
+
 def max_tokens_for_kind(kind):
     return BACK_MAX_TOKENS if kind == "back" else FRONT_MAX_TOKENS
 
