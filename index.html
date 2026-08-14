@@ -859,6 +859,21 @@
       font-style: italic;
     }
 
+    /* Home Assistant (HA) flag badges from e2b deep-pass */
+    .tag-ha {
+      background: rgba(139, 92, 246, 0.15);
+      color: #a78bfa;
+      border: 1px solid rgba(139, 92, 246, 0.3);
+      font-size: 0.68rem;
+    }
+
+    .tag-ha-string {
+      background: rgba(59, 130, 246, 0.15);
+      color: var(--accent-fg);
+      border: 1px solid var(--accent-25);
+      font-size: 0.68rem;
+    }
+
     .btn-mode-toggle {
       border-color: var(--accent);
       color: var(--accent);
@@ -2723,6 +2738,39 @@
     }
     // === /pure:badgeStateFor ===
 
+    // === pure:getHAFlags ===
+    // Extract Home Assistant vision flags from e2b deep-pass analysis records.
+    // Returns array of {label, value, isString} for flags that are set.
+    // HA boolean flags (true) and string fields (non-empty) are included.
+    function getHAFlags(analysis) {
+      if (!analysis) return [];
+      
+      // Known HA flag fields (boolean and string) from both schemas
+      const haFieldNames = new Set([
+        'postal_delivery', 'postal_how', 'dog_walked', 'car_access', 
+        'enters_car', 'exits_car', 'car_outfit', 'car_color', 'car_make',
+        'opens_box', 'porch_access', 'animal_detected', 'animal_type',
+        'approaching_house', 'leaving_house', 'weapon_detected', 'clothes_drying'
+      ]);
+      
+      const flags = [];
+      for (const [key, value] of Object.entries(analysis)) {
+        if (!haFieldNames.has(key)) continue;
+        
+        // Boolean flags: only include if true
+        if (value === true) {
+          flags.push({ label: key, value: true, isString: false });
+        }
+        // String fields: only include if non-empty
+        else if (typeof value === 'string' && value.trim()) {
+          flags.push({ label: key, value: value, isString: true });
+        }
+      }
+      
+      return flags;
+    }
+    // === /pure:getHAFlags ===
+
     // === pure:visibleLabels ===
     // Disputed-hiding is a PRECISION-MODE feature: 'disputed' means the two
     // models disagreed, which only happens when Gemma deep passes run. With
@@ -3915,6 +3963,22 @@
               <span style="text-transform: capitalize;" aria-hidden="true">${escapeHtml(label)}${suffix}</span>
             </span>`;
         });
+
+        // Home Assistant flags from e2b deep-pass (after YOLO/Gemma labels)
+        if (analysis._llm || analysis._llm_skip) {
+          const haFlags = getHAFlags(analysis);
+          haFlags.forEach(({ label, value, isString }) => {
+            const icon = 'zap';
+            const cls = isString ? 'tag-ha-string' : 'tag-ha';
+            const displayLabel = label.replace(/_/g, ' ');
+            const displayValue = isString ? `: ${value}` : '';
+            detectionsHtml += `
+              <span class="badge badge-ai ${cls}" role="img" aria-label="HA ${displayLabel}${displayValue}">
+                <i data-lucide="${icon}" aria-hidden="true"></i>
+                <span style="text-transform: capitalize;" aria-hidden="true">${escapeHtml(displayLabel)}${displayValue}</span>
+              </span>`;
+          });
+        }
 
         if (detectionsHtml === '') {
           // No object badges -> show a calm state instead of an empty middle,
@@ -5178,6 +5242,57 @@
               <div>${s.metrics.count} runs &middot; ${Math.round(s.metrics.success_rate * 100)}% ok${s.metrics.failures ? ` <span style="color:#ef4444;">(${s.metrics.failures} fail)</span>` : ''}</div>
               <div>${s.metrics.local} local / ${s.metrics.cloud} cloud &middot; avg ${fmtDur(s.metrics.avg_s)} &middot; p95 ${fmtDur(s.metrics.p95_s)}</div>`
               : '<div style="color:var(--text-secondary);">no inferences in window</div>'}
+            <div style="margin-top:8px;font-weight:700;text-transform:uppercase;font-size:0.7rem;color:var(--text-secondary);border-bottom:1px solid var(--border-color);padding-bottom:3px;">E2B Deep-Pass (HA Flags)</div>
+            ${(() => {
+              // Show latest HA flags per camera from analysis.json
+              const cameras = [
+                { name: 'Front Door (21)', ip: '10.0.0.21', schema: 'front_door' },
+                { name: 'Dog Cam (22)', ip: '10.0.0.22', schema: 'dog_cam' }
+              ];
+              
+              const haSchemas = {
+                front_door: ['postal_delivery', 'dog_walked', 'car_access', 'enters_car', 'exits_car', 'opens_box', 'porch_access', 'animal_detected'],
+                dog_cam: ['dog_walked', 'approaching_house', 'leaving_house', 'weapon_detected', 'clothes_drying', 'animal_detected']
+              };
+              
+              return cameras.map(cam => {
+                // Find latest record with _llm or _llm_skip for this camera's schema
+                const schemaFlags = haSchemas[cam.schema];
+                let latestRecord = null;
+                let latestTs = 0;
+                
+                for (const [filename, record] of Object.entries(state.analysis)) {
+                  if (!record._llm && !record._llm_skip) continue;
+                  const ts = record._llm || 0;
+                  
+                  // Match by checking if any schema-specific flags are present
+                  const hasSchemaFlags = schemaFlags.some(f => f in record);
+                  if (hasSchemaFlags && ts > latestTs) {
+                    latestRecord = record;
+                    latestTs = ts;
+                  }
+                }
+                
+                if (!latestRecord) {
+                  return `<div><b>${escapeHtml(cam.name)}:</b> <span style="color:var(--text-secondary);">no e2b data</span></div>`;
+                }
+                
+                let status = '';
+                if (latestRecord._llm_skip) {
+                  status = `<span style="color:#f59e0b;">skipped: ${escapeHtml(latestRecord._llm_skip)}</span>`;
+                } else {
+                  const activeFlags = getHAFlags(latestRecord).slice(0, 4); // First 4 flags
+                  const flagsText = activeFlags.length > 0
+                    ? activeFlags.map(f => f.isString ? `${f.label}:${f.value}` : f.label).join(', ')
+                    : 'no flags';
+                  const model = latestRecord._llm_model ? ` · ${latestRecord._llm_model}` : '';
+                  const latency = latestRecord._llm_ms ? ` · ${Math.round(latestRecord._llm_ms)}ms` : '';
+                  status = `${flagsText}${model}${latency}`;
+                }
+                
+                return `<div><b>${escapeHtml(cam.name)}:</b> ${status}</div>`;
+              }).join('');
+            })()}
             <div style="margin-top:8px;font-weight:700;text-transform:uppercase;font-size:0.7rem;color:var(--text-secondary);border-bottom:1px solid var(--border-color);padding-bottom:3px;">AI Audit Trail</div>
             <div data-audit-trail style="max-height:200px;overflow-y:auto;">${trail}</div>`;
         } catch (err) {
