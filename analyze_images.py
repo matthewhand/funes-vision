@@ -1351,6 +1351,11 @@ def main(retention_only=False):
                         analysis_data[img] = merge_llm_into_fastpass(
                             fp_results, None, skip_reason=skip)
                     new_analysis = True
+                    try:
+                        import ha_mqtt
+                        ha_mqtt.publish_record(img, analysis_data[img], image_path)
+                    except Exception as e:
+                        print(f"ha mqtt publish failed: {e}")
                 elif needs_deep:
                     # Car-only / other non-trigger labels: persist detector
                     # and a skip reason. Do NOT mark partial (would re-queue).
@@ -1562,6 +1567,15 @@ def main(retention_only=False):
         print(f"Health check failed: {e}")
 
 if __name__ == "__main__":
+    # --publish-latest: one-shot retained MQTT of newest FRONT/BACK analyses.
+    if "--publish-latest" in sys.argv:
+        import ha_mqtt
+        out = ha_mqtt.publish_latest()
+        for kind, pair in out.items():
+            ok, detail = pair
+            status = "ok" if ok else "FAIL"
+            print(f"{kind}: {status} {detail}")
+        raise SystemExit(0 if out and any(ok for ok, _ in out.values()) else 2)
     # --retention-only: apply settings.json age/disk budgets + prune catalogs,
     # then exit. Used by the cron watchdog so cleanup never depends solely on
     # the long-lived create-index / analyze loop staying healthy.
