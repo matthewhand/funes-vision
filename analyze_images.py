@@ -36,6 +36,8 @@ YOLO_CONF = 0.45
 DEEP_BACKFILL = True  # idle sweeps spend leftover LLM budget verifying negatives, newest first
 DEEP_PASSES_ENABLED = True  # master switch for ALL Gemma/LLM work (priority + backfill + bursts);
                             # set false to run detector-only and free CPU/RAM
+BURST_SUMMARIES_ENABLED = False  # multi-image (burst) LLM captions; off by default —
+                                 # e2b 400s on multi-frame chat, and single-frame analysis is enough
 WATCH_DIRS = []  # REQUIRED via settings.json watch_dirs - deployment specific
 # Labels that alone do NOT trigger an urgent deep pass (e.g. a car parked
 # in frame 24/7); they're recorded and verified later by the backfill.
@@ -59,6 +61,7 @@ if os.path.exists(_settings_path):
         FAST_PASS_ENGINE = _s.get("fast_pass_engine", FAST_PASS_ENGINE)
         DEEP_BACKFILL = _s.get("deep_backfill", DEEP_BACKFILL)
         DEEP_PASSES_ENABLED = _s.get("deep_passes_enabled", DEEP_PASSES_ENABLED)
+        BURST_SUMMARIES_ENABLED = _s.get("burst_summaries_enabled", BURST_SUMMARIES_ENABLED)
         GATE_IGNORE_LABELS = _s.get("gate_ignore_labels", GATE_IGNORE_LABELS)
         WATCH_DIRS = _s.get("watch_dirs", WATCH_DIRS)
         YOLO_DIR = _s.get("yolo_dir", YOLO_DIR)
@@ -1273,7 +1276,8 @@ def main(retention_only=False):
         "ON" if DEEP_PASSES_ENABLED else "OFF (detector-only)")
     print(f"System Check: Free Memory = {free_mem:.1f}GB. Ollama up: {ollama_up}. "
           f"Runnable chain: {serve_chain or '[]'}. OpenRouter cloud: {ALLOW_CLOUD}. "
-          f"Deep passes: {mode}")
+          f"Deep passes: {mode}. Burst summaries: "
+          f"{'ON' if BURST_SUMMARIES_ENABLED else 'OFF'}")
 
     for image_dir in watch_dirs:
         if not os.path.exists(image_dir): continue
@@ -1489,7 +1493,7 @@ def main(retention_only=False):
             # Only analyze burst if at least one image has a detection
             has_detection = any(img in analysis_data and any(v is True for k, v in analysis_data[img].items() if k != 'fast_pass') for img in burst)
             
-            if has_detection and llm_ready:
+            if has_detection and llm_ready and BURST_SUMMARIES_ENABLED:
                 print(f"Analyzing burst ending at {burst_id}...")
                 full_paths = [os.path.join(image_dir, f) for f in burst[-3:]] # Take last 3 max
                 started = time.time()

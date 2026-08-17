@@ -1967,6 +1967,10 @@
                 <span>Gemma backfill when idle</span>
                 <div class="blacklist-status"></div>
               </div>
+              <div class="blacklist-item" id="burst-summaries-toggle" title="LLM caption of a multi-frame visit (last 3 images). Off by default — single-frame analysis is unchanged." style="margin-top: 8px;">
+                <span>Multi-image summaries</span>
+                <div class="blacklist-status"></div>
+              </div>
               <div class="menu-section-title with-gap">
                 Intervals
               </div>
@@ -4089,25 +4093,30 @@
     const detectorSelect = document.getElementById('detector-select');
     const backfillToggle = document.getElementById('backfill-toggle');
     const deepPassesToggle = document.getElementById('deep-passes-toggle');
+    const burstSummariesToggle = document.getElementById('burst-summaries-toggle');
     const sweepIntervalInput = document.getElementById('sweep-interval-input');
     let backfillOn = true;
     let deepPassesOn = true;
+    let burstSummariesOn = false;
     const renderBackfillToggle = () => backfillToggle.classList.toggle('hidden-label', !backfillOn);
     const renderDeepPassesToggle = () => deepPassesToggle.classList.toggle('hidden-label', !deepPassesOn);
+    const renderBurstSummariesToggle = () => burstSummariesToggle.classList.toggle('hidden-label', !burstSummariesOn);
     (async () => {
       try {
         const s = await apiFetch('/api/settings');
         if (s.fast_pass_engine) detectorSelect.value = s.fast_pass_engine;
         if (typeof s.deep_backfill === 'boolean') backfillOn = s.deep_backfill;
         if (typeof s.deep_passes_enabled === 'boolean') deepPassesOn = s.deep_passes_enabled;
+        if (typeof s.burst_summaries_enabled === 'boolean') burstSummariesOn = s.burst_summaries_enabled;
         sweepIntervalInput.value = s.idle_sweep_seconds || 60;
         renderBackfillToggle();
         renderDeepPassesToggle();
+        renderBurstSummariesToggle();
       } catch (e) { /* API offline/timeout; controls show defaults */ }
     })();
 
     // Make the Settings on/off toggles accessible switches (keyboard + aria-checked).
-    ['alias-toggle', 'unconfirmed-toggle', 'deep-passes-toggle', 'backfill-toggle', 'slack-enabled-toggle']
+    ['alias-toggle', 'unconfirmed-toggle', 'deep-passes-toggle', 'backfill-toggle', 'burst-summaries-toggle', 'slack-enabled-toggle']
       .forEach(id => bindSwitch(document.getElementById(id)));
 
     // Resolve the display timezone from the API (WEBCAM_TZ env > settings >
@@ -4161,7 +4170,20 @@
         showToast('Failed to update - is the API service running?');
       }
     };
+    burstSummariesToggle.onclick = async () => {
+      try {
+        await apiPost('/api/settings', { burst_summaries_enabled: !burstSummariesOn });
+        burstSummariesOn = !burstSummariesOn;
+        renderBurstSummariesToggle();
+        showToast(burstSummariesOn
+          ? 'Multi-image summaries ON - Gemma will caption visits'
+          : 'Multi-image summaries OFF');
+      } catch (err) {
+        showToast('Failed to update - is the API service running?');
+      }
+    };
     renderBackfillToggle();
+    renderBurstSummariesToggle();
     renderDeepPassesToggle();
 
     async function deleteImage(filename) {
@@ -5207,6 +5229,7 @@
             <div><b>Fast detector:</b> ${(s.settings.fast_pass_engine || 'yolo').toUpperCase()}</div>
             <div><b>LLM:</b> ${s.llm.model || '?'} ${ok(s.llm.reachable)} ${s.llm.allow_cloud ? '(+cloud)' : '(local only)'}</div>
             <div><b>Idle backfill:</b> ${s.settings.deep_backfill ? 'on' : 'off'}</div>
+            <div><b>Multi-image summaries:</b> ${s.settings.burst_summaries_enabled ? 'on' : 'off'}</div>
             <div><b>Quiet labels:</b> ${(s.settings.gate_ignore_labels || []).join(', ') || 'none'}</div>
             <div style="margin-top:6px;"><b>Queue:</b>
               ${formatCount(s.queue.unanalyzed)} new &middot; ${formatCount(s.queue.unverified_partials)} priority &middot;

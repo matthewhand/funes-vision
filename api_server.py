@@ -46,6 +46,7 @@ MUTABLE_SETTINGS = {
     "fast_pass_engine": {"choices": ("yolo", "haar")},
     "deep_backfill": {"choices": (True, False)},
     "deep_passes_enabled": {"choices": (True, False)},
+    "burst_summaries_enabled": {"choices": (True, False)},
     "idle_sweep_seconds": {"min": 15, "max": 3600},
 }
 

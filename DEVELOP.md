@@ -103,10 +103,11 @@ no restarts needed). Per camera dir, in order:
    `_atomic_write_json` under `_IO_LOCK` so concurrent passes and the live
    API reader never see a half-written file.
 7. **Bursts** — consecutive images < `burst_threshold_seconds` apart form
-   a burst; bursts containing a detection get an LLM sequence summary
-   (last 3 frames). Invalid cached bursts (missing files, or spans
-   violating the chain rule) are pruned and re-detected. A new summary is
-   fanned out to enabled notifiers — see [Integrations](#integrations).
+   a burst. If `burst_summaries_enabled` (default **off**, UI-toggleable),
+   bursts containing a detection get an LLM sequence summary (last 3
+   frames). Invalid cached bursts (missing files, or spans violating the
+   chain rule) are pruned and re-detected. A new summary is fanned out to
+   enabled notifiers — see [Integrations](#integrations).
 8. **Pruning** — analysis/burst entries whose files no longer exist
    (retention, API delete, external cleanup) are removed.
 
@@ -320,7 +321,7 @@ stream (`image.new` / `detection.preliminary` / `new-detection` / `new-burst`;
 are documented once in [API.md](API.md)** — the source of truth; keep it in
 sync with the code. Two things worth repeating here: the only settings
 `POST /api/settings` will accept are `fast_pass_engine`, `deep_backfill`,
-`deep_passes_enabled`, `idle_sweep_seconds`; and `GET /api/integrations` is
+`deep_passes_enabled`, `burst_summaries_enabled`, `idle_sweep_seconds`; and `GET /api/integrations` is
 always **redacted** (token presence, never values — see [Integrations](#integrations)).
 
 API origin: the UI calls the API **same-origin at `/api/`** so there's no
@@ -453,6 +454,7 @@ move → verify) lives in [ROADMAP.md](ROADMAP.md).
 | `fast_pass_engine` | yolo | `yolo` or `haar` (UI-selectable) |
 | `deep_passes_enabled` | true | master switch for ALL Gemma work (priority+backfill+bursts); false = detector-only, no LLM (UI-toggleable) |
 | `deep_backfill` | true | idle LLM verification of the archive (UI-toggleable) |
+| `burst_summaries_enabled` | false | multi-image (burst) LLM captions of a visit; off does not affect single-frame deep passes (UI-toggleable) |
 | `gate_ignore_labels` | ["car"] | labels that alone don't trigger urgent deep passes |
 | `camera_offline_hours` | 24 | no frames in this long → a Slack "camera offline?" alert |
 

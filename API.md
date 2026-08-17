@@ -38,7 +38,7 @@ Permanently remove an image and its thumbnail, and unpin it.
 
 ### `GET /api/settings`
 The mutable settings subset only.
-- **200** → `{"fast_pass_engine", "deep_backfill", "deep_passes_enabled", "idle_sweep_seconds"}`
+- **200** → `{"fast_pass_engine", "deep_backfill", "deep_passes_enabled", "burst_summaries_enabled", "idle_sweep_seconds"}`
 
 ### `POST /api/settings`
 Update one or more mutable settings (validated; others ignored).
@@ -46,6 +46,7 @@ Update one or more mutable settings (validated; others ignored).
   - `fast_pass_engine` ∈ `"yolo" | "haar"`
   - `deep_backfill` ∈ `true | false`
   - `deep_passes_enabled` ∈ `true | false`
+  - `burst_summaries_enabled` ∈ `true | false`
   - `idle_sweep_seconds` ∈ integer `15..3600`
 - **200** → `{"ok": true, ...changed}`
 - **400** → `{"error": "<key> must be <choices|range>"}` on an invalid value,

@@ -25,6 +25,9 @@ class TestSettingValid(unittest.TestCase):
     def test_choice_ok(self):
         self.assertTrue(api_server.setting_valid("fast_pass_engine", "yolo"))
         self.assertTrue(api_server.setting_valid("deep_passes_enabled", False))
+        self.assertTrue(api_server.setting_valid("burst_summaries_enabled", False))
+        self.assertTrue(api_server.setting_valid("burst_summaries_enabled", True))
+        self.assertFalse(api_server.setting_valid("burst_summaries_enabled", "yes"))
 
     def test_choice_bad(self):
         self.assertFalse(api_server.setting_valid("fast_pass_engine", "nope"))
