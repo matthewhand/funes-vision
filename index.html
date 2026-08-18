@@ -2292,6 +2292,41 @@
     }
     // === /pure:zonedTimeToUtc ===
 
+    // === pure:hourInZone ===
+    // 0–23 hour of `dateObj` in IANA zone `tz`. Used so hour filters match
+    // the clock printed on the card (DISPLAY_TZ), not the filename's source hour.
+    function hourInZone(dateObj, tz) {
+      if (!dateObj || typeof dateObj.getTime !== 'function' || !isFinite(dateObj.getTime())) return -1;
+      try {
+        const parts = new Intl.DateTimeFormat('en-GB', {
+          timeZone: tz || 'UTC', hour: '2-digit', hourCycle: 'h23',
+        }).formatToParts(dateObj);
+        const h = parts.find(p => p.type === 'hour');
+        let n = h ? parseInt(h.value, 10) : -1;
+        if (n === 24) n = 0;
+        return n;
+      } catch (e) {
+        return -1;
+      }
+    }
+    // === /pure:hourInZone ===
+
+    // === pure:shortTimeZoneName ===
+    function shortTimeZoneName(dateObj, tz) {
+      const d = (dateObj && typeof dateObj.getTime === 'function' && isFinite(dateObj.getTime()))
+        ? dateObj : new Date();
+      try {
+        const parts = new Intl.DateTimeFormat('en-AU', {
+          timeZone: tz || 'UTC', timeZoneName: 'short',
+        }).formatToParts(d);
+        const p = parts.find(x => x.type === 'timeZoneName');
+        return p ? p.value : '';
+      } catch (e) {
+        return '';
+      }
+    }
+    // === /pure:shortTimeZoneName ===
+
     // === pure:parseFilenameFields ===
     // Pure parse of a camera filename into its fields — no Date/timezone work.
     // Matched names yield {matched:true, ip, channel, hour, dateStr, timeStr,
@@ -2383,7 +2418,6 @@
       if (meta) {
         if (meta.channel) parts.push(`Channel: ${meta.channel}`);
         if (meta.eventType) parts.push(`Event Type: ${meta.eventType}`);
-        if (meta.ip) parts.push(`Camera IP: ${meta.ip}`);
       }
       let s = parts.join(' | ');
       if (aiText) s = s ? s + aiText : aiText.replace(/^\s*\|\s*/, '');
@@ -2452,7 +2486,7 @@
         ip: f.ip,
         channel: f.channel,
         dateObj,
-        hour: f.hour,
+        hour: hourInZone(dateObj, DISPLAY_TZ),
         dateStr: f.dateStr,
         timeStr: f.timeStr,
         formattedDate: dateObj.toLocaleDateString('en-AU', { month: 'short', day: 'numeric', year: 'numeric', timeZone: DISPLAY_TZ }),
@@ -4908,7 +4942,10 @@
     document.addEventListener('DOMContentLoaded', () => {
       const profile = getFeedProfile();
       document.getElementById('camera-title').textContent = profile.title;
-      document.getElementById('camera-subtitle').textContent = profile.subtitle;
+      const zone = shortTimeZoneName(new Date(), DISPLAY_TZ);
+      document.getElementById('camera-subtitle').textContent = zone
+        ? `${profile.subtitle} · ${zone}`
+        : profile.subtitle;
       document.title = `${profile.title} - CamLog`;
 
       // Set switch feed details

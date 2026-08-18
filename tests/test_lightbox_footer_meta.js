@@ -15,12 +15,12 @@ const meta = { channel: '01', eventType: 'Motion Detected', ip: '10.0.0.21',
 
 // keeps the technical fields, drops date/time (no "Created"/date in the output)
 const out = lightboxFooterMeta(meta, ' | AI: No candidates');
-assert.strictEqual(out, 'Channel: 01 | Event Type: Motion Detected | Camera IP: 10.0.0.21 | AI: No candidates');
+assert.strictEqual(out, 'Channel: 01 | Event Type: Motion Detected | AI: No candidates');
 assert.ok(!/Created|Jun 21|06:08:26/.test(out), 'footer must not repeat the heading date/time');
 
 // no aiText -> just the technical fields
 assert.strictEqual(lightboxFooterMeta(meta, ''),
-  'Channel: 01 | Event Type: Motion Detected | Camera IP: 10.0.0.21');
+  'Channel: 01 | Event Type: Motion Detected');
 
 // aiText but no meta fields -> strip the leading separator (no " | AI: x")
 assert.strictEqual(lightboxFooterMeta({}, ' | AI: Scanned (Clear)'), 'AI: Scanned (Clear)');
