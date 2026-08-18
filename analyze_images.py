@@ -40,7 +40,8 @@ BURST_SUMMARIES_ENABLED = False  # multi-image (burst) LLM captions; off by defa
                                  # e2b 400s on multi-frame chat, and single-frame analysis is enough
 WATCH_DIRS = []  # REQUIRED via settings.json watch_dirs - deployment specific
 # Labels that alone do NOT trigger an urgent deep pass (e.g. a car parked
-# in frame 24/7); they're recorded and verified later by the backfill.
+# in frame 24/7). Persisted as _llm_skip=no_trigger (not partial — that
+# would re-queue as urgent). Idle backfill verifies them later if enabled.
 GATE_IGNORE_LABELS = ["car"]
 
 _settings_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "settings.json")
@@ -282,6 +283,45 @@ def llm_should_trigger(fp_results):
 def detector_labels(fp_results):
     return {k: v for k, v in (fp_results or {}).items()
             if k not in LLM_META_KEYS and k not in LLM_ALL_FLAG_KEYS}
+
+
+def is_llm_verified(rec):
+    """True only after a successful merge_llm_into_fastpass.
+
+    Requires a dict ``_llm`` and no ``_llm_skip``. Missing ``fast_pass``
+    is not enough: car-only ``{car: true}`` and
+    ``{car: true, _llm_skip: no_trigger}`` are detector records, not verdicts.
+    """
+    if not isinstance(rec, dict):
+        return False
+    if rec.get("_llm_skip"):
+        return False
+    return isinstance(rec.get("_llm"), dict)
+
+
+def is_awaiting_backfill(rec):
+    """Queue classification: fast-pass negatives and car-only no_trigger.
+
+    Does not include urgent skip-partials (person/dog + budget/llm_failed);
+    those stay unverified_partials so they re-enter the priority queue.
+    """
+    if not isinstance(rec, dict) or is_llm_verified(rec):
+        return False
+    return rec.get("_llm_skip") == "no_trigger" or rec.get("fast_pass") == "negative"
+
+
+def in_backfill_pool(rec):
+    """Idle deep_backfill candidates (when that setting is on).
+
+    Same as is_awaiting_backfill plus ignore-only partials. Urgent trigger
+    partials stay off this list.
+    """
+    if not isinstance(rec, dict) or is_llm_verified(rec):
+        return False
+    if is_awaiting_backfill(rec):
+        return True
+    return rec.get("fast_pass") == "partial" and \
+        all(k in GATE_IGNORE_LABELS for k, v in rec.items() if v is True)
 
 
 def ollama_model_loaded(tag):
@@ -1403,14 +1443,7 @@ def main(retention_only=False):
         # archive eventually gets HA flags merged onto the detector record
         # (YOLO person/dog/car labels are never overwritten).
         if DEEP_BACKFILL and deep_pass_count < max_deep_passes and llm_ready:
-            def awaiting_backfill(entry):
-                if entry.get("fast_pass") == "negative":
-                    return True
-                # Partials whose only hits are ignored labels (parked car)
-                return entry.get("fast_pass") == "partial" and \
-                    all(k in GATE_IGNORE_LABELS for k, v in entry.items() if v is True)
-
-            pool = [i for i in images if i in analysis_data and awaiting_backfill(analysis_data[i])]
+            pool = [i for i in images if i in analysis_data and in_backfill_pool(analysis_data[i])]
 
             # Prioritize frames near existing detections: appear/disappear
             # boundaries live there, so verifying them first sharpens the
@@ -1419,7 +1452,7 @@ def main(retention_only=False):
             detection_times = sorted(
                 mtime(i) for i in images
                 if i in analysis_data
-                and "fast_pass" not in analysis_data[i]  # an LLM verdict
+                and is_llm_verified(analysis_data[i])
                 and any(v is True for k, v in analysis_data[i].items() if k not in ("_yolo",))
             )
 

@@ -481,28 +481,68 @@ class TestInferenceMetrics(unittest.TestCase):
 class TestDetectionExtract(unittest.TestCase):
     ANALYSIS = {
         "a.jpg": {"car": True, "fast_pass": "partial"},          # preliminary (detector only)
-        "b.jpg": {"person": True},                                # verified (LLM verdict)
-        "c.jpg": {"person": False, "fast_pass": "negative"},      # preliminary record, no true label
-        "d.jpg": {"dog": True, "_yolo": ["dog"]},                 # verified, _yolo ignored
+        "b.jpg": {"person": True},                                # no _llm: not a verdict
+        "c.jpg": {"person": False, "fast_pass": "negative"},      # awaiting backfill, no true label
+        "d.jpg": {"dog": True, "_yolo": ["dog"], "_llm": {"animal_detected": True}},
         "e.jpg": {"person": True, "car": True, "fast_pass": "partial"},  # preliminary, 2 labels
-        "f.jpg": {"person": False, "dog": False},                 # verified-but-empty
+        "f.jpg": {"person": False, "dog": False},                 # empty, no _llm
+        "g.jpg": {"person": True, "_llm": {"porch_access": False}},  # verified (LLM merge)
+        "h.jpg": {"car": True, "_llm_skip": "no_trigger"},        # car-only skip, not verified
+        "i.jpg": {"person": True, "fast_pass": "partial", "_llm_skip": "budget"},
     }
 
-    def test_verified_only_true_verdicts(self):
+    def test_verified_only_llm_merge_with_labels(self):
         h = api_server.Handler
         self.assertEqual(h._verified_detections(self.ANALYSIS),
-                         {"b.jpg": ["person"], "d.jpg": ["dog"]})
+                         {"d.jpg": ["dog"], "g.jpg": ["person"]})
+
+    def test_person_without_llm_is_not_verified(self):
+        rec = {"person": True}
+        self.assertFalse(analyze_images.is_llm_verified(rec))
+        self.assertNotIn("b.jpg", api_server.Handler._verified_detections(self.ANALYSIS))
+        self.assertEqual(api_server.Handler._verified_detections({"x.jpg": rec}), {})
+
+    def test_llm_dict_is_verified(self):
+        rec = {"person": True, "_llm": {"porch_access": False}}
+        self.assertTrue(analyze_images.is_llm_verified(rec))
+        self.assertTrue(analyze_images.is_llm_verified({"_llm": {}}))
+        self.assertEqual(api_server.Handler._verified_detections({"x.jpg": rec}),
+                         {"x.jpg": ["person"]})
+
+    def test_no_trigger_is_not_verified(self):
+        rec = {"car": True, "_llm_skip": "no_trigger"}
+        self.assertFalse(analyze_images.is_llm_verified(rec))
+        self.assertNotIn("h.jpg", api_server.Handler._verified_detections(self.ANALYSIS))
+        self.assertEqual(api_server.Handler._verified_detections({"x.jpg": rec}), {})
+
+    def test_queue_counts_skip_only_and_bare_person(self):
+        q = api_server.queue_from_analysis(self.ANALYSIS)
+        self.assertEqual(q["llm_verified"], 2)          # d, g
+        self.assertEqual(q["awaiting_backfill"], 2)     # c negative, h no_trigger
+        self.assertEqual(q["unverified_partials"], 3)   # a, e, i
+
+    def test_backfill_pool_includes_no_trigger_not_urgent_partials(self):
+        pool = analyze_images.in_backfill_pool
+        self.assertTrue(pool({"fast_pass": "negative"}))
+        self.assertTrue(pool({"car": True, "_llm_skip": "no_trigger"}))
+        self.assertTrue(pool({"car": True, "fast_pass": "partial"}))
+        self.assertFalse(pool({"person": True, "fast_pass": "partial", "_llm_skip": "budget"}))
+        self.assertFalse(pool({"person": True, "_llm": {"porch_access": False}}))
+        self.assertFalse(pool({"person": True}))
 
     def test_preliminary_detector_only_with_labels(self):
         h = api_server.Handler
         self.assertEqual(h._preliminary_detections(self.ANALYSIS),
-                         {"a.jpg": ["car"], "e.jpg": ["car", "person"]})
+                         {"a.jpg": ["car"], "e.jpg": ["car", "person"],
+                          "i.jpg": ["person"]})
 
     def test_verified_and_preliminary_are_disjoint(self):
         h = api_server.Handler
         v = set(h._verified_detections(self.ANALYSIS))
         p = set(h._preliminary_detections(self.ANALYSIS))
         self.assertEqual(v & p, set())
+        self.assertNotIn("h.jpg", v)
+        self.assertNotIn("h.jpg", p)
 
 
 class TestNewEntries(unittest.TestCase):

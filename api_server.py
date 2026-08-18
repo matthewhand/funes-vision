@@ -264,6 +264,31 @@ def _camera_stats(max_dir_gb):
     return cams
 
 
+
+def queue_from_analysis(analysis):
+    """Classify analysis.json records for /api/status queue counts.
+
+    llm_verified requires a successful merge (_llm dict, no _llm_skip).
+    awaiting_backfill is negatives plus car-only no_trigger skips.
+    """
+    from analyze_images import is_awaiting_backfill, is_llm_verified
+    unverified = awaiting = verified = 0
+    for v in analysis.values():
+        if not isinstance(v, dict):
+            continue
+        if v.get("fast_pass") == "partial":
+            unverified += 1
+        if is_awaiting_backfill(v):
+            awaiting += 1
+        if is_llm_verified(v):
+            verified += 1
+    return {
+        "unverified_partials": unverified,
+        "awaiting_backfill": awaiting,
+        "llm_verified": verified,
+    }
+
+
 def pipeline_status():
     """Read-only snapshot of how the pipeline is configured and doing."""
     try:
@@ -321,9 +346,7 @@ def pipeline_status():
     status["queue"] = {
         "images_on_disk": len(files),
         "unanalyzed": max(0, len(files - set(analysis))),
-        "unverified_partials": sum(1 for v in analysis.values() if v.get("fast_pass") == "partial"),
-        "awaiting_backfill": sum(1 for v in analysis.values() if v.get("fast_pass") == "negative"),
-        "llm_verified": sum(1 for v in analysis.values() if "fast_pass" not in v),
+        **queue_from_analysis(analysis),
     }
 
     # Liveness + observability
@@ -489,11 +512,12 @@ class Handler(BaseHTTPRequestHandler):
 
     @staticmethod
     def _verified_detections(analysis):
-        """Files carrying a final LLM verdict with at least one true label."""
+        """Files carrying a final LLM verdict (_llm dict, no skip) with a label."""
+        from analyze_images import is_llm_verified
         out = {}
         for f, v in analysis.items():
-            if "fast_pass" in v:
-                continue  # detector-only, not yet a verdict
+            if not is_llm_verified(v):
+                continue
             labels = sorted(k for k, val in v.items() if val is True and k != "_yolo")
             if labels:
                 out[f] = labels
@@ -504,11 +528,13 @@ class Handler(BaseHTTPRequestHandler):
         """Files with detector-only labels (a fast_pass present) and at least
         one true label — awaiting the LLM verdict. Disjoint from
         _verified_detections by construction. With deep passes disabled these
-        are the only detections the stream has to surface."""
+        are the only detections the stream has to surface. Car-only
+        no_trigger rows have no fast_pass and are not preliminary either."""
+        from analyze_images import is_llm_verified
         out = {}
         for f, v in analysis.items():
-            if "fast_pass" not in v:
-                continue  # already has a verdict
+            if is_llm_verified(v) or "fast_pass" not in v:
+                continue
             labels = sorted(k for k, val in v.items() if val is True and k != "_yolo")
             if labels:
                 out[f] = labels
