@@ -100,20 +100,9 @@ SKIP_ONLY_REASONS = (
 
 
 def is_analysed(rec):
-    """True when the record has a successful e2b/HA flag analysis.
-
-    Requires a non-empty ``_llm`` dict and no ``_llm_skip``. Leftover HA
-    flag keys (porch_access, …) on a detector or skip row are not an analysis
-    and must not retain-publish over a real compare payload.
-    """
-    if not isinstance(rec, dict):
-        return False
-    if rec.get("_llm_skip"):
-        return False
-    if rec.get("fast_pass") == "negative":
-        return False
-    llm = rec.get("_llm")
-    return isinstance(llm, dict) and bool(llm)
+    """True when the record has a successful e2b/HA flag analysis."""
+    import catalog
+    return catalog.is_llm_verified(rec)
 
 
 def should_publish(rec):

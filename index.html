@@ -5669,8 +5669,11 @@
               const b = backfillProgress(s.queue);
               const paused = s.settings && s.settings.deep_passes_enabled === false;
               const bar = `<span style="display:inline-block;width:80px;height:6px;border-radius:3px;background:var(--border-color);vertical-align:middle;overflow:hidden;"><span style="display:inline-block;height:6px;width:${b.pct}%;background:${paused ? '#f59e0b' : '#10b981'};"></span></span>`;
+              const eta = (!paused && s.queue && s.queue.deep_eta_s > 0)
+                ? ` · ≈${fmtDur(s.queue.deep_eta_s)} left at ~${s.queue.deep_s_per_frame}s/frame (one at a time)`
+                : '';
               return `<div><b>Deep analysis:</b> ${bar} ${b.pct}% &middot;
-                ${b.analyzed.toLocaleString()} verified, ${b.pending.toLocaleString()} pending${paused ? ' <span style="color:#f59e0b;">(paused — deep passes off)</span>' : ''}</div>`;
+                ${b.analyzed.toLocaleString()} verified, ${b.pending.toLocaleString()} pending${paused ? ' <span style="color:#f59e0b;">(paused — deep passes off)</span>' : ''}${eta}</div>`;
             })()}
             <div><b>Last sweep:</b> ${s.trigger.last_sweep_age_s == null
               ? '<span style="color:#ef4444;">unknown</span>'

@@ -97,15 +97,17 @@ Live pipeline snapshot. Shape (keys may be absent if a source is unavailable):
 - `inference` → `{}` when idle, otherwise the live `inference_status.json`
   object plus `running_for_s` (the ℹ panel’s “Analyzing now” line)
 - `queue` → `{images_on_disk, unanalyzed, unverified_partials,
-  awaiting_backfill, llm_verified}` (`queue_from_analysis`):
-  - `unverified_partials` — `fast_pass == "partial"`
+  awaiting_backfill, llm_verified, deep_s_per_frame, deep_eta_s}`:
+  - `unverified_partials` — `fast_pass == "partial"` **or** a legacy
+    detector-only row (`{person: true}` with no `_llm` / skip / `fast_pass`)
   - `awaiting_backfill` — `fast_pass == "negative"` **or**
     `_llm_skip == "no_trigger"` (car-only skip). Counted even when idle
     backfill is off, so the number stays honest.
-  - `llm_verified` — successful merge only: `_llm` is a dict **and**
-    `_llm_skip` is absent. Missing `fast_pass` is **not** enough.
-    `{car: true, _llm_skip: "no_trigger"}` and bare `{person: true}` are
-    not verdicts.
+  - `llm_verified` — `_llm` is a **non-empty** dict and `_llm_skip` is
+    absent. `{}` and missing `fast_pass` are not verdicts.
+  - `deep_s_per_frame` / `deep_eta_s` — serial LLM budget: window
+    average seconds (or 40) × priority count. Both `null` when deep
+    passes are off. This is wall-clock honesty, not a promise.
 - `cameras[]` → `{name, images, bytes, budget_pct, last_frame_age_s, stale}`
   (`budget_pct` = image bytes in that camera dir vs `max_dir_gb`; UI warns
   above ~85%; pipeline Slack alert and watchdog `auto` kick at ~90%)

@@ -57,6 +57,12 @@ the box. `allow_cloud` is off by default.
 - **`tools/watchdog.sh` + `/etc/cron.d/webcam-watchdog`** — independent of
   systemd process health: restart dead/stuck pipeline units, force hourly
   retention from `settings.json`. See [DEVELOP.md](DEVELOP.md#cron-watchdog-toolswatchdogsh).
+- **`catalog.py`** — schema 1 kinds (`verified` / `preliminary` / `no_trigger`
+  / `negative` / `skip`) over the flat on-disk keys. Readers go through
+  `catalog.kind`; the SPA still reads `person` / `_llm` / `_llm_skip`.
+- **`pipeline_events.py`** — append-only `events.jsonl`. The sweep **emits
+  and flushes the catalog after each persist** (not only at sweep end).
+  SSE tails the log every ~1 s; analysis.json mtime remains a fallback.
 - **`api_server.py` (:8190)** — a stdlib `ThreadingHTTPServer`. REST endpoints
   for pins, delete, settings, integrations, status, health, clip (GIF),
   and `GET /api/llm-schema`; an SSE `/api/events` stream for live gallery

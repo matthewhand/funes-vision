@@ -231,7 +231,7 @@
     <tr><td><code>new-burst</code></td><td>A visit summary — rare, summaries are off</td></tr>
     <tr><td><code>ping</code></td><td>Heartbeat; missing pings turn the badge Stale</td></tr>
   </table>
-  <p>A floating <strong>N new events — tap to view</strong> pill clears filters and jumps to the newest frames. Flip Live off and both the stream and the polls stop.</p>
+  <p>A floating <strong>N new events — tap to view</strong> pill clears filters and jumps to the newest frames. Flip Live off and both the stream and the polls stop. The pipeline now appends <code>events.jsonl</code> as each frame is persisted (YOLO does not wait for the 40s vision pass). Status <b>Deep analysis</b> shows an ETA at ~40s/frame, one at a time.</p>
 
   <h2 id="status">10. The AI button</h2>
   <figure>

@@ -318,8 +318,11 @@ Delete from a card (not the lightbox header) is permanent.
 
 ## 9. Live updates
 
-New stills appear without a full-page reload. Under the hood the API
-polls `analysis.json` every ~3 s and emits:
+New stills appear without a full-page reload. The pipeline appends a
+line to `events.jsonl` **as each frame is persisted** (YOLO does not
+wait for the 40 s vision pass, and the catalog is no longer held until
+the end of the sweep). The API tails that log about once a second
+(and still watches file mtimes as a fallback):
 
 | Event | What you notice |
 |-------|-----------------|

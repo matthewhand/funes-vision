@@ -370,43 +370,21 @@ def detector_true_labels(fp_results):
 
 
 def is_llm_verified(rec):
-    """True only after a successful merge_llm_into_fastpass.
-
-    Requires a dict ``_llm`` and no ``_llm_skip``. Missing ``fast_pass``
-    is not enough: car-only ``{car: true}`` and
-    ``{car: true, _llm_skip: no_trigger}`` are detector records, not verdicts.
-    """
-    if not isinstance(rec, dict):
-        return False
-    if rec.get("_llm_skip"):
-        return False
-    llm = rec.get("_llm")
-    return isinstance(llm, dict) and bool(llm)
+    """True only after a successful merge. See catalog.kind == verified."""
+    import catalog
+    return catalog.is_llm_verified(rec)
 
 
 def is_awaiting_backfill(rec):
-    """Queue classification: fast-pass negatives and car-only no_trigger.
-
-    Does not include urgent skip-partials (person/dog + budget/llm_failed);
-    those stay unverified_partials so they re-enter the priority queue.
-    """
-    if not isinstance(rec, dict) or is_llm_verified(rec):
-        return False
-    return rec.get("_llm_skip") == "no_trigger" or rec.get("fast_pass") == "negative"
+    """Negatives and car-only no_trigger. See catalog.kind."""
+    import catalog
+    return catalog.is_awaiting_backfill(rec)
 
 
 def in_backfill_pool(rec):
-    """Idle deep_backfill candidates (when that setting is on).
-
-    Same as is_awaiting_backfill plus ignore-only partials. Urgent trigger
-    partials stay off this list.
-    """
-    if not isinstance(rec, dict) or is_llm_verified(rec):
-        return False
-    if is_awaiting_backfill(rec):
-        return True
-    return rec.get("fast_pass") == "partial" and \
-        all(k in GATE_IGNORE_LABELS for k, v in rec.items() if v is True)
+    """Idle deep_backfill candidates. See catalog.in_backfill_pool."""
+    import catalog
+    return catalog.in_backfill_pool(rec, GATE_IGNORE_LABELS)
 
 
 def ollama_model_loaded(tag):
@@ -719,7 +697,8 @@ def merge_llm_into_fastpass(fp_results, llm_result, skip_reason=None, model=None
             rec["_llm_model"] = model
         if duration_s is not None:
             rec["_llm_ms"] = int(duration_s * 1000)
-        return rec
+        import catalog
+        return catalog.stamp(rec)
     flags = {}
     allowed = set((schema or {}).get("properties") or {}) if schema else None
     for k, v in llm_result.items():
@@ -751,6 +730,47 @@ def merge_llm_into_fastpass(fp_results, llm_result, skip_reason=None, model=None
         rec["_yolo"] = llm_result["_yolo"]
     elif "_yolo" not in rec:
         rec["_yolo"] = sorted(k for k, v in rec.items() if k in YOLO_PRESENCE_KEYS and v is True)
+    import catalog
+    return catalog.stamp(rec)
+
+
+_catalog_flush_ts = 0.0
+
+
+def flush_analysis(analysis_file, analysis_data, force=False):
+    """Atomic catalog write. Debounced (~1s) so a busy sweep does not rewrite
+    a multi-MB JSON on every frame; force=True at end of camera / process."""
+    global _catalog_flush_ts
+    now = time.time()
+    if not force and (now - _catalog_flush_ts) < 1.0:
+        return
+    try:
+        _atomic_write_json(analysis_file, analysis_data, indent=2)
+        _catalog_flush_ts = now
+    except OSError as e:
+        print(f"Failed to write analysis.json (disk full?): {e}")
+
+
+def persist_row(analysis_file, analysis_data, img, rec, *, existed):
+    """Stamp schema 1, emit a live event, flush the catalog.
+
+    Live no longer waits for the end-of-sweep write. image.new fires when
+    the file is first catalogued; detector hits emit preliminary or
+    new-detection from catalog.kind.
+    """
+    import catalog
+    import pipeline_events
+    rec = catalog.stamp(rec)
+    analysis_data[img] = rec
+    labels = catalog.detector_true_labels(rec)
+    k = catalog.kind(rec)
+    if not existed:
+        pipeline_events.emit("image.new", file=img)
+    if k == "verified" and labels:
+        pipeline_events.emit("new-detection", file=img, labels=labels)
+    elif k in ("preliminary", "no_trigger") and labels:
+        pipeline_events.emit("detection.preliminary", file=img, labels=labels)
+    flush_analysis(analysis_file, analysis_data, force=False)
     return rec
 
 
@@ -1530,12 +1550,12 @@ def main(retention_only=False):
                                                "priority", fp_labels=fresh_fp)
                         deep_pass_count += 1
                         if result:
-                            analysis_data[img] = merge_llm_into_fastpass(
+                            rec = merge_llm_into_fastpass(
                                 fp_results, result, model=LAST_MODEL_USED,
                                 duration_s=LAST_DURATION_S,
                                 schema=schema_for_kind(image_path))
                         else:
-                            analysis_data[img] = merge_llm_into_fastpass(
+                            rec = merge_llm_into_fastpass(
                                 fp_results, None, skip_reason="llm_failed",
                                 duration_s=LAST_DURATION_S)
                     else:
@@ -1547,8 +1567,10 @@ def main(retention_only=False):
                             skip = "low_mem"
                         else:
                             skip = "budget"
-                        analysis_data[img] = merge_llm_into_fastpass(
+                        rec = merge_llm_into_fastpass(
                             fp_results, None, skip_reason=skip)
+                    persist_row(analysis_file, analysis_data, img, rec,
+                                existed=img in analysis_data)
                     new_analysis = True
                     maybe_notify_urgent_frame(
                         img, analysis_data[img], image_path,
@@ -1573,11 +1595,14 @@ def main(retention_only=False):
                     rec = detector_labels(fp_results)
                     rec["_llm_skip"] = "no_trigger"
                     if analysis_data.get(img) != rec:
-                        analysis_data[img] = rec
+                        persist_row(analysis_file, analysis_data, img, rec,
+                                    existed=img in analysis_data)
                         new_analysis = True
             else:
                 # Negative fast pass
-                analysis_data[img] = { "fast_pass": "negative" }
+                persist_row(analysis_file, analysis_data, img,
+                            {"fast_pass": "negative"},
+                            existed=img in analysis_data)
                 new_analysis = True
 
             if deep_pass_count >= max_deep_passes:
@@ -1639,10 +1664,13 @@ def main(retention_only=False):
                 deep_pass_count += 1
                 if result:
                     prior = detector_labels(analysis_data.get(img) or {})
-                    analysis_data[img] = merge_llm_into_fastpass(
-                        prior, result, model=LAST_MODEL_USED,
-                        duration_s=LAST_DURATION_S,
-                        schema=schema_for_kind(os.path.join(image_dir, img)))
+                    persist_row(
+                        analysis_file, analysis_data, img,
+                        merge_llm_into_fastpass(
+                            prior, result, model=LAST_MODEL_USED,
+                            duration_s=LAST_DURATION_S,
+                            schema=schema_for_kind(os.path.join(image_dir, img))),
+                        existed=True)
                     new_analysis = True
             if workers > 1:
                 ex.shutdown(wait=True)
@@ -1700,6 +1728,11 @@ def main(retention_only=False):
                 if summary:
                     burst_data[burst_id] = { "summary": summary, "images": burst }
                     new_analysis = True
+                    try:
+                        import pipeline_events
+                        pipeline_events.emit("new-burst", id=burst_id, summary=summary)
+                    except Exception:
+                        pass
                     # Fan the new contextual analysis out to integrations
                     # (Slack, ...). Prefer thumbnails for a lightweight clip;
                     # fully guarded so a notifier never breaks the sweep.
@@ -1716,12 +1749,12 @@ def main(retention_only=False):
                         print(f"Integration notify failed: {e}")
 
         if new_analysis:
+            flush_analysis(analysis_file, analysis_data, force=True)
             try:
-                _atomic_write_json(analysis_file, analysis_data, indent=2)
                 _atomic_write_json(burst_file, burst_data, indent=2)
                 print(f"Updated data files.")
             except OSError as e:
-                print(f"Failed to write analysis/bursts (disk full?): {e}")
+                print(f"Failed to write bursts (disk full?): {e}")
 
     # Prune analysis entries for images deleted by retention or the API
     existing = set()

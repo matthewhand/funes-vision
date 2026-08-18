@@ -191,6 +191,28 @@ class TestConcurrencyWorkers(unittest.TestCase):
         self.assertEqual(cw("x", 10), 1)     # bad config -> 1
 
 
+class TestPersistRow(unittest.TestCase):
+    def test_persist_emits_and_stamps(self):
+        ai = analyze_images
+        import pipeline_events
+        with tempfile.TemporaryDirectory() as d:
+            cat = os.path.join(d, "analysis.json")
+            log = os.path.join(d, "events.jsonl")
+            orig_ev, pipeline_events.EVENTS_FILE = pipeline_events.EVENTS_FILE, log
+            try:
+                data = {}
+                ai.persist_row(cat, data, "a.jpg", {"person": True}, existed=False)
+                self.assertEqual(data["a.jpg"]["_schema"], 1)
+                self.assertIn("person", data["a.jpg"]["_yolo"])
+                off, evs = pipeline_events.iter_since(0)
+                names = [e["event"] for e in evs]
+                self.assertIn("image.new", names)
+                self.assertIn("detection.preliminary", names)
+                self.assertTrue(os.path.isfile(cat))
+            finally:
+                pipeline_events.EVENTS_FILE = orig_ev
+
+
 class TestAtomicIO(unittest.TestCase):
     """The audit-trail files are read live by the API and written by possibly
     concurrent deep passes; writes must be atomic and never lose log entries."""

@@ -290,31 +290,17 @@ def _camera_stats(max_dir_gb, settings=None):
 def queue_from_analysis(analysis):
     """Classify analysis.json records for /api/status queue counts.
 
-    llm_verified requires a successful merge (_llm dict, no _llm_skip).
-    awaiting_backfill is negatives plus car-only no_trigger skips.
-    unverified_partials is fast_pass partials plus legacy detector-only
-    rows (e.g. {person: true} with no fast_pass / _llm / skip).
+    Uses catalog.kind so folklore shapes and schema-1 rows agree.
     """
-    from analyze_images import (
-        YOLO_PRESENCE_KEYS, is_awaiting_backfill, is_llm_verified,
-    )
+    import catalog
     unverified = awaiting = verified = 0
     for v in analysis.values():
-        if not isinstance(v, dict):
-            continue
-        if v.get("fast_pass") == "partial":
+        k = catalog.kind(v)
+        if k in ("preliminary", "skip"):
             unverified += 1
-        elif (
-            not is_llm_verified(v)
-            and not is_awaiting_backfill(v)
-            and not v.get("_llm_skip")
-            and "fast_pass" not in v
-            and any(v.get(k) is True for k in YOLO_PRESENCE_KEYS)
-        ):
-            unverified += 1
-        if is_awaiting_backfill(v):
+        if k in ("negative", "no_trigger"):
             awaiting += 1
-        if is_llm_verified(v):
+        if k == "verified":
             verified += 1
     return {
         "unverified_partials": unverified,
@@ -392,6 +378,15 @@ def pipeline_status():
     status["filesystem"] = _fs_stats()
     status["timezone"] = resolve_timezone(os.getenv("WEBCAM_TZ"), settings.get("timezone"))
     status["metrics"] = _inference_metrics()
+    # Honest serial-LLM budget: priority rows × last-window average (or 40s).
+    q = status["queue"]
+    if settings.get("deep_passes_enabled", True) is False:
+        q["deep_s_per_frame"] = None
+        q["deep_eta_s"] = None
+    else:
+        avg = float((status["metrics"] or {}).get("avg_s") or 40)
+        q["deep_s_per_frame"] = round(avg, 1)
+        q["deep_eta_s"] = int(q.get("unverified_partials", 0) * avg)
     try:
         rlog = json.load(open(os.path.join(BASE_DIR, "retention_log.json")))
         status["retention"] = rlog[-1] if rlog else None
@@ -611,8 +606,47 @@ class Handler(BaseHTTPRequestHandler):
         seen_files = set()
         a_mtime = b_mtime = -1.0
         seeded = False
+        ev_off = 0
+        try:
+            import pipeline_events
+            try:
+                ev_off = os.path.getsize(pipeline_events.EVENTS_FILE)
+            except OSError:
+                ev_off = 0
+        except Exception:
+            pipeline_events = None
         try:
             while True:
+                # Primary bus: append-only events.jsonl (pipeline emit).
+                if pipeline_events is not None:
+                    try:
+                        ev_off, evs = pipeline_events.iter_since(ev_off)
+                    except Exception:
+                        evs = []
+                    if seeded:
+                        for ev in evs:
+                            name = ev.get("event")
+                            f = ev.get("file")
+                            if name == "image.new" and f:
+                                seen_files.add(f)
+                                self._sse("image.new", {"file": f})
+                            elif name == "new-detection" and f:
+                                labs = ev.get("labels") or []
+                                seen_det[f] = labs
+                                self._sse("new-detection", {"file": f, "labels": labs})
+                            elif name == "detection.preliminary" and f:
+                                labs = ev.get("labels") or []
+                                seen_prelim[f] = labs
+                                self._sse("detection.preliminary", {
+                                    "file": f, "labels": labs})
+                            elif name == "new-burst":
+                                bid = ev.get("id")
+                                if bid:
+                                    seen_bursts.add(bid)
+                                self._sse("new-burst", {
+                                    "id": bid,
+                                    "summary": ev.get("summary") or "",
+                                })
                 try:
                     amt = os.path.getmtime(analysis_path)
                 except OSError:
@@ -664,7 +698,9 @@ class Handler(BaseHTTPRequestHandler):
                 # to EventSource); also keeps proxies from buffering.
                 self._sse("ping", {})
                 self.wfile.flush()
-                time.sleep(3)
+                # Tail the event log often; mtime fallback still catches
+                # catalogs written by an older pipeline that did not emit.
+                time.sleep(1 if pipeline_events is not None else 3)
         except (BrokenPipeError, ConnectionResetError, OSError):
             return  # client went away
 
