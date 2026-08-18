@@ -86,9 +86,9 @@ aspirational.
   `Australia/Sydney`; filename timestamps parsed **DST-aware**.
 - **Installable PWA** — a web app manifest makes the gallery "Add to Home
   Screen"-able (standalone, themed); no service worker, so no stale-cache risk.
-- **Insights** — the ℹ status panel shows content stats over analysed
-  frames: total, busiest hour, a 24-hour activity sparkline, most-seen
-  objects, and the HA schema viewer.
+- **Insights** — the AI status panel’s Insights block shows stats over
+  **loaded** frames: count, busiest hour, a 24-hour activity sparkline,
+  most-seen objects, and the HA schema viewer.
 - **Saved searches** — name the current filters (tab + objects + search +
   date + time range) and recall them as one-tap chips in the sidebar
   (localStorage, per-device).

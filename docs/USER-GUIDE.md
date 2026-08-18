@@ -38,8 +38,9 @@ Each camera is its own site. They do not share one URL.
 ## Find something
 
 Use **Filters** for object chips (person, dog, car, bird…). The chips are
-built from what the detector has actually seen. Search understands time,
-labels, and captions. Tap a day on the activity chart to drill into hours.
+built from what the detector has actually seen. Search matches time,
+detector labels, and captions — the activity charts and the grid both
+honor labels. Tap a day on the activity chart to drill into hours.
 Saved searches live in **this browser only**.
 
 ![Object filter chips over the gallery](guide/img/filters.png)
@@ -90,11 +91,11 @@ pin, and delete. Delete is permanent.
 
 ## Live updates
 
-The header badge is **Live** (SSE connected), **Polling** (asking the
-server on an interval), or **Off**. Flip **Auto-refresh** off to pause
-live updates — the page stops the event stream and the polls. The **AI**
-button opens pipeline status: queue, cameras, last sweep, and the
-vision-model audit trail.
+The header badge is **Live** (SSE connected), **Stale** (SSE connected
+but the heartbeat went quiet), **Polling** (asking the server on an
+interval), or **Off**. Flip **Auto-refresh** off to pause the stream and
+the polls. The **AI** button opens pipeline status: queue, cameras, last
+sweep, and the vision-model audit trail.
 
 ![AI status panel](guide/img/status.png)
 
@@ -106,8 +107,9 @@ vision-model audit trail.
 - Merge face/body → person
 - Show / hide unconfirmed tags
 - **AI deep passes** — pause all vision-model work (detector-only)
-- **AI backfill when idle** — leave **off** unless you want the archive
-  re-checked (thousands of old empties)
+- **AI backfill when idle** — verifies leftover empties and car-only
+  skips (nearest detections first). Leave **off** unless you want the
+  archive re-checked (thousands of old empties)
 - **Multi-image summaries** — leave **off** unless you want visit captions
   from several frames at once
 
@@ -115,8 +117,9 @@ vision-model audit trail.
 
 Slack (if enabled) does **not** always post a sequence. With
 **multi-image summaries off** and Slack set to *context*, it will stay
-quiet — that is intentional. Switch Slack to *objects* if you want a
-ping on each detected person/dog.
+quiet — that is intentional. *Objects* mode currently pings after a
+successful vision pass on a person/dog frame when deep passes are on —
+not on the raw detector hit if the vision model is skipped.
 
 Home Assistant MQTT is optional and **off unless you enable it**, and
 it needs an **explicit broker host** (no default address). It publishes
