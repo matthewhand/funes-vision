@@ -1040,7 +1040,9 @@ class TestE2bSchema(unittest.TestCase):
             orig_notify = intg.notify_image
             ai.INFERENCE_STATUS = os.path.join(d, "st.json")
             ai.INFERENCE_LOG = os.path.join(d, "log.json")
+            orig_scan = ai.analyze_image_with_schema
             ai.analyze_image_local = fake_local
+            ai.analyze_image_with_schema = lambda *a, **k: {"porch_access": True}
             intg.notify_image = fake_notify
             ai.RATE_LIMITED = False
             try:
@@ -1052,6 +1054,7 @@ class TestE2bSchema(unittest.TestCase):
                 ai.INFERENCE_STATUS = orig_st
                 ai.INFERENCE_LOG = orig_log
                 ai.analyze_image_local = orig_local
+                ai.analyze_image_with_schema = orig_scan
                 intg.notify_image = orig_notify
         self.assertEqual(calls, [])
 

@@ -245,6 +245,23 @@ Smaller purple-ish flags are **scene flags** from the vision model.
 They describe *what happened*. They are not extra species, and they
 do not appear in Filters.
 
+e2b is asked **one question at a time**, and only when YOLO says the
+frame is worth it (at most two questions per still):
+
+| Scan | Camera | Only if YOLO saw | Why |
+|------|--------|------------------|-----|
+| postal delivery | Front | person | The flag we actually care about |
+| porch access | Front | person | Best precision in the vision audit |
+| animal + type | Both | dog / cat / bird | Do not ask if the detector saw no animal |
+| dog walked | Both | person **and** dog | Dog alone is not a walk |
+| opens a box | Front | person | After the others, if budget remains |
+
+We **do not ask** `approaching_house`, `car_access`, `clothes_drying`,
+`leaving_house`, `enters_car` / `exits_car`, car colour/outfit, or
+`weapon_detected`. Those were systematic false positives (parked SUV,
+empty yard, unattended laundry). A backyard person with no dog spends
+**zero** e2b time.
+
 | You see | It means |
 |---------|----------|
 | `Person` / `Dog` / `Car` | YOLO saw that object |

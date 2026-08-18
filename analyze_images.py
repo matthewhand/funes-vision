@@ -65,6 +65,12 @@ if os.path.exists(_settings_path):
         DEEP_BACKFILL = _s.get("deep_backfill", DEEP_BACKFILL)
         DEEP_PASSES_ENABLED = _s.get("deep_passes_enabled", DEEP_PASSES_ENABLED)
         BURST_SUMMARIES_ENABLED = _s.get("burst_summaries_enabled", BURST_SUMMARIES_ENABLED)
+        try:
+            import scans as _scans_mod
+            _scans_mod.MAX_SCANS_PER_IMAGE = int(_s.get(
+                "max_scans_per_image", _scans_mod.MAX_SCANS_PER_IMAGE))
+        except Exception:
+            pass
         GATE_IGNORE_LABELS = _s.get("gate_ignore_labels", GATE_IGNORE_LABELS)
         WATCH_DIRS = _s.get("watch_dirs", WATCH_DIRS)
         YOLO_DIR = _s.get("yolo_dir", YOLO_DIR)
@@ -338,13 +344,25 @@ def entry_caption(a):
 
 def get_llm_schema():
     """Read-only export of the live prompt + HA schemas for the UI viewer."""
+    import scans
     return {
         "prompt": DETECT_PROMPT,
         "schemas": {
             "front_door": FRONT_SCHEMA,
             "dog_cam": BACK_SCHEMA,
         },
-        "note": "Schema is enforced by the Ollama chat API 'format' parameter, not included in the prompt.",
+        "scans": [
+            {"id": s["id"], "cameras": list(s["cameras"]),
+             "need_any": list(s.get("need_any") or []),
+             "need_all": list(s.get("need_all") or []),
+             "schema": s["schema"]}
+            for s in scans.SCANS
+        ],
+        "max_scans_per_image": scans.MAX_SCANS_PER_IMAGE,
+        "dropped_flags": list(scans.DROPPED_FLAGS),
+        "note": "Live path is YOLO-gated individual scans (not one giant schema). "
+                "front_door/dog_cam remain the HA key lists. Dropped flags are "
+                "not asked (systematic false positives).",
     }
 
 
@@ -507,10 +525,11 @@ BACK_SCHEMA = {
     }
 }
 
-def analyze_image_openrouter(image_path, api_key):
-    """Cloud fallback: same front/back HA JSON schema as analyze_image_local."""
+def analyze_image_openrouter(image_path, api_key, schema=None, num_predict=None):
+    """Cloud fallback: one JSON schema (full HA or a single scan)."""
     kind = camera_kind(image_path)
-    schema = schema_for_kind(kind)
+    schema = schema or schema_for_kind(kind)
+    npred = int(num_predict or max_tokens_for_kind(kind))
     base64_image = encode_image(image_path)
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
 
@@ -528,7 +547,7 @@ def analyze_image_openrouter(image_path, api_key):
                 ],
             }
         ],
-        "max_tokens": max_tokens_for_kind(kind),
+        "max_tokens": npred,
         "temperature": 0,
         "response_format": {
             "type": "json_schema",
@@ -775,43 +794,61 @@ def persist_row(analysis_file, analysis_data, img, rec, *, existed):
 
 
 def run_deep_pass(image_path, img_name, can_run_chain, api_key, trigger, fp_labels=None):
-    """One audited LLM deep pass: local first, cloud fallback.
+    """YOLO-gated individual e2b scans (not one giant HA schema).
 
-    The successful result is merged onto the detector record
-    (`merge_llm_into_fastpass`): YOLO labels stay, HA flags attach.
-    fp_labels=None means "run the detector fresh" (used for re-queued
-    partials whose stored labels may be stale, and for backfill)."""
+    Returns ``(result_or_none, n_calls)``. n_calls counts against
+    max_deep_passes. Empty scans (e.g. backyard person, no dog) → (None, 0)
+    so the caller can persist ``_llm_skip=no_scan`` without re-queueing.
+    fp_labels=None means run the detector fresh.
+    """
     global LAST_DURATION_S
-    # Once the endpoint has throttled us this sweep, stop spending deep passes
-    # against it — resume on the next sweep (~60s later). No hammering.
+    import scans
     if RATE_LIMITED:
-        return None
+        return None, 0
     started = time.time()
-    set_inference_status({"image": img_name, "model": MODEL_PRIMARY,
-                          "trigger": trigger, "started": started})
-    result = None
+    if fp_labels is None:
+        fp = fast_pass_dispatch(image_path) or {}
+        fp_labels = sorted(k for k, v in fp.items() if v is True)
+    kind = camera_kind(image_path)
+    todo = scans.scans_for(kind, fp_labels, scans.MAX_SCANS_PER_IMAGE)
+    if not todo:
+        LAST_DURATION_S = time.time() - started
+        return None, 0
+
+    combined = {}
+    n = 0
     used = None
-    if can_run_chain:
-        result = analyze_image_local(image_path)
-        if result is not None:
-            used = LAST_MODEL_USED   # the chain model that actually served
-    if not result and ALLOW_CLOUD and api_key:
-        used = MODEL_CLOUD
-        result = analyze_image_openrouter(image_path, api_key)
+    for spec in todo:
+        if RATE_LIMITED:
+            break
+        set_inference_status({"image": img_name, "model": MODEL_PRIMARY,
+                              "trigger": trigger, "started": started,
+                              "scan": spec["id"]})
+        n += 1
+        piece = None
+        if can_run_chain:
+            piece = analyze_image_with_schema(
+                image_path, spec["schema"], spec.get("num_predict") or scans.SCAN_TOKENS)
+            if isinstance(piece, dict):
+                used = LAST_MODEL_USED
+        if not piece and ALLOW_CLOUD and api_key:
+            used = MODEL_CLOUD
+            piece = analyze_image_openrouter(
+                image_path, api_key, schema=spec["schema"],
+                num_predict=spec.get("num_predict") or scans.SCAN_TOKENS)
+        if isinstance(piece, dict):
+            combined.update(piece)
+
     set_inference_status(None)
+    result = combined or None
     if isinstance(result, dict):
-        if fp_labels is None:
-            fp = fast_pass_dispatch(image_path) or {}
-            fp_labels = sorted(k for k, v in fp.items() if v is True)
-        result["_yolo"] = fp_labels
+        result["_yolo"] = list(fp_labels or [])
+        result["_scans"] = [s["id"] for s in todo[:n]]
     labels = list(fp_labels or [])
     LAST_DURATION_S = time.time() - started
     log_inference(img_name, used, started, LAST_DURATION_S,
                   labels, result is not None, trigger)
-    # Per-image Slack/ntfy lives in maybe_notify_urgent_frame at the persist
-    # site so detector-only writes (budget / ollama down / deep off) ping too.
-    # Do not notify here: a successful priority pass would double-fire.
-    return result
+    return result, n
 
 
 def maybe_notify_urgent_frame(img, rec, image_path, *, trigger, prev=None):
@@ -968,13 +1005,9 @@ def _ollama_chat_stream(payload, on_delta, timeout):
     raise RateLimited("LLM throttled")  # defensive
 
 
-def analyze_image_local(image_path):
-    """Vision inference via Ollama, walking the primary->fallback model chain.
-    Falls through on rate-limit/error; only bails the sweep (RATE_LIMITED) if the
-    WHOLE chain was throttled."""
+def analyze_image_with_schema(image_path, schema, num_predict):
+    """One Ollama JSON-schema call. Used by sequential priority scans."""
     global RATE_LIMITED, LAST_MODEL_USED
-    kind = camera_kind(image_path)
-    schema = schema_for_kind(kind)
     base = {
         "messages": [{
             "role": "user",
@@ -984,7 +1017,7 @@ def analyze_image_local(image_path):
         "stream": False,
         "format": schema,
         "think": False,
-        "options": {"num_predict": max_tokens_for_kind(kind), "temperature": 0},
+        "options": {"num_predict": int(num_predict), "temperature": 0},
     }
     rate_limited_all, tried = True, 0
     for model in runnable_chain(MODEL_PRIMARY, MODEL_FALLBACK, get_free_mem_gb(), local_mem_threshold()):
@@ -993,14 +1026,13 @@ def analyze_image_local(image_path):
             response = _ollama_chat({**base, "model": model}, timeout=600)
             result = json.loads(response.json()["message"]["content"])
             if isinstance(result, dict):
-                LAST_MODEL_USED = model   # record what actually served
+                LAST_MODEL_USED = model
                 return result
             return None
         except RateLimited:
-            continue  # try the next model in the chain
+            continue
         except requests.exceptions.ConnectionError:
-            rate_limited_all = False
-            return None  # Ollama itself is down; nothing in the chain will work
+            return None
         except Exception as e:
             rate_limited_all = False
             print(f"Inference failed on {model}: {e}")
@@ -1009,6 +1041,13 @@ def analyze_image_local(image_path):
         RATE_LIMITED = True
         print("LLM rate-limited across the model chain; backing off for this sweep")
     return None
+
+
+def analyze_image_local(image_path):
+    """Legacy one-shot full front/back schema (tests + fallback)."""
+    kind = camera_kind(image_path)
+    return analyze_image_with_schema(
+        image_path, schema_for_kind(kind), max_tokens_for_kind(kind))
 
 BURST_PROMPT = "These webcam frames were taken in sequence. Describe what happens across them - any people, animals, birds, vehicles, or notable changes in the scene (lighting, objects moving). Don't assume a person is the subject. If nothing meaningfully changes, say so in one sentence."
 
@@ -1544,16 +1583,25 @@ def main(retention_only=False):
                     if deep_pass_count < max_deep_passes and llm_ready:
                         # Stale stored labels (re-queued partials) force a
                         # fresh detector run so YOLO flags stay current
+                        import scans
                         fresh_fp = None if was_partial else \
                             sorted(k for k, v in fp_results.items() if v is True)
-                        result = run_deep_pass(image_path, img, can_run_chain, api_key,
-                                               "priority", fp_labels=fresh_fp)
-                        deep_pass_count += 1
+                        result, n_scans = run_deep_pass(
+                            image_path, img, can_run_chain, api_key,
+                            "priority", fp_labels=fresh_fp)
+                        deep_pass_count += n_scans
+                        asked = scans.scans_for(
+                            camera_kind(image_path),
+                            fresh_fp if fresh_fp is not None else
+                            sorted(k for k, v in fp_results.items() if v is True))
                         if result:
                             rec = merge_llm_into_fastpass(
                                 fp_results, result, model=LAST_MODEL_USED,
                                 duration_s=LAST_DURATION_S,
-                                schema=schema_for_kind(image_path))
+                                schema=scans.union_schema(asked))
+                        elif n_scans == 0:
+                            rec = detector_labels(fp_results)
+                            rec["_llm_skip"] = "no_scan"
                         else:
                             rec = merge_llm_into_fastpass(
                                 fp_results, None, skip_reason="llm_failed",
@@ -1647,10 +1695,11 @@ def main(retention_only=False):
                 # A peer thread may trip the per-sweep rate-limit flag; honor it
                 # so we stop spending passes against a throttled endpoint.
                 if RATE_LIMITED:
-                    return (img, None)
+                    return (img, None, 0)
                 print(f"Backfill deep pass for {img}")
-                return (img, run_deep_pass(os.path.join(image_dir, img), img,
-                                           can_run_chain, api_key, "backfill"))
+                res, n = run_deep_pass(os.path.join(image_dir, img), img,
+                                       can_run_chain, api_key, "backfill")
+                return (img, res, n)
 
             workers = concurrency_workers(DEEP_CONCURRENCY, len(targets))
             if workers <= 1:
@@ -1660,16 +1709,19 @@ def main(retention_only=False):
                 # so analysis_data / counters are never mutated concurrently.
                 ex = ThreadPoolExecutor(max_workers=workers)
                 results = ex.map(_backfill_one, targets)
-            for img, result in results:
-                deep_pass_count += 1
+            for img, result, n_scans in results:
+                deep_pass_count += n_scans or 0
                 if result:
+                    import scans
                     prior = detector_labels(analysis_data.get(img) or {})
+                    asked = scans.scans_for(
+                        camera_kind(os.path.join(image_dir, img)), prior)
                     persist_row(
                         analysis_file, analysis_data, img,
                         merge_llm_into_fastpass(
                             prior, result, model=LAST_MODEL_USED,
                             duration_s=LAST_DURATION_S,
-                            schema=schema_for_kind(os.path.join(image_dir, img))),
+                            schema=scans.union_schema(asked)),
                         existed=True)
                     new_analysis = True
             if workers > 1:
