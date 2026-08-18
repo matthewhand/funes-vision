@@ -7,6 +7,7 @@ the deployed app).
 """
 import json
 import os
+import stat
 import sys
 import tempfile
 import threading
@@ -270,8 +271,11 @@ class TestChatStream(unittest.TestCase):
 
 
 class TestNtfy(unittest.TestCase):
-    def test_endpoint_default_server(self):
-        self.assertEqual(ntfy._endpoint({"topic": "home"}), "https://ntfy.sh/home")
+    def test_endpoint_requires_explicit_server(self):
+        self.assertEqual(ntfy._endpoint({"topic": "home"}), "")
+        self.assertEqual(ntfy._endpoint({"topic": "home", "server_url": "  "}), "")
+        self.assertFalse(hasattr(ntfy, "DEFAULT_SERVER"))
+        self.assertNotIn("ntfy.sh", ntfy._endpoint({"topic": "secret"}))
 
     def test_endpoint_custom_server_strips_slashes(self):
         self.assertEqual(
@@ -281,6 +285,25 @@ class TestNtfy(unittest.TestCase):
     def test_endpoint_requires_topic(self):
         self.assertEqual(ntfy._endpoint({}), "")
         self.assertEqual(ntfy._endpoint({"topic": "  "}), "")
+        self.assertEqual(ntfy._endpoint({"server_url": "https://n.example.com"}), "")
+
+    def test_post_without_server_does_not_publish(self):
+        called = []
+        orig = ntfy.requests.post
+        ntfy.requests.post = lambda *a, **k: called.append((a, k)) or type(
+            "R", (), {"status_code": 200})()
+        try:
+            ok, detail = ntfy._post({"topic": "home"}, "hi")
+        finally:
+            ntfy.requests.post = orig
+        self.assertFalse(ok)
+        self.assertIn("server_url", detail)
+        self.assertEqual(called, [])
+
+    def test_post_without_topic_does_not_publish(self):
+        ok, detail = ntfy._post({"server_url": "https://n.example.com"}, "hi")
+        self.assertFalse(ok)
+        self.assertIn("topic", detail)
 
     def test_deep_link(self):
         self.assertEqual(
@@ -300,6 +323,91 @@ class TestNtfy(unittest.TestCase):
 
     def test_headers_minimal(self):
         self.assertEqual(ntfy._headers({}), {})
+
+
+class TestSaveIntegrations(unittest.TestCase):
+    def setUp(self):
+        self.td = tempfile.TemporaryDirectory()
+        self.path = os.path.join(self.td.name, "integrations.json")
+        self._orig = api_server.INTEGRATIONS_FILE
+        api_server.INTEGRATIONS_FILE = self.path
+
+    def tearDown(self):
+        api_server.INTEGRATIONS_FILE = self._orig
+        self.td.cleanup()
+
+    def test_load_missing_is_empty(self):
+        self.assertEqual(api_server.load_integrations(), {})
+
+    def test_load_corrupt_is_empty_and_leaves_file(self):
+        with open(self.path, "w") as f:
+            f.write("{not json")
+        self.assertEqual(api_server.load_integrations(), {})
+        with open(self.path) as f:
+            self.assertEqual(f.read(), "{not json")
+
+    def test_missing_file_creates_slack_only(self):
+        api_server.save_slack_settings({"enabled": True, "channel_id": "C1"})
+        data = json.load(open(self.path))
+        self.assertEqual(data["slack"]["enabled"], True)
+        self.assertEqual(data["slack"]["channel_id"], "C1")
+        self.assertNotIn("mqtt", data)
+        self.assertEqual(stat.S_IMODE(os.stat(self.path).st_mode), 0o600)
+
+    def test_merge_preserves_mqtt_and_ntfy(self):
+        json.dump({
+            "slack": {"enabled": False, "bot_token": "xoxb-keep"},
+            "mqtt": {"enabled": True, "password": "s3cret", "host": "broker"},
+            "ntfy": {"topic": "cams", "server_url": "https://n.example.com"},
+        }, open(self.path, "w"))
+        api_server.save_slack_settings({"enabled": True})
+        data = json.load(open(self.path))
+        self.assertTrue(data["slack"]["enabled"])
+        self.assertEqual(data["slack"]["bot_token"], "xoxb-keep")
+        self.assertEqual(data["mqtt"]["password"], "s3cret")
+        self.assertEqual(data["ntfy"]["topic"], "cams")
+
+    def test_empty_file_is_writable(self):
+        open(self.path, "w").close()
+        api_server.save_slack_settings({"enabled": False})
+        self.assertFalse(json.load(open(self.path))["slack"]["enabled"])
+
+    def test_corrupt_file_refuses_and_keeps_bytes(self):
+        original = '{"mqtt":{"password":"s3cret"},"ntfy":{"topic":"x"}\n'
+        with open(self.path, "w") as f:
+            f.write(original)
+        with self.assertRaises(api_server.IntegrationsUnreadable):
+            api_server.save_slack_settings({"enabled": True})
+        with open(self.path) as f:
+            self.assertEqual(f.read(), original)
+
+    def test_whitespace_file_refuses(self):
+        with open(self.path, "w") as f:
+            f.write("   \n")
+        with self.assertRaises(api_server.IntegrationsUnreadable):
+            api_server.save_slack_settings({"enabled": True})
+        with open(self.path) as f:
+            self.assertEqual(f.read(), "   \n")
+
+    def test_non_object_json_refuses(self):
+        with open(self.path, "w") as f:
+            f.write("[1, 2, 3]")
+        with self.assertRaises(api_server.IntegrationsUnreadable):
+            api_server.save_slack_settings({"enabled": True})
+        with open(self.path) as f:
+            self.assertEqual(f.read(), "[1, 2, 3]")
+
+    @unittest.skipIf(os.geteuid() == 0, "root bypasses file mode")
+    def test_unreadable_file_refuses(self):
+        with open(self.path, "w") as f:
+            json.dump({"mqtt": {"password": "s3cret"}}, f)
+        os.chmod(self.path, 0o000)
+        try:
+            with self.assertRaises(api_server.IntegrationsUnreadable):
+                api_server.save_slack_settings({"enabled": True})
+        finally:
+            os.chmod(self.path, 0o600)
+        self.assertIn("s3cret", open(self.path).read())
 
 
 class TestFriendly(unittest.TestCase):

@@ -165,10 +165,19 @@ class TestLatest(unittest.TestCase):
 
 
 class TestLoadMqttCfg(unittest.TestCase):
+    def _load(self, path, extra_env=None):
+        env = {k: v for k, v in os.environ.items() if not k.startswith("MQTT_")}
+        if extra_env:
+            env.update(extra_env)
+        with mock.patch.object(ha_mqtt, "CONFIG_FILE", path):
+            with mock.patch.dict(os.environ, env, clear=True):
+                return ha_mqtt.load_mqtt_cfg()
+
     def test_missing_file_defaults_disabled(self):
-        with mock.patch.object(ha_mqtt, "CONFIG_FILE", "/no/such/integrations.json"):
-            cfg = ha_mqtt.load_mqtt_cfg()
+        cfg = self._load("/no/such/integrations.json")
         self.assertFalse(cfg["enabled"])
+        self.assertEqual(cfg["hosts"], [])
+        self.assertFalse(hasattr(ha_mqtt, "DEFAULT_HOSTS"))
 
     def test_missing_mqtt_block_defaults_disabled(self):
         import tempfile
@@ -177,9 +186,9 @@ class TestLoadMqttCfg(unittest.TestCase):
         try:
             with open(path, "w") as f:
                 json.dump({"slack": {"enabled": True}}, f)
-            with mock.patch.object(ha_mqtt, "CONFIG_FILE", path):
-                cfg = ha_mqtt.load_mqtt_cfg()
+            cfg = self._load(path)
             self.assertFalse(cfg["enabled"])
+            self.assertEqual(cfg["hosts"], [])
         finally:
             os.unlink(path)
 
@@ -190,9 +199,9 @@ class TestLoadMqttCfg(unittest.TestCase):
         try:
             with open(path, "w") as f:
                 json.dump({"mqtt": {}}, f)
-            with mock.patch.object(ha_mqtt, "CONFIG_FILE", path):
-                cfg = ha_mqtt.load_mqtt_cfg()
+            cfg = self._load(path)
             self.assertFalse(cfg["enabled"])
+            self.assertEqual(cfg["hosts"], [])
         finally:
             os.unlink(path)
 
@@ -203,12 +212,48 @@ class TestLoadMqttCfg(unittest.TestCase):
         try:
             with open(path, "w") as f:
                 json.dump({"mqtt": {"enabled": True, "host": "127.0.0.1"}}, f)
-            with mock.patch.object(ha_mqtt, "CONFIG_FILE", path):
-                cfg = ha_mqtt.load_mqtt_cfg()
+            cfg = self._load(path)
             self.assertTrue(cfg["enabled"])
             self.assertEqual(cfg["hosts"], ["127.0.0.1"])
         finally:
             os.unlink(path)
+
+    def test_enabled_without_host_does_not_fill_defaults(self):
+        import tempfile
+        fd, path = tempfile.mkstemp(suffix=".json")
+        os.close(fd)
+        try:
+            with open(path, "w") as f:
+                json.dump({"mqtt": {"enabled": True}}, f)
+            cfg = self._load(path)
+            self.assertTrue(cfg["enabled"])
+            self.assertEqual(cfg["hosts"], [])
+            self.assertNotIn("10.0.0.111", cfg["hosts"])
+            self.assertNotIn("127.0.0.1", cfg["hosts"])
+        finally:
+            os.unlink(path)
+
+    def test_mqtt_host_env_is_explicit(self):
+        import tempfile
+        fd, path = tempfile.mkstemp(suffix=".json")
+        os.close(fd)
+        try:
+            with open(path, "w") as f:
+                json.dump({"mqtt": {"enabled": True}}, f)
+            cfg = self._load(path, extra_env={"MQTT_HOST": "broker.internal"})
+            self.assertEqual(cfg["hosts"], ["broker.internal"])
+        finally:
+            os.unlink(path)
+
+    def test_publish_enabled_without_hosts_is_noop(self):
+        with mock.patch.object(ha_mqtt, "_mqtt_connect_publish") as pub:
+            ok, detail = ha_mqtt.publish_json(
+                "example/vision/front_door", {"x": 1},
+                cfg={"enabled": True, "hosts": [], "port": 1883},
+            )
+        self.assertFalse(ok)
+        self.assertIn("no hosts", detail)
+        pub.assert_not_called()
 
 
 if __name__ == "__main__":

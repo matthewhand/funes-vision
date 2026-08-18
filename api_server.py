@@ -69,10 +69,33 @@ def setting_valid(key, value):
             and spec["min"] <= value <= spec["max"])
 
 
-def load_integrations():
+class IntegrationsUnreadable(Exception):
+    """Existing integrations.json cannot be merged; writers must not truncate it."""
+
+
+def _read_integrations_obj():
+    """Parse INTEGRATIONS_FILE as a JSON object.
+
+    Zero-length file → {}. Missing → FileNotFoundError. Unreadable → OSError.
+    Non-zero content that is not a JSON object → ValueError (do not overwrite).
+    """
+    with open(INTEGRATIONS_FILE) as f:
+        raw = f.read()
+    if not raw:
+        return {}
     try:
-        with open(INTEGRATIONS_FILE) as f:
-            return json.load(f)
+        data = json.loads(raw)
+    except ValueError as e:
+        raise ValueError("integrations.json is unparseable") from e
+    if not isinstance(data, dict):
+        raise ValueError("integrations.json is not an object")
+    return data
+
+
+def load_integrations():
+    """Best-effort read for GET. Missing/corrupt → {} (fail closed)."""
+    try:
+        return _read_integrations_obj()
     except (OSError, ValueError):
         return {}
 
@@ -101,14 +124,27 @@ def redacted_integrations():
 
 
 def save_slack_settings(changes):
-    """Merge ``changes`` into the slack block, preserving omitted fields."""
-    data = load_integrations()
-    slack = data.get("slack") or {}
+    """Merge ``changes`` into the slack block, preserving omitted fields.
+
+    Refuses to write if the existing file is present but unreadable or
+    corrupt, so MQTT/ntfy secrets are never truncated away.
+    """
+    try:
+        data = _read_integrations_obj()
+    except FileNotFoundError:
+        data = {}
+    except OSError as e:
+        raise IntegrationsUnreadable(
+            f"integrations.json is unreadable; refusing to overwrite ({e})"
+        ) from e
+    except ValueError as e:
+        raise IntegrationsUnreadable(f"{e}; refusing to overwrite") from e
+    slack = data.get("slack") if isinstance(data.get("slack"), dict) else {}
     slack.update(changes)
     data["slack"] = slack
-    fd = os.open(INTEGRATIONS_FILE, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w") as f:
-        json.dump(data, f, indent=2)
+    from analyze_images import _atomic_write_json
+    _atomic_write_json(INTEGRATIONS_FILE, data, indent=2)
+    os.chmod(INTEGRATIONS_FILE, 0o600)
 
 
 def load_pins():
@@ -622,7 +658,14 @@ class Handler(BaseHTTPRequestHandler):
             if not changes:
                 self._send(400, {"error": "no integration settings in payload"})
                 return
-            save_slack_settings(changes)
+            try:
+                save_slack_settings(changes)
+            except IntegrationsUnreadable as e:
+                self._send(409, {"error": str(e)})
+                return
+            except OSError as e:
+                self._send(500, {"error": f"could not write integrations: {e}"})
+                return
             print(f"Integrations updated: slack {sorted(changes)}")
             self._send(200, {"ok": True, **redacted_integrations()})
 

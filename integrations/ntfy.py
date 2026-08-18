@@ -7,7 +7,7 @@ provider does NOT upload the image — it links back to the gallery via Click
 (needs ``public_base_url``); the frame itself stays behind your reverse proxy.
 
 Config block (the ``ntfy`` object of integrations.json):
-    enabled, server_url (default https://ntfy.sh), topic, token (optional),
+    enabled, server_url (required; no public default), topic, token (optional),
     public_base_url (optional, for click-through), notify_mode
 
 Mirrors slack.py's provider contract: post_burst / post_image / send_message /
@@ -16,15 +16,14 @@ send_test_message, each returning (ok, detail).
 import requests
 
 TIMEOUT = 15
-DEFAULT_SERVER = "https://ntfy.sh"
 
 
 def _endpoint(cfg):
-    """Full publish URL ``<server>/<topic>``, or '' if no topic configured."""
+    """Full publish URL ``<server>/<topic>``, or '' if server_url or topic is missing."""
     cfg = cfg or {}
-    server = (cfg.get("server_url") or DEFAULT_SERVER).strip().rstrip("/")
+    server = (cfg.get("server_url") or "").strip().rstrip("/")
     topic = (cfg.get("topic") or "").strip().strip("/")
-    return f"{server}/{topic}" if topic else ""
+    return f"{server}/{topic}" if (server and topic) else ""
 
 
 def _deep_link(cfg, key, ident):
@@ -51,7 +50,10 @@ def _headers(cfg, title=None, click=None, tags=None):
 def _post(cfg, body, title=None, click=None, tags=None):
     url = _endpoint(cfg)
     if not url:
-        return False, "topic is required"
+        cfg = cfg or {}
+        if not (cfg.get("topic") or "").strip().strip("/"):
+            return False, "topic is required"
+        return False, "server_url is required"
     try:
         resp = requests.post(url, data=(body or "").encode("utf-8"),
                              headers=_headers(cfg, title, click or None, tags),

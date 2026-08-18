@@ -24,7 +24,6 @@ TOPICS = {
     "front_door": "example/vision/front_door",
     "dog_cam": "example/vision/dog_cam",
 }
-DEFAULT_HOSTS = ("10.0.0.111", "127.0.0.1")
 DEFAULT_PORT = 1883
 DEFAULT_MODEL = "gemma4:e2b"
 FILENAME_TS = re.compile(
@@ -38,7 +37,10 @@ def _ai():
 
 
 def load_mqtt_cfg():
-    """Broker settings. Env wins; then integrations.json mqtt block."""
+    """Broker settings. Env wins; then integrations.json mqtt block.
+
+    No implicit hosts: enabled with no host/hosts/MQTT_HOST does not publish.
+    """
     cfg = {}
     try:
         with open(CONFIG_FILE) as f:
@@ -48,9 +50,9 @@ def load_mqtt_cfg():
     hosts = cfg.get("hosts")
     if isinstance(hosts, str):
         hosts = [hosts]
-    if not hosts:
+    if not isinstance(hosts, (list, tuple)) or not hosts:
         host = os.environ.get("MQTT_HOST") or cfg.get("host")
-        hosts = [host] if host else list(DEFAULT_HOSTS)
+        hosts = [host] if host else []
     return {
         "enabled": bool(cfg.get("enabled", False)),
         "hosts": [h for h in hosts if h],
@@ -234,6 +236,8 @@ def publish_json(topic, obj, cfg=None):
     cfg = cfg or load_mqtt_cfg()
     if not cfg.get("enabled", False):
         return False, "mqtt disabled"
+    if not cfg.get("hosts"):
+        return False, "no hosts"
     payload = json.dumps(obj, separators=(",", ":"), ensure_ascii=False)
     last = "no hosts"
     for host in cfg["hosts"]:
