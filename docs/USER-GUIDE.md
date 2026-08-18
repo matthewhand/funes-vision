@@ -107,8 +107,8 @@ sweep, and the vision-model audit trail.
 - Merge face/body → person
 - Show / hide unconfirmed tags
 - **AI deep passes** — pause all vision-model work (detector-only)
-- **AI backfill when idle** — verifies leftover empties and car-only
-  skips (nearest detections first). Leave **off** unless you want the
+- **Idle backfill** — verifies leftover empties and car-only skips
+  (nearest detections first). Leave **off** unless you want the
   archive re-checked (thousands of old empties)
 - **Multi-image summaries** — leave **off** unless you want visit captions
   from several frames at once
@@ -117,9 +117,8 @@ sweep, and the vision-model audit trail.
 
 Slack (if enabled) does **not** always post a sequence. With
 **multi-image summaries off** and Slack set to *context*, it will stay
-quiet — that is intentional. *Objects* mode currently pings after a
-successful vision pass on a person/dog frame when deep passes are on —
-not on the raw detector hit if the vision model is skipped.
+quiet — that is intentional. Switch Slack to *objects* to ping on each
+new person/dog detector hit (the vision model does not have to finish).
 
 Home Assistant MQTT is optional and **off unless you enable it**, and
 it needs an **explicit broker host** (no default address). It publishes
