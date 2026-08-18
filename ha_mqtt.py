@@ -102,20 +102,18 @@ SKIP_ONLY_REASONS = (
 def is_analysed(rec):
     """True when the record has a successful e2b/HA flag analysis.
 
-    Skip-only rows (llm_failed / low_mem / budget / ...) must not count, even
-    if they still have a leftover _llm_skip and were re-queued as partials.
+    Requires a non-empty ``_llm`` dict and no ``_llm_skip``. Leftover HA
+    flag keys (porch_access, …) on a detector or skip row are not an analysis
+    and must not retain-publish over a real compare payload.
     """
     if not isinstance(rec, dict):
         return False
-    skip = rec.get("_llm_skip") or ""
-    if skip == "no_trigger" or skip in SKIP_ONLY_REASONS:
+    if rec.get("_llm_skip"):
         return False
     if rec.get("fast_pass") == "negative":
         return False
-    if isinstance(rec.get("_llm"), dict) and rec.get("_llm"):
-        return True
-    ai = _ai()
-    return any(k in rec for k in ai.FRONT_FLAG_KEYS + ai.BACK_FLAG_KEYS)
+    llm = rec.get("_llm")
+    return isinstance(llm, dict) and bool(llm)
 
 
 def should_publish(rec):

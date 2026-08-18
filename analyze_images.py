@@ -585,6 +585,7 @@ def _atomic_write_json(path, data, indent=None):
             json.dump(data, f, indent=indent)
             f.flush()
             os.fsync(f.fileno())
+        os.chmod(tmp, 0o600)
         os.replace(tmp, path)
     except Exception:
         try:

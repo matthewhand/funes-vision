@@ -93,7 +93,7 @@ def _read_integrations_obj():
 
 
 def load_integrations():
-    """Best-effort read for GET. Missing/corrupt → {} (fail closed)."""
+    """Best-effort read. Missing/corrupt → {} (fail closed)."""
     try:
         return _read_integrations_obj()
     except (OSError, ValueError):
@@ -121,6 +121,25 @@ def redacted_integrations():
             "last_delivery": (_integration_state().get("slack") or {}).get("last_delivery"),
         }
     }
+
+
+def integrations_get_response():
+    """(status, body) for GET /api/integrations.
+
+    Missing or empty file → 200 + redacted empty Slack view.
+    Present, non-empty, and unparseable/unreadable → 409 (do not invent Slack).
+    """
+    try:
+        _read_integrations_obj()
+    except FileNotFoundError:
+        pass
+    except (OSError, ValueError):
+        return 409, {
+            "ok": False,
+            "detail": "integrations.json is unreadable",
+            "unreadable": True,
+        }
+    return 200, redacted_integrations()
 
 
 def save_slack_settings(changes):
@@ -273,13 +292,25 @@ def queue_from_analysis(analysis):
 
     llm_verified requires a successful merge (_llm dict, no _llm_skip).
     awaiting_backfill is negatives plus car-only no_trigger skips.
+    unverified_partials is fast_pass partials plus legacy detector-only
+    rows (e.g. {person: true} with no fast_pass / _llm / skip).
     """
-    from analyze_images import is_awaiting_backfill, is_llm_verified
+    from analyze_images import (
+        YOLO_PRESENCE_KEYS, is_awaiting_backfill, is_llm_verified,
+    )
     unverified = awaiting = verified = 0
     for v in analysis.values():
         if not isinstance(v, dict):
             continue
         if v.get("fast_pass") == "partial":
+            unverified += 1
+        elif (
+            not is_llm_verified(v)
+            and not is_awaiting_backfill(v)
+            and not v.get("_llm_skip")
+            and "fast_pass" not in v
+            and any(v.get(k) is True for k in YOLO_PRESENCE_KEYS)
+        ):
             unverified += 1
         if is_awaiting_backfill(v):
             awaiting += 1
@@ -416,7 +447,8 @@ class Handler(BaseHTTPRequestHandler):
                 settings = {}
             self._send(200, {k: settings.get(k) for k in MUTABLE_SETTINGS})
         elif self.path == "/api/integrations":
-            self._send(200, redacted_integrations())
+            code, body = integrations_get_response()
+            self._send(code, body)
         elif self.path == "/api/status":
             self._send(200, pipeline_status())
         elif self.path == "/api/health":
@@ -514,6 +546,14 @@ class Handler(BaseHTTPRequestHandler):
                 pass
 
     @staticmethod
+    def _detection_labels(rec):
+        """YOLO/detector presence keys that are True. Never HA flag names."""
+        from analyze_images import YOLO_PRESENCE_KEYS
+        if not isinstance(rec, dict):
+            return []
+        return sorted(k for k in YOLO_PRESENCE_KEYS if rec.get(k) is True)
+
+    @staticmethod
     def _verified_detections(analysis):
         """Files carrying a final LLM verdict (_llm dict, no skip) with a label."""
         from analyze_images import is_llm_verified
@@ -521,7 +561,7 @@ class Handler(BaseHTTPRequestHandler):
         for f, v in analysis.items():
             if not is_llm_verified(v):
                 continue
-            labels = sorted(k for k, val in v.items() if val is True and k != "_yolo")
+            labels = Handler._detection_labels(v)
             if labels:
                 out[f] = labels
         return out
@@ -538,7 +578,7 @@ class Handler(BaseHTTPRequestHandler):
         for f, v in analysis.items():
             if is_llm_verified(v) or "fast_pass" not in v:
                 continue
-            labels = sorted(k for k, val in v.items() if val is True and k != "_yolo")
+            labels = Handler._detection_labels(v)
             if labels:
                 out[f] = labels
         return out

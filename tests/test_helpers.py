@@ -201,8 +201,10 @@ class TestAtomicIO(unittest.TestCase):
             p = os.path.join(d, "x.json")
             ai._atomic_write_json(p, {"a": 1}, indent=1)
             self.assertEqual(json.load(open(p)), {"a": 1})
+            self.assertEqual(stat.S_IMODE(os.stat(p).st_mode), 0o600)
             ai._atomic_write_json(p, {"b": 2})        # overwrite
             self.assertEqual(json.load(open(p)), {"b": 2})
+            self.assertEqual(stat.S_IMODE(os.stat(p).st_mode), 0o600)
             # no leftover temp files beside it
             self.assertEqual([f for f in os.listdir(d) if ".tmp." in f], [])
 
@@ -409,6 +411,49 @@ class TestSaveIntegrations(unittest.TestCase):
             os.chmod(self.path, 0o600)
         self.assertIn("s3cret", open(self.path).read())
 
+    def test_get_missing_file_is_empty_slack(self):
+        code, body = api_server.integrations_get_response()
+        self.assertEqual(code, 200)
+        self.assertIn("slack", body)
+        self.assertFalse(body["slack"]["enabled"])
+        self.assertFalse(body["slack"]["has_bot_token"])
+        self.assertNotIn("unreadable", body)
+
+    def test_get_empty_file_is_empty_slack(self):
+        open(self.path, "w").close()
+        code, body = api_server.integrations_get_response()
+        self.assertEqual(code, 200)
+        self.assertIn("slack", body)
+        self.assertFalse(body["slack"]["has_bot_token"])
+        self.assertNotIn("unreadable", body)
+
+    def test_get_corrupt_is_409_unreadable(self):
+        with open(self.path, "w") as f:
+            f.write("{not json")
+        code, body = api_server.integrations_get_response()
+        self.assertEqual(code, 409)
+        self.assertEqual(body, {
+            "ok": False,
+            "detail": "integrations.json is unreadable",
+            "unreadable": True,
+        })
+        self.assertNotIn("slack", body)
+        with open(self.path) as f:
+            self.assertEqual(f.read(), "{not json")
+
+    def test_get_readable_is_redacted(self):
+        json.dump({
+            "slack": {"enabled": True, "bot_token": "xoxb-secret", "channel_id": "C1"},
+            "mqtt": {"password": "s3cret"},
+        }, open(self.path, "w"))
+        code, body = api_server.integrations_get_response()
+        self.assertEqual(code, 200)
+        self.assertTrue(body["slack"]["enabled"])
+        self.assertTrue(body["slack"]["has_bot_token"])
+        self.assertEqual(body["slack"]["channel_id"], "C1")
+        self.assertNotIn("bot_token", body["slack"])
+        self.assertNotIn("mqtt", body)
+
 
 class TestFriendly(unittest.TestCase):
     def test_known_code_gets_hint(self):
@@ -509,6 +554,28 @@ class TestDetectionExtract(unittest.TestCase):
         self.assertEqual(api_server.Handler._verified_detections({"x.jpg": rec}),
                          {"x.jpg": ["person"]})
 
+    def test_verified_labels_exclude_ha_flags(self):
+        rec = {
+            "person": True,
+            "porch_access": True,
+            "_llm": {"porch_access": True},
+        }
+        self.assertEqual(
+            api_server.Handler._verified_detections({"x.jpg": rec}),
+            {"x.jpg": ["person"]},
+        )
+
+    def test_preliminary_labels_exclude_ha_flags(self):
+        rec = {
+            "person": True,
+            "porch_access": True,
+            "fast_pass": "partial",
+        }
+        self.assertEqual(
+            api_server.Handler._preliminary_detections({"x.jpg": rec}),
+            {"x.jpg": ["person"]},
+        )
+
     def test_no_trigger_is_not_verified(self):
         rec = {"car": True, "_llm_skip": "no_trigger"}
         self.assertFalse(analyze_images.is_llm_verified(rec))
@@ -529,7 +596,7 @@ class TestDetectionExtract(unittest.TestCase):
         q = api_server.queue_from_analysis(self.ANALYSIS)
         self.assertEqual(q["llm_verified"], 2)          # d, g
         self.assertEqual(q["awaiting_backfill"], 2)     # c negative, h no_trigger
-        self.assertEqual(q["unverified_partials"], 3)   # a, e, i
+        self.assertEqual(q["unverified_partials"], 4)   # a, e, i + b bare person
 
     def test_backfill_pool_includes_no_trigger_not_urgent_partials(self):
         pool = analyze_images.in_backfill_pool

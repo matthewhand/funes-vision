@@ -36,6 +36,14 @@ class TestShouldPublish(unittest.TestCase):
             "_llm_ms": 45,
         }))
 
+    def test_ha_flag_without_llm_does_not_publish(self):
+        self.assertFalse(ha_mqtt.should_publish({"porch_access": True}))
+
+    def test_ha_flag_with_llm_publishes(self):
+        self.assertTrue(ha_mqtt.should_publish({
+            "porch_access": True, "_llm": {"porch_access": True},
+        }))
+
 
 class TestPayload(unittest.TestCase):
     def test_front_analysed(self):
