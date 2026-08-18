@@ -478,8 +478,8 @@ move → verify) lives in [ROADMAP.md](ROADMAP.md).
 | `ollama_url` | http://localhost:11434 | local LLM endpoint |
 | `model_local` | gemma4:e2b | Ollama model tag (back-compat default for `model_primary`; import-time fallback in code is also `gemma4:e2b`) |
 | `model_primary` | gemma4:e2b | primary inference model via Ollama (local tag or a `:cloud` model) |
-| `model_fallback` | gemma4:e2b | optional fallback tried when the primary errors/rate-limits |
-| `max_deep_passes` | 30 | LLM calls per camera per sweep (local+cloud; import-time fallback is 15) |
+| `model_fallback` | "" | optional fallback tried when the primary errors/rate-limits (import-time default is empty) |
+| `max_deep_passes` | 30 | LLM calls per camera per sweep (local+cloud; import-time fallback is 30) |
 | `deep_concurrency` | 1 | parallel **backfill** deep passes. Safe only with a `:cloud` model (no local RAM contention); the cloud endpoint partially parallelizes (~1.4× at 3). Rate-limit backoff + per-sweep `RATE_LIMITED` still guard it |
 | `fast_pass_engine` | yolo | `yolo` or `haar` (UI-selectable) |
 | `deep_passes_enabled` | true | master switch for ALL vision-model work (priority+backfill+bursts); false = detector-only, no LLM (UI-toggleable) |

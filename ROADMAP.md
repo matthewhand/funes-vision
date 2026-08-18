@@ -12,8 +12,8 @@ gallery updates *as things happen* — no waiting on the next sweep/poll tick.
 
 ### Status (2026-06-17): partially built
 
-The transport and the first two event types exist; the headline LLM-streaming
-piece and a true push bridge do not.
+The transport and four event types exist; the headline `analysis.llm` SSE
+stream and a true pipeline→API push do not.
 
 - **Done.** An SSE endpoint `/api/events` (stdlib `BaseHTTPRequestHandler`,
   `text/event-stream`, `X-Accel-Buffering: no`, heartbeat) emits **`image.new`**,
@@ -24,13 +24,16 @@ piece and a true push bridge do not.
   since the raw inotify ingest lives in the pipeline process, not the API.
   Preliminary detections matter most while deep passes are off: they're the only
   live detections then, since nothing reaches a verified verdict.)
+  `image.new` / `detection.preliminary` / `new-detection` patch in-memory state
+  (`mergeNewImage` / `detectionEntry`) and re-render from it; only `new-burst`
+  still `loadData()`-refetches. Full-file `analysis.json` / `images.json` reload
+  is the 30 s poll + onerror fallback, matching the acceptance checklist below.
 - **Not yet.** The bridge is a **3 s file-mtime poll** inside the API (it diffs
   `analysis.json` / `bursts.json` on change), not a pipeline→API push, so
-  latency is ~3 s. The headline **`analysis.llm`** live stream is missing — the
-  Ollama deep-pass call is non-streaming, so surfacing "AI is looking at this…"
-  with the caption typing in remains a prerequisite sub-task. The SPA also still
-  `loadData()`-refetches on each event (coalesced for `image.new`) rather than
-  patching the DOM incrementally.
+  latency is ~3 s. The headline **`analysis.llm`** live stream is missing —
+  there are no `analysis.token` SSE events.
+
+*(2026-08-18: retired the claim that the SPA `loadData()`-refetches on each SSE event.)*
 
 ### Why
 
