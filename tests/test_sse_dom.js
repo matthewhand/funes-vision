@@ -30,9 +30,9 @@ assert.deepStrictEqual(mergeNewImage(null, 'x'), ['x']); // defensive
 assert.deepStrictEqual(detectionEntry(['person', 'car'], true),
   { person: true, car: true, fast_pass: 'partial' });        // preliminary
 assert.deepStrictEqual(detectionEntry(['dog'], false),
-  { dog: true, _yolo: ['dog'] });                            // verified (optimistic corroboration)
+  { dog: true, _yolo: ['dog'], _llm: {} });                  // verified (optimistic corroboration)
 assert.deepStrictEqual(detectionEntry([], true), { fast_pass: 'partial' });
-assert.deepStrictEqual(detectionEntry(null, false), { _yolo: [] });
+assert.deepStrictEqual(detectionEntry(null, false), { _yolo: [], _llm: {} });
 
 // Round-trip: a preliminary entry reads back as 'preliminary' via computeLabelStates.
 eval(block('labelStates'));

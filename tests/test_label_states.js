@@ -11,28 +11,34 @@ eval(m[1]); // defines computeLabelStates
 
 const obj = (analysis, aliases) => Object.fromEntries(computeLabelStates(analysis, aliases));
 
-// fast_pass present => Gemma hasn't ruled => everything preliminary
-assert.deepStrictEqual(obj({ fast_pass: true, person: true }), { person: 'preliminary' });
+// fast_pass present => detector-only => everything preliminary
+assert.deepStrictEqual(obj({ fast_pass: 'partial', person: true }), { person: 'preliminary' });
 
-// No fast_pass => Gemma ruled. YOLO corroborates => verified.
-assert.deepStrictEqual(obj({ person: true, _yolo: ['person'] }), { person: 'verified' });
+// Detector-only (no _llm) is preliminary even without fast_pass.
+assert.deepStrictEqual(obj({ person: true, _yolo: ['person'] }), { person: 'preliminary' });
+
+// _llm dict + no _llm_skip => verdict. YOLO corroborates => verified.
+assert.deepStrictEqual(obj({ person: true, _yolo: ['person'], _llm: { porch_access: false } }), { person: 'verified' });
 
 // Gemma claims a YOLO-capable object YOLO didn't see => disputed.
-assert.deepStrictEqual(obj({ person: true, _yolo: [] }), { person: 'disputed' });
+assert.deepStrictEqual(obj({ person: true, _yolo: [], _llm: {} }), { person: 'disputed' });
 
 // YOLO saw it but Gemma didn't claim it => disputed.
-assert.deepStrictEqual(obj({ _yolo: ['dog'] }), { dog: 'disputed' });
+assert.deepStrictEqual(obj({ _yolo: ['dog'], _llm: {} }), { dog: 'disputed' });
+
+// Car-only skip is not a verdict (live {car, _llm_skip} has no fast_pass).
+assert.deepStrictEqual(obj({ car: true, _llm_skip: 'no_trigger' }), { car: 'preliminary' });
 
 // BIRD is a YOLO class (backend class 14): a Gemma-only bird claim YOLO
 // didn't corroborate must be DISPUTED, not verified. (regression guard)
-assert.deepStrictEqual(obj({ bird: true, _yolo: [] }), { bird: 'disputed' });
-assert.deepStrictEqual(obj({ bird: true, _yolo: ['bird'] }), { bird: 'verified' });
+assert.deepStrictEqual(obj({ bird: true, _yolo: [], _llm: {} }), { bird: 'disputed' });
+assert.deepStrictEqual(obj({ bird: true, _yolo: ['bird'], _llm: {} }), { bird: 'verified' });
 
 // Label beyond YOLO's classes => consensus impossible => verified.
-assert.deepStrictEqual(obj({ alien_ufo: true, _yolo: [] }), { alien_ufo: 'verified' });
+assert.deepStrictEqual(obj({ alien_ufo: true, _yolo: [], _llm: {} }), { alien_ufo: 'verified' });
 
 // Aliases canonicalise raw keys before classification.
-assert.deepStrictEqual(obj({ kitty: true, _yolo: ['cat'] }, { kitty: 'cat' }), { cat: 'verified' });
+assert.deepStrictEqual(obj({ kitty: true, _yolo: ['cat'], _llm: {} }, { kitty: 'cat' }), { cat: 'verified' });
 
 // Defensive: null/undefined analysis => empty map.
 assert.strictEqual(computeLabelStates(null).size, 0);
@@ -55,12 +61,13 @@ assert.deepStrictEqual(obj(haOnly), {});
 // Mixed record: YOLO person stays; HA flags do not become labels.
 assert.deepStrictEqual(obj({
   person: true, porch_access: true, postal_delivery: true,
-  animal_detected: true, clothes_drying: true, _yolo: ['person']
+  animal_detected: true, clothes_drying: true, _yolo: ['person'],
+  _llm: { porch_access: true }
 }), { person: 'verified' });
 
 // Aliasing an HA flag must not smuggle it in as a person chip.
 assert.deepStrictEqual(
-  obj({ porch_access: true, person: true, _yolo: ['person'] }, { porch_access: 'person' }),
+  obj({ porch_access: true, person: true, _yolo: ['person'], _llm: {} }, { porch_access: 'person' }),
   { person: 'verified' }
 );
 assert.deepStrictEqual(obj({ porch_access: true }, { porch_access: 'person' }), {});

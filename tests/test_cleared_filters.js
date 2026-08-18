@@ -46,4 +46,19 @@ assert.ok(!/dataset\.filter === 'all'/.test(resetFn[1]),
 assert.ok(!/state\.blacklist/.test(resetFn[1]),
   'resetAllFilters must not unhide labels — Unhide is the dedicated escape');
 
+assert.ok(/syncTimePills/.test(resetFn[1]),
+  'resetAllFilters must call syncTimePills so Morning/Night pills unpress');
+assert.ok(/renderDateSidebar\(\)/.test(resetFn[1]),
+  'resetAllFilters must re-render the date sidebar so Yesterday unhighlights');
+
+// Activity-pill "tap to view" must reuse resetAllFilters, not a half-reset.
+const pillClick = html.match(/pill\.onclick\s*=\s*\(\)\s*=>\s*\{([\s\S]*?)\n        \};/);
+assert(pillClick, 'activity-pill onclick not found');
+assert.ok(/resetAllFilters\(\)/.test(pillClick[1]),
+  'activity-pill must call resetAllFilters');
+assert.ok(!/state\.activeDateFilter\s*=/.test(pillClick[1]),
+  'activity-pill must not duplicate filter resets');
+assert.ok(!/role=["']status["']/.test(html.match(/pill\.id = 'activity-pill';[\s\S]*?document\.body\.appendChild\(pill\);/)[0]),
+  'activity-pill is a button; do not override with role=status');
+
 console.log('clearedFilters: all assertions passed');

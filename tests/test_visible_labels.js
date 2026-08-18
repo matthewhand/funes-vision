@@ -25,8 +25,8 @@ assert.strictEqual(showDisputedLabels({ precisionMode: false, showUnconfirmed: t
 assert.strictEqual(showDisputedLabels(undefined), true); // no opts -> not precision -> show
 
 // --- visibleLabels(analysis, aliases, opts) ---
-const disputed = { person: true, _yolo: [] };          // Gemma-only claim => disputed
-const verified = { person: true, _yolo: ['person'] };  // consensus => verified
+const disputed = { person: true, _yolo: [], _llm: {} };          // Gemma-only claim => disputed
+const verified = { person: true, _yolo: ['person'], _llm: {} };  // consensus => verified
 const prelim   = { car: true, fast_pass: 'partial' };  // detector-only => preliminary
 
 const vis = (a, o) => Array.from(visibleLabels(a, {}, o)).sort();
@@ -46,7 +46,7 @@ assert.deepStrictEqual(vis(verified, { precisionMode: false, showUnconfirmed: fa
 // HA flags never become filter/visit labels, even with show-unconfirmed on.
 const haPolluted = {
   person: true, porch_access: true, postal_delivery: true,
-  animal_detected: true, _yolo: ['person']
+  animal_detected: true, _yolo: ['person'], _llm: {}
 };
 assert.deepStrictEqual(vis(haPolluted, { precisionMode: true, showUnconfirmed: false }), ['person']);
 assert.deepStrictEqual(vis(haPolluted, { precisionMode: true, showUnconfirmed: true }), ['person']);

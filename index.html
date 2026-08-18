@@ -2786,7 +2786,10 @@
       const canon = (key) => (aliases && aliases[key]) || key;
       const states = new Map();
       if (!analysis) return states;
-      const hasVerdict = !('fast_pass' in analysis); // Gemma has ruled
+      // Verdict only after a successful LLM merge: _llm is a dict and the
+      // row was not skipped. Missing fast_pass is not enough (car-only
+      // no_trigger and bare detector rows have no fast_pass either).
+      const hasVerdict = !!(analysis._llm && typeof analysis._llm === 'object' && !analysis._llm_skip);
       const yoloSaw = new Set((analysis._yolo || []).map(canon).filter(l => !HA_FLAG_KEYS.has(l)));
       Object.entries(analysis).forEach(([key, val]) => {
         if (val !== true || key === 'fast_pass') return;
@@ -3254,8 +3257,8 @@
     // === pure:detectionEntry ===
     // Build an analysis.json-shaped entry from an SSE detection event: each
     // label true; a preliminary (detector-only) hit also carries
-    // fast_pass:'partial', a verified verdict omits fast_pass — matching what
-    // computeLabelStates expects.
+    // fast_pass:'partial'. A verified new-detection includes _llm so
+    // computeLabelStates treats it as a verdict (absence of fast_pass is not).
     function detectionEntry(labels, preliminary) {
       const e = {};
       (labels || []).forEach(l => { e[l] = true; });
@@ -3266,6 +3269,7 @@
         // optimistically treat the labels as corroborated -> 'verified' (the
         // common case); the 30s reconcile poll fixes any genuine disagreement.
         e._yolo = (labels || []).slice();
+        e._llm = {};
       }
       return e;
     }
@@ -3299,6 +3303,7 @@
       if (typeof updateSliderLabel === 'function') updateSliderLabel();
       renderObjectFilters();
       renderDateSidebar();
+      if (window.syncTimePills) window.syncTimePills();
       applyFiltersAndSearch();
     }
 
@@ -5006,35 +5011,24 @@
       if (!pill) {
         pill = document.createElement('button');
         pill.id = 'activity-pill';
-        pill.setAttribute('role', 'status');      // announce new activity to
-        pill.setAttribute('aria-live', 'polite');  // screen readers
-        pill.setAttribute('aria-atomic', 'true');
         // Accent (not danger-red): benign "N new" activity, not a fault.
         pill.style.cssText = 'position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:2500;background:var(--accent);color:#fff;border:none;border-radius:var(--radius-pill);padding:8px 16px;font-size:0.8rem;font-weight:600;cursor:pointer;box-shadow:var(--elevation-2);';
+        const live = document.createElement('span');
+        live.setAttribute('aria-live', 'polite');
+        live.setAttribute('aria-atomic', 'true');
+        pill.appendChild(live);
         pill.onclick = () => {
           state.newActivity = 0;
           document.title = BASE_TITLE;
-          // Drop narrowing so the newest visit is actually on screen.
-          state.activeDateFilter = 'all';
-          state.timeStart = 0;
-          state.timeEnd = 23;
-          state.activeHourChartFilter = null;
-          state.searchQuery = '';
-          state.objectFilters = new Set();
-          const si = document.getElementById('search-input');
-          if (si) si.value = '';
-          if (window.syncSearchClear) window.syncSearchClear();
-          const ss = document.getElementById('time-start'), se = document.getElementById('time-end');
-          if (ss) ss.value = 0; if (se) se.value = 23;
-          if (typeof updateSliderLabel === 'function') updateSliderLabel();
-          applyFiltersAndSearch();
+          resetAllFilters();
           window.scrollTo({ top: 0, behavior: 'smooth' });
           pill.remove();
         };
         document.body.appendChild(pill);
       }
       const n = state.newActivity;
-      pill.textContent = `${n} new ${n === 1 ? 'event' : 'events'}${state.lastActivity ? ` · ${state.lastActivity}` : ''} — tap to view`;
+      const live = pill.querySelector('[aria-live]') || pill;
+      live.textContent = `${n} new ${n === 1 ? 'event' : 'events'}${state.lastActivity ? ` · ${state.lastActivity}` : ''} — tap to view`;
     }
 
     // Back-to-top button: appears after scrolling down a long grid
@@ -5442,7 +5436,12 @@
           showToast('Slack settings saved');
           loadIntegrations();
         } catch (err) {
-          showToast(String(err.message).includes('400') ? 'Invalid Slack settings (check the site URL)' : 'Save failed - is the API running?');
+          const msg = String(err.message);
+          showToast(msg.includes('409')
+            ? 'Slack not saved — integrations.json is unreadable. MQTT/ntfy were left alone.'
+            : msg.includes('400')
+              ? 'Invalid Slack settings (check the site URL)'
+              : 'Save failed - is the API running?');
         }
       });
 
