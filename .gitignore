@@ -10,6 +10,7 @@
 /integrations_state.json
 /retention_log.json
 /alert_state.json
+/events.jsonl
 *.log
 nohup.out
 __pycache__/
