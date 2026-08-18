@@ -69,7 +69,7 @@
 <div class="wrap">
   <div class="top">
     <h1>Webcam gallery — how to use it</h1>
-    <a href="USER-GUIDE.md">Markdown source</a>
+    <span class="muted">Also in the repo as docs/USER-GUIDE.md</span>
   </div>
   <p class="lede">A two-camera, local-first gallery. Motion stills land on this box. A fast detector tags <strong>who or what</strong>. A local vision model (<code>gemma4:e2b</code>) adds <strong>scene flags</strong>. Nothing is uploaded unless you turn an integration on.</p>
   <p>Read this top to bottom the first time. It follows the chrome you will see after you open the front camera.</p>
@@ -108,8 +108,8 @@
   <h2 id="box">This box, today</h2>
   <table>
     <tr><th>Knob</th><th>This box</th></tr>
-    <tr><td>Front camera</td><td><code>http://&lt;host&gt;:8180</code> (driveway / gate)</td></tr>
-    <tr><td>Back camera</td><td><code>http://&lt;host&gt;:8280</code> (yard / dogcam)</td></tr>
+    <tr><td>Front camera</td><td><code>http://&lt;host&gt;:8180</code> — header <b>Webcam Live Feed</b></td></tr>
+    <tr><td>Back camera</td><td><code>http://&lt;host&gt;:8280</code> — header <b>Dogcam Live Feed</b></td></tr>
     <tr><td>Vision model</td><td><code>gemma4:e2b</code> via local Ollama (~40 s/frame when busy)</td></tr>
     <tr><td>Cloud fallback</td><td><strong>off</strong></td></tr>
     <tr><td>Vision deep passes</td><td><strong>on</strong> (person/dog/cat/bird jump the queue)</td></tr>
@@ -120,6 +120,8 @@
     <tr><td>Empty-frame age</td><td><strong>30 days</strong></td></tr>
     <tr><td>Camera offline</td><td><strong>24 hours</strong> without a new still</td></tr>
     <tr><td>Timezone</td><td><code>Australia/Sydney</code></td></tr>
+    <tr><td>Slack</td><td><b>on</b>, mode <code>context</code> — silent while summaries are off</td></tr>
+    <tr><td>HA MQTT</td><td><b>on</b> this box (explicit host). Flags only</td></tr>
   </table>
 
   <h2 id="open">1. Open it</h2>
@@ -136,7 +138,7 @@
   </figure>
 
   <h2 id="header">2. The header</h2>
-  <p>Left to right: camera name + timezone, Switch Feed, search, Refresh, <strong>Help</strong> (this page, new tab), and the <strong>Live</strong> switch. The toolbar also has Filters, Settings, Integrations, and AI (pipeline status).</p>
+  <p>Header, left to right: <strong>Webcam Live Feed</strong> / <strong>Dogcam Live Feed</strong>, subtitle <em>Monitoring front gate area · AEST</em> (or backyard), Switch Feed, search, Refresh, and the <strong>Live</strong> switch. The toolbar (not the header) has Filters, Settings, Integrations, <strong>Help</strong> (this page), and AI (pipeline status). Status names the same cameras Front / Back.</p>
   <table>
     <tr><th>Badge</th><th>Meaning</th></tr>
     <tr><td><strong>Live</strong></td><td>Event stream connected, heartbeats arriving</td></tr>
@@ -290,7 +292,7 @@
     <tr><td>Caption missing on a visit</td><td>Normal. e2b does not write sentences</td></tr>
   </table>
 
-  <p class="muted">Operators: <a href="../DEVELOP.md">DEVELOP.md</a> · <a href="../DEPLOYMENT.md">DEPLOYMENT.md</a> · <a href="../API.md">API.md</a> · <a href="../ROADMAP.md">ROADMAP.md</a></p>
+  <p class="muted">Operators: DEVELOP.md, DEPLOYMENT.md, API.md, and ROADMAP.md live in the git repo, not on this camera site.</p>
 </div>
 </body>
 </html>

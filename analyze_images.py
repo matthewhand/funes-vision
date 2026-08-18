@@ -380,7 +380,8 @@ def is_llm_verified(rec):
         return False
     if rec.get("_llm_skip"):
         return False
-    return isinstance(rec.get("_llm"), dict)
+    llm = rec.get("_llm")
+    return isinstance(llm, dict) and bool(llm)
 
 
 def is_awaiting_backfill(rec):

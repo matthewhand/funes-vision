@@ -44,8 +44,8 @@ fresh clone behaves the same if `settings.json` is missing.
 
 | Knob | This box |
 |------|----------|
-| Front camera | `http://<host>:8180` (driveway / gate) |
-| Back camera | `http://<host>:8280` (yard / dogcam) |
+| Front camera | `http://<host>:8180` — header **Webcam Live Feed** |
+| Back camera | `http://<host>:8280` — header **Dogcam Live Feed** |
 | Vision model | `gemma4:e2b` via local Ollama (~40 s/frame when busy) |
 | Cloud fallback | **off** |
 | Vision deep passes | **on** (person/dog/cat/bird jump the queue) |
@@ -56,6 +56,8 @@ fresh clone behaves the same if `settings.json` is missing.
 | Empty-frame age | **30 days** |
 | Camera offline | **24 hours** without a new still |
 | Timezone | `Australia/Sydney` (subtitle shows `AEST` / `AEDT`) |
+| Slack | **on**, `notify_mode: context` — silent while summaries are off. Switch to **objects** to ping person/dog |
+| HA MQTT | **on** this box (explicit broker in `integrations.json`). Flags only, not JPEGs |
 
 ---
 
@@ -72,11 +74,14 @@ filter state.
 On a phone, **Add to Home Screen**. There is no service worker, so you
 will not get a stale offline copy.
 
-The title is a camera nickname. The subtitle is the nickname plus a
-short timezone — **not** a LAN address. Filenames on disk still contain
-camera IPs; the chrome is not supposed to show them.
+The header title is **Webcam Live Feed** (front) or **Dogcam Live Feed**
+(back). The subtitle is *Monitoring front gate area · AEST* or
+*Monitoring backyard and dog area · AEST* — **not** a LAN address.
+Filenames on disk still contain camera IPs; the chrome is not supposed
+to show them. Status calls the same two cameras **Front** and **Back**.
 
-**Switch Feed** in the header jumps to the other camera.
+**Switch Feed** in the header jumps to the other camera
+(*Switch to Dogcam Feed* / *Switch to Webcam Feed*).
 
 ![Mobile timeline of dog and person visits](guide/img/mobile-timeline.png)
 
@@ -94,8 +99,11 @@ Left to right:
 - **Switch Feed** — other camera
 - **Search** — time, detector labels, or caption text (see [§5](#5-find-something))
 - **Refresh** — force-reload catalogs from disk
-- **Help** — this walkthrough, in a new tab (fixture pictures, not your house)
 - **Live** — a switch, not just a light (see [§9](#9-live-updates))
+
+On the toolbar (next to Settings / Integrations / **AI**):
+
+- **Help** — this walkthrough, in a new tab (fixture pictures, not your house)
 
 Default first paint is a green **Live** pill. Click it to pause. The
 visible states are:
@@ -342,9 +350,10 @@ You should see, in order:
 - **Idle backfill** / **Multi-image summaries** — both **off** here
 - **Quiet labels** — `car`
 - **Queue** — new / priority / backfill / verified. Verified means a
-  real `_llm` dict, not “missing `fast_pass`.” Backfill is counted even
-  though the switch is off, so the number stays honest
-- **Cameras** — **Front** and **Back** (not Webcam21 / 10.0.0.21), last
+  **non-empty** `_llm` dict (real flags), not “missing `fast_pass`” and
+  not `{}`. Backfill is counted even though the switch is off, so the
+  number stays honest
+- **Cameras** — **Front** and **Back** (header says Webcam / Dogcam), last
   frame age, budget %
 - **This view** — stats over *loaded* frames (busiest hour, most-seen
   objects), plus the HA schema viewer. Not a product called Insights

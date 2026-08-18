@@ -550,7 +550,7 @@ class TestDetectionExtract(unittest.TestCase):
     def test_llm_dict_is_verified(self):
         rec = {"person": True, "_llm": {"porch_access": False}}
         self.assertTrue(analyze_images.is_llm_verified(rec))
-        self.assertTrue(analyze_images.is_llm_verified({"_llm": {}}))
+        self.assertFalse(analyze_images.is_llm_verified({"_llm": {}}))
         self.assertEqual(api_server.Handler._verified_detections({"x.jpg": rec}),
                          {"x.jpg": ["person"]})
 

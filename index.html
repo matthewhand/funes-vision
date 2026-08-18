@@ -1984,7 +1984,7 @@
                 <span>Idle backfill</span>
                 <div class="blacklist-status"></div>
               </div>
-              <div class="blacklist-item" id="burst-summaries-toggle" title="LLM caption of a multi-frame visit (last 3 images). Off by default — single-frame analysis is unchanged." style="margin-top: 8px;">
+              <div class="blacklist-item hidden-label" id="burst-summaries-toggle" title="LLM caption of a multi-frame visit (last 3 images). Off by default — single-frame analysis is unchanged." style="margin-top: 8px;">
                 <span>Multi-image summaries</span>
                 <div class="blacklist-status"></div>
               </div>
@@ -1993,11 +1993,11 @@
               </div>
               <label style="display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:0.78rem; padding:2px 0;" title="Server: seconds between idle catch-up sweeps">
                 Idle sweep (s)
-                <input type="number" id="sweep-interval-input" class="menu-field" min="15" max="3600" step="15" style="width:70px;">
+                <input type="number" id="sweep-interval-input" class="menu-field" min="15" max="3600" step="15" value="60" style="width:70px;">
               </label>
               <label style="display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:0.78rem; padding:2px 0;" title="This browser: seconds between AI status polls">
                 Status poll (s)
-                <input type="number" id="poll-interval-input" class="menu-field" min="5" max="300" step="5" style="width:70px;">
+                <input type="number" id="poll-interval-input" class="menu-field" min="5" max="300" step="5" value="15" style="width:70px;">
               </label>
             </div>
           </div>
@@ -2046,7 +2046,7 @@
                 <div style="font-size:0.64rem; color:var(--text-secondary); margin-bottom:6px; line-height:1.4;">
                   Per-image modes alert on newly-captured frames only, not the historical backfill.
                 </div>
-                <div class="blacklist-item" id="slack-enabled-toggle" style="margin-top:6px;">
+                <div class="blacklist-item hidden-label" id="slack-enabled-toggle" style="margin-top:6px;">
                   <span>Enabled</span>
                   <div class="blacklist-status"></div>
                 </div>
@@ -4414,7 +4414,12 @@
         renderBackfillToggle();
         renderDeepPassesToggle();
         renderBurstSummariesToggle();
-      } catch (e) { /* API offline/timeout; controls show defaults */ }
+      } catch (e) {
+        // API offline: keep import-time defaults (deep on, backfill/summaries off).
+        renderBackfillToggle();
+        renderDeepPassesToggle();
+        renderBurstSummariesToggle();
+      }
     })();
 
     // Make the Settings on/off toggles accessible switches (keyboard + aria-checked).
@@ -5421,6 +5426,7 @@
       const slackEnabledToggle = document.getElementById('slack-enabled-toggle');
       let slackEnabled = false;
       const renderSlackEnabled = () => slackEnabledToggle.classList.toggle('hidden-label', !slackEnabled);
+      renderSlackEnabled();
       slackEnabledToggle.addEventListener('click', () => { slackEnabled = !slackEnabled; renderSlackEnabled(); });
 
       async function loadIntegrations() {

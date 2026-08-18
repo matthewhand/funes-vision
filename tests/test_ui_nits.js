@@ -8,6 +8,12 @@ const html = fs.readFileSync(__dirname + '/../index.html', 'utf8');
 assert.ok(/let backfillOn = false/.test(html), 'backfillOn default must be false');
 assert.ok(/id="backfill-toggle"[^>]*hidden-label|class="blacklist-item hidden-label"[^>]*id="backfill-toggle"/.test(html),
   '#backfill-toggle markup must include hidden-label for first paint');
+assert.ok(/id="burst-summaries-toggle"[^>]*hidden-label|class="blacklist-item hidden-label"[^>]*id="burst-summaries-toggle"/.test(html),
+  '#burst-summaries-toggle markup must first-paint off');
+assert.ok(/id="slack-enabled-toggle"[^>]*hidden-label|class="blacklist-item hidden-label"[^>]*id="slack-enabled-toggle"/.test(html),
+  'Slack Enabled must first-paint off');
+assert.ok(/id="sweep-interval-input"[^>]*value="60"/.test(html), 'idle sweep first-paints 60');
+assert.ok(/id="poll-interval-input"[^>]*value="15"/.test(html), 'status poll first-paints 15');
 assert.ok(/When idle, verify leftover empties and car-only skips \(near detections first\)/.test(html),
   'backfill title/toast must describe leftover empties, not ALL images newest first');
 assert.ok(!/ALL images, newest first/i.test(html),
