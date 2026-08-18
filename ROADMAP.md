@@ -39,7 +39,7 @@ cache-busted refetches of `analysis.json` (~850 KB), `bursts.json`,
 `images.json`, `pins.json`, and `/api/status` · `/api/inference_log` ·
 `inference_status.json`. That means up to several seconds of latency, repeated
 re-download of large files for tiny deltas, and — worst for UX — the **deep LLM
-pass (~5.5 min/image on this box) is invisible until it finishes and the next
+pass (~40 s/image on `gemma4:e2b`) is invisible until it finishes and the next
 poll lands**. The pipeline already knows the moment each thing happens; the UI
 just can't hear it yet.
 
@@ -52,7 +52,7 @@ just can't hear it yet.
    Source: the fast pass in `analyze_images.py`. Payload: filename, labels,
    boxes. UI: render the amber `label?` badge immediately.
 3. **`analysis.llm`** — *the headline feature.* The local vision LLM
-   (`gemma4:12b`) is reasoning about an image, streamed **as it happens**, not
+   (`gemma4:e2b`) is reasoning about an image, streamed **as it happens**, not
    only on completion. Source: the deep pass in `analyze_images.py` (the same
    place that writes `inference_status.json`). Emit at minimum:
    `analysis.started` (image, model, trigger — the current `inference_status.json`
@@ -80,8 +80,8 @@ just can't hear it yet.
       `inference_status.json.partial`, which `/api/status` exposes and the ℹ
       panel shows live ("Analyzing now …" + the caption in progress). Still
       polled at the panel's cadence, not pushed as `analysis.token` SSE events;
-      and **live validation is owner-gated** — deep passes are OFF, so this runs
-      only once Gemma/a vision model is enabled. Pure parts (`parse_chat_chunk`,
+      and per-image Ollama calls are still non-streaming. Deep passes are **on**
+      (`gemma4:e2b`); burst summaries stay off. Pure parts (`parse_chat_chunk`,
       stream accumulation) are unit-tested against a mock.)*
 - [x] Graceful degradation: if the stream drops or the browser lacks support,
       the existing poll path still works (kept as the fallback). The ℹ status

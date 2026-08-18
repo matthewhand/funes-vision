@@ -33,8 +33,17 @@ assert.deepStrictEqual(getHAFlags({
   dog_walked: false,
 }), []);
 
-// String "false" is also a sentinel, not a value.
+// String "false" / "unknown" are sentinels, not values.
 assert.deepStrictEqual(getHAFlags({ postal_how: 'false', animal_type: ' False ' }), []);
+assert.deepStrictEqual(getHAFlags({ car_make: 'unknown', car_color: 'Unknown' }), []);
+
+// Orphan strings (parent boolean false/absent) must not badge.
+assert.deepStrictEqual(getHAFlags({
+  postal_how: 'on foot',
+  animal_type: 'dog',
+  car_make: 'toyota',
+  car_access: false,
+}), []);
 
 // True booleans and real string values do render.
 assert.deepStrictEqual(labels(getHAFlags({

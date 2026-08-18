@@ -47,10 +47,10 @@ aspirational.
 - **Event-driven ingest** — an `inotifywait` watcher queues each new snapshot
   for analysis within seconds (no fixed-interval scanning).
 - **Tiered AI vision** — a fast YOLO pass (person/car/bird/cat/dog) followed by
-  a local Gemma vision LLM (`gemma4:e2b` via Ollama). The deep pass writes
+  a local vision model (`gemma4:e2b` via Ollama). The deep pass writes
   **Home Assistant flags** (`postal_delivery`, `porch_access`, `animal_detected`,
   `dog_walked`, `clothes_drying`, `weapon_detected`, …). It does **not** emit
-  free-text Gemma captions. Detector labels are **never overwritten** by the
+  free-text captions. Detector labels are **never overwritten** by the
   LLM (`merge_llm_into_fastpass`).
 - **Detection lifecycle** — `preliminary` (fast detector only, awaiting flags)
   then a merged record: YOLO objects stay; HA flags attach under `_llm` and as

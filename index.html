@@ -2800,7 +2800,8 @@
     // === pure:getHAFlags ===
     // Extract Home Assistant vision flags from e2b deep-pass analysis records.
     // Returns array of {label, value, isString} for flags that are set.
-    // Booleans only when true; strings skip empty / "none" / "false".
+    // Booleans only when true; strings skip empty / "none" / "false" / "unknown"
+    // and must have their parent boolean on (postal_how needs postal_delivery).
     function getHAFlags(analysis) {
       if (!analysis) return [];
       
@@ -2811,6 +2812,13 @@
         'opens_box', 'porch_access', 'animal_detected', 'animal_type',
         'approaching_house', 'leaving_house', 'weapon_detected', 'clothes_drying'
       ]);
+      const stringNeeds = {
+        postal_how: () => analysis.postal_delivery === true,
+        animal_type: () => analysis.animal_detected === true,
+        car_outfit: () => analysis.enters_car === true || analysis.exits_car === true,
+        car_color: () => !!(analysis.car_access || analysis.enters_car || analysis.exits_car),
+        car_make: () => !!(analysis.car_access || analysis.enters_car || analysis.exits_car),
+      };
       
       const flags = [];
       for (const [key, value] of Object.entries(analysis)) {
@@ -2820,11 +2828,12 @@
         if (value === true) {
           flags.push({ label: key, value: true, isString: false });
         }
-        // String fields: skip empty / "none" / "false" (schema sentinel values)
+        // String fields: skip empty / sentinel values and unparented fields
         else if (typeof value === 'string') {
           const trimmed = value.trim();
           const low = trimmed.toLowerCase();
-          if (!trimmed || low === 'none' || low === 'false') continue;
+          if (!trimmed || low === 'none' || low === 'false' || low === 'unknown') continue;
+          if (stringNeeds[key] && !stringNeeds[key]()) continue;
           flags.push({ label: key, value: trimmed, isString: true });
         }
       }
@@ -2900,6 +2909,19 @@
         overlay.removeEventListener('keydown', onKey);
         if (prev && typeof prev.focus === 'function') prev.focus();
       };
+    }
+
+    const popoverFocus = {};
+    function setPopoverOpen(id, menu, btn, open) {
+      menu.classList.toggle('active', open);
+      if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      if (open) {
+        if (popoverFocus[id]) popoverFocus[id]();
+        popoverFocus[id] = trapFocus(menu);
+      } else if (popoverFocus[id]) {
+        popoverFocus[id]();
+        popoverFocus[id] = null;
+      }
     }
 
     // === pure:formatCount ===
@@ -3582,7 +3604,7 @@
           msg += ` (${state.blacklist.length} label${state.blacklist.length !== 1 ? 's are' : ' is'} hidden via Settings.)`;
           actions += '<button class="btn" id="empty-unhide">Unhide all labels</button>';
         }
-        if (filtersActive || state.activeFilter === 'objects') {
+        if (filtersActive) {
           actions += '<button class="btn" id="empty-reset">Clear all filters</button>';
         }
         showEmptyState(msg, actions, title);
@@ -3725,6 +3747,21 @@
     // Group each object's presence into VISITS: a contiguous run where the
     // label is present becomes one visit (start, end, duration, frames,
     // caption). Single-frame flickers are smoothed out.
+    // === pure:burstContaining ===
+    // bursts.json is keyed by the LAST frame of a sequence. Any frame in
+    // that sequence should still see the summary.
+    function burstContaining(filename, bursts) {
+      if (!filename || !bursts || typeof bursts !== 'object') return null;
+      if (bursts[filename]) return bursts[filename];
+      const keys = Object.keys(bursts);
+      for (let i = 0; i < keys.length; i++) {
+        const b = bursts[keys[i]];
+        if (b && Array.isArray(b.images) && b.images.indexOf(filename) >= 0) return b;
+      }
+      return null;
+    }
+    // === /pure:burstContaining ===
+
     // === pure:visitPlayFrames ===
     // Flipbook frames for a visit: the visit itself plus up to `maxContext`
     // earlier stills from the SAME camera within `maxGapSec`. Never borrow a
@@ -3770,9 +3807,12 @@
           while (i < present.length && present[i]) i++;
           const end = i - 1; // inclusive last present frame
           const frames = visitPlayFrames(items, start, end);
-          // First Gemma caption seen during the visit
           let caption = '';
           for (let k = start; k <= end && !caption; k++) caption = entryCaption(items[k].a);
+          if (!caption) {
+            const burst = burstContaining(items[start].f, state.bursts);
+            if (burst && burst.summary) caption = String(burst.summary);
+          }
 
           visits.push({
             label,
@@ -3852,10 +3892,13 @@
         // cause is usually an active filter/search).
         const filtersActive = !!(state.searchQuery || state.objectFilters.size ||
           state.activeDateFilter !== 'all' || state.timeStart !== 0 || state.timeEnd !== 23 ||
-          state.activeHourChartFilter !== null);
+          state.activeHourChartFilter !== null || state.blacklist.length);
         const es = timelineEmptyState(filtersActive);
         const kind = emptyStateKind({ filtersActive });
-        const actions = es.showReset ? '<button class="btn" id="empty-reset">Clear all filters</button>' : '';
+        let actions = es.showReset ? '<button class="btn" id="empty-reset">Clear all filters</button>' : '';
+        if (state.blacklist.length) {
+          actions += '<button class="btn" id="empty-unhide">Unhide all labels</button>';
+        }
         // Prefer emptyStateKind titles (filtered vs empty archive); keep
         // timelineEmptyState's visit-specific message body.
         showEmptyState(es.message, actions, kind.title === 'No snapshots yet' ? 'No visits yet' : kind.title);
@@ -3890,7 +3933,7 @@
           <i data-lucide="play-circle" style="width:22px;height:22px;color:var(--accent);flex-shrink:0;"></i>`;
         // Keyboard-operable (Timeline is the default view; rows play the visit).
         row.setAttribute('aria-label', 'Play ' + visitAltText(v.label, v.start.meta.formattedTime, v.count, v.ongoing));
-        bindActivatable(row, () => openEventPlayer({ label: v.label, type: 'visit', x: v.start, frames: v.frames }));
+        bindActivatable(row, () => openEventPlayer({ label: v.label, type: 'visit', caption: v.caption, frames: v.frames }));
         list.appendChild(row);
       });
       if (visits.length > VISIT_CAP) {
@@ -3949,7 +3992,8 @@
         const frameLabel = `${ev.label || 'Visit'} ${ev.type || ''} frame ${idx + 1} of ${frames.length}`.replace(/\s+/g, ' ').trim();
         imgEl.alt = frameLabel + (meta ? `, ${meta.formattedDate} ${meta.formattedTime}` : '');
         labelEl.innerHTML = `<span style="text-transform:capitalize;">${escapeHtml(ev.label)}</span> ${escapeHtml(ev.type)} &middot; frame ${idx + 1}/${frames.length}` +
-          (meta ? `<br>${escapeHtml(meta.formattedDate)} ${escapeHtml(meta.formattedTime)}` : '');
+          (meta ? `<br>${escapeHtml(meta.formattedDate)} ${escapeHtml(meta.formattedTime)}` : '') +
+          (ev.caption ? `<br><em>${escapeHtml(ev.caption)}</em>` : '');
         fullEl.href = frames[idx];
         if (Number(scrubEl.value) !== idx) scrubEl.value = idx;
       };
@@ -4063,9 +4107,9 @@
       const params = new URLSearchParams(location.search);
       const ev = params.get('event');
       if (ev) {
-        const burst = state.bursts[ev];
+        const burst = burstContaining(ev, state.bursts);
         if (burst && Array.isArray(burst.images) && burst.images.length) {
-          openEventPlayer({ label: 'Sequence', type: 'playback', frames: burst.images });
+          openEventPlayer({ label: 'Sequence', type: 'playback', caption: burst.summary, frames: burst.images });
         } else {
           showToast('That sequence is no longer available.');
         }
@@ -4562,7 +4606,7 @@
       });
       
       const analysis = state.analysis[filename];
-      const burst = state.bursts[filename];
+      const burst = burstContaining(filename, state.bursts);
       
       let aiText = '';
       if (analysis) {
@@ -5160,8 +5204,8 @@
       const blacklistDropdown = document.getElementById('blacklist-dropdown');
       btnManageBlacklist.addEventListener('click', (e) => {
         e.stopPropagation();
-        const open = blacklistDropdown.classList.toggle('active');
-        btnManageBlacklist.setAttribute('aria-expanded', open ? 'true' : 'false');
+        setPopoverOpen('settings', blacklistDropdown, btnManageBlacklist,
+          !blacklistDropdown.classList.contains('active'));
       });
 
       document.addEventListener('click', (e) => {
@@ -5170,8 +5214,7 @@
         // "outside" click, so don't close the menu on it.
         if (document.contains(e.target) &&
             !blacklistDropdown.contains(e.target) && e.target !== btnManageBlacklist) {
-          blacklistDropdown.classList.remove('active');
-          btnManageBlacklist.setAttribute('aria-expanded', 'false');
+          setPopoverOpen('settings', blacklistDropdown, btnManageBlacklist, false);
         }
       });
 
@@ -5181,16 +5224,15 @@
       if (btnFilters && filtersDropdown) {
         btnFilters.addEventListener('click', (e) => {
           e.stopPropagation();
-          const open = filtersDropdown.classList.toggle('active');
-          btnFilters.setAttribute('aria-expanded', open ? 'true' : 'false');
+          setPopoverOpen('filters', filtersDropdown, btnFilters,
+            !filtersDropdown.classList.contains('active'));
         });
         document.addEventListener('click', (e) => {
           // ignore a target detached by a re-render (e.g. clicking a filter chip
           // re-renders the chips) — that's not an outside click, don't close.
           if (document.contains(e.target) &&
               !filtersDropdown.contains(e.target) && !btnFilters.contains(e.target)) {
-            filtersDropdown.classList.remove('active');
-            btnFilters.setAttribute('aria-expanded', 'false');
+            setPopoverOpen('filters', filtersDropdown, btnFilters, false);
           }
         });
       }
@@ -5290,15 +5332,14 @@
 
       btnIntegrations.addEventListener('click', (e) => {
         e.stopPropagation();
-        const open = integrationsDropdown.classList.toggle('active');
-        btnIntegrations.setAttribute('aria-expanded', open ? 'true' : 'false');
-        if (open) loadIntegrations();
+        const willOpen = !integrationsDropdown.classList.contains('active');
+        setPopoverOpen('integrations', integrationsDropdown, btnIntegrations, willOpen);
+        if (willOpen) loadIntegrations();
       });
       document.addEventListener('click', (e) => {
         if (document.contains(e.target) &&
             !integrationsDropdown.contains(e.target) && !btnIntegrations.contains(e.target)) {
-          integrationsDropdown.classList.remove('active');
-          btnIntegrations.setAttribute('aria-expanded', 'false');
+          setPopoverOpen('integrations', integrationsDropdown, btnIntegrations, false);
         }
       });
 
@@ -5528,11 +5569,11 @@
                 
                 for (const [filename, record] of Object.entries(state.analysis)) {
                   if (!record._llm && !record._llm_skip) continue;
-                  const ts = record._llm || 0;
-                  
-                  // Match by checking if any schema-specific flags are present
+                  if (cam.ip && filename.indexOf(cam.ip) === -1) continue;
+                  const meta = parseFilename(filename);
+                  const ts = (meta.dateObj && meta.dateObj.getTime()) || record._llm_ms || 0;
                   const hasSchemaFlags = schemaFlags.some(f => f in record);
-                  if (hasSchemaFlags && ts > latestTs) {
+                  if (hasSchemaFlags && ts >= latestTs) {
                     latestRecord = record;
                     latestTs = ts;
                   }
@@ -5638,10 +5679,10 @@ html += `<div style="margin-top:6px;padding:4px 6px;background:var(--accent-10);
 
       btnSystemStatus.addEventListener('click', (e) => {
         e.stopPropagation();
-        const open = systemDropdown.classList.toggle('active');
-        btnSystemStatus.setAttribute('aria-expanded', open ? 'true' : 'false');
+        const willOpen = !systemDropdown.classList.contains('active');
+        setPopoverOpen('status', systemDropdown, btnSystemStatus, willOpen);
         clearInterval(systemRefreshTimer);
-        if (open) {
+        if (willOpen) {
           document.getElementById('system-status-content').textContent = 'Loading...';
           renderSystemPanel();
           systemRefreshTimer = setInterval(renderSystemPanel, 5000);
@@ -5650,8 +5691,7 @@ html += `<div style="margin-top:6px;padding:4px 6px;background:var(--accent-10);
       document.addEventListener('click', (e) => {
         if (document.contains(e.target) &&
             !systemDropdown.contains(e.target) && e.target !== btnSystemStatus) {
-          systemDropdown.classList.remove('active');
-          btnSystemStatus.setAttribute('aria-expanded', 'false');
+          setPopoverOpen('status', systemDropdown, btnSystemStatus, false);
           clearInterval(systemRefreshTimer);
         }
       });
@@ -5811,15 +5851,15 @@ html += `<div style="margin-top:6px;padding:4px 6px;background:var(--accent-10);
       // resets the trigger's aria-expanded, and returns focus to it.
       document.addEventListener('keydown', (e) => {
         if (e.key !== 'Escape') return;
-        [['blacklist-dropdown', 'btn-manage-blacklist'],
-         ['filters-dropdown', 'btn-filters'],
-         ['integrations-dropdown', 'btn-integrations'],
-         ['system-dropdown', 'btn-system-status']].forEach(([menuId, btnId]) => {
+        [['settings', 'blacklist-dropdown', 'btn-manage-blacklist'],
+         ['filters', 'filters-dropdown', 'btn-filters'],
+         ['integrations', 'integrations-dropdown', 'btn-integrations'],
+         ['status', 'system-dropdown', 'btn-system-status']].forEach(([id, menuId, btnId]) => {
           const menu = document.getElementById(menuId);
+          const btn = document.getElementById(btnId);
           if (menu && menu.classList.contains('active')) {
-            menu.classList.remove('active');
-            const btn = document.getElementById(btnId);
-            if (btn) { btn.setAttribute('aria-expanded', 'false'); btn.focus(); }
+            setPopoverOpen(id, menu, btn, false);
+            if (btn) btn.focus();
           }
         });
       });

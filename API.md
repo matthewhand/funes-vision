@@ -76,16 +76,19 @@ Live pipeline snapshot. Shape (keys may be absent if a source is unavailable):
 - `watch_dirs`, `settings` (full settings.json — includes `max_age_days`,
   `max_dir_gb`, even though those are not `POST /api/settings`-mutable)
 - `trigger` → `{inotify_active, idle_sweep_seconds, last_sweep_age_s}`
-  (`last_sweep_age_s` is seconds since `/tmp/webcam_analysis.lastrun`; the
-  cron watchdog and `recent_sweep` health check use this)
+  (`last_sweep_age_s` is seconds since `/tmp/webcam_analysis.lastrun`, or
+  JSON `null` if the marker is missing; the UI treats null as “unknown”.
+  The cron watchdog and `recent_sweep` health check use this)
 - `llm` → `{model, reachable, allow_cloud}`
+- `inference` → `{}` when idle, otherwise the live `inference_status.json`
+  object plus `running_for_s` (the ℹ panel’s “Analyzing now” line)
 - `queue` → `{images_on_disk, unanalyzed, unverified_partials,
   awaiting_backfill, llm_verified}`
 - `cameras[]` → `{name, images, bytes, budget_pct, last_frame_age_s, stale}`
   (`budget_pct` = image bytes in that camera dir vs `max_dir_gb`; UI warns
   above ~85%; pipeline Slack alert and watchdog `auto` kick at ~90%)
 - `filesystem` → `{free_gb, total_gb, used_pct}` (host volume for the data
-  paths — not the per-camera budget)
+  paths — not the per-camera budget), or `null` if `statvfs` failed
 - `timezone` (resolved: `WEBCAM_TZ` env > settings > `Australia/Sydney`)
 - `metrics` → inference rollup `{window_min, count, ok, failures, success_rate,
   local, cloud, avg_s, p95_s}` (just `{window_min, count:0}` when idle)

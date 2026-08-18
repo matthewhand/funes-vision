@@ -462,7 +462,7 @@ move → verify) lives in [ROADMAP.md](ROADMAP.md).
 | `max_deep_passes` | 30 | LLM calls per camera per sweep (local+cloud; import-time fallback is 15) |
 | `deep_concurrency` | 1 | parallel **backfill** deep passes. Safe only with a `:cloud` model (no local RAM contention); the cloud endpoint partially parallelizes (~1.4× at 3). Rate-limit backoff + per-sweep `RATE_LIMITED` still guard it |
 | `fast_pass_engine` | yolo | `yolo` or `haar` (UI-selectable) |
-| `deep_passes_enabled` | true | master switch for ALL Gemma work (priority+backfill+bursts); false = detector-only, no LLM (UI-toggleable) |
+| `deep_passes_enabled` | true | master switch for ALL vision-model work (priority+backfill+bursts); false = detector-only, no LLM (UI-toggleable) |
 | `deep_backfill` | false | idle LLM verification of the archive (UI-toggleable; **off** on this box) |
 | `burst_summaries_enabled` | false | multi-image (burst) LLM captions of a visit; off does not affect single-frame deep passes (UI-toggleable) |
 | `gate_ignore_labels` | ["car"] | labels that alone don't trigger urgent deep passes |
