@@ -29,6 +29,7 @@ if [[ ! -d /tmp/pw/node_modules/playwright ]]; then
   echo "Playwright not installed in /tmp/pw — see tools/screenshots/README.md" >&2
   exit 1
 fi
+export NODE_PATH=/tmp/pw/node_modules
 cd /tmp/pw
 node "$ROOT/tools/screenshots/shots.js"
 echo "shots in $SHOTS_OUT"
