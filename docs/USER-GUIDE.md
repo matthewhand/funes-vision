@@ -32,8 +32,14 @@ you should expect:
 - **no sentence at all** on a detector-only visit (parked car, or a
   person the vision model has not finished)
 
-The header, tabs, Settings labels, Live badge, and Front/Back camera
-names in the shots **do** match the live UI.
+**The fixture catalog mixes both cameras** so one walkthrough can show a
+dog visit *and* a postal visit. Live, `:8180` is only the front camera
+and `:8280` is only the back — they do not share one URL. The header
+still first-paints **Webcam Live Feed** (front) the way `:8180` does.
+
+The on-still OSD clock is stamped to match the filename date
+(**18 June 2026**). The header, tabs, Settings labels, Live badge, and
+Front/Back camera names in the shots **do** match the live UI.
 
 ---
 
@@ -196,7 +202,8 @@ On a phone the Filters menu is a centred sheet, same as Settings.
 
 ### Search
 
-Placeholder: *Search time, labels, or caption…*
+Placeholder: *Search time, labels, or caption…* on a wide screen.
+On a phone the same field says *Search…* so it is not clipped.
 
 Matches, case-insensitive, against:
 
@@ -215,6 +222,11 @@ The toolbar row starts collapsed as **Time Range: All day**. Expand it
 for a dual-range slider.
 
 On a phone you also get pills:
+
+![Phone time-range pills with Night selected](guide/img/night-pills.png)
+
+This fixture day has no stills between 21:00 and 05:00, so Night
+honestly reads **No matches**. The 5 pm empty is **Evening**, not Night.
 
 | Pill | Hours |
 |------|-------|
@@ -368,6 +380,14 @@ with an elapsed time while a frame is in the vision model.
 
 ![AI status panel](guide/img/status.png)
 
+On a phone the same panel is a centred sheet that scrolls:
+
+![Mobile pipeline status sheet](guide/img/mobile-status.png)
+
+**LLM Prompt & Schema** and **AI Audit Trail** start collapsed — expand
+them if you want the raw prompt. The panel itself scrolls when the
+list is taller than the window.
+
 You should see, in order:
 
 - **Inference:** idle — or **Analyzing now:** with the human date/time of
@@ -384,7 +404,8 @@ You should see, in order:
 - **Quiet labels:** car
 - **Queue:** `N new · N priority · N backfill · N verified (N on disk)`.
   Verified means a **non-empty** `_llm` dict
-- **Deep analysis:** a percent bar over verified vs pending
+- **Deep analysis:** a percent bar over verified vs pending, plus an
+  ETA (`≈42s @ ~42s/frame`) when priority work is queued
 - **Last sweep:** age, or red *stalled?* if older than 30 minutes
 - **Cameras:** **Front** and **Back** (header says Webcam / Dogcam)
 - Last cleanup / host disk, when the API has those numbers
@@ -401,7 +422,11 @@ You should see, in order:
 
 ![Settings menu with detector, deep-pass, and interval controls](guide/img/settings.png)
 
-Green = on, red = off. First paint matches this box: deep passes on,
+![Mobile Settings sheet](guide/img/mobile-settings.png)
+
+Green = on, red = off (the dot). Off rows are **not** struck through —
+strikethrough is only for a hidden object label (person/dog/…) under
+**Hide / Show labels**. First paint matches this box: deep passes on,
 idle backfill off, multi-image summaries off.
 
 | Control | What it actually does |
@@ -419,6 +444,8 @@ idle backfill off, multi-image summaries off.
 ---
 
 ## 12. Integrations
+
+![Integrations panel (Slack)](guide/img/integrations.png)
 
 **Integrations** is Slack in the UI. MQTT and ntfy are config-file
 only (no panel).

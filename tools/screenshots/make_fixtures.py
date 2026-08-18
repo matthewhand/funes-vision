@@ -11,10 +11,13 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
+import re
 import sys
+import time
+from datetime import datetime
 
 import cv2
+import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
@@ -35,8 +38,8 @@ FRAMES = [
     {
         "name": "10.0.0.21_01_20260618170000000_MOTDEC.jpg",
         "src": "2.jpg",
-        "role": "unanalyzed evening still",
-        "analysis": None,
+        "role": "empty front evening (CLEAR)",
+        "analysis": {"fast_pass": "negative"},
     },
     {
         "name": "10.0.0.22_01_20260618143028000_MOTDEC.jpg",
@@ -187,10 +190,53 @@ def write_json(path, obj):
         f.write("\n")
 
 
-def resize_write(src, dest, max_w):
+def osd_from_name(name):
+    """CCTV OSD matching the Hikvision filename clock (not the baked-in 2024 date)."""
+    m = re.match(r"(10\.0\.0\.\d+)_(\d+)_(\d{14})", name)
+    if not m:
+        return None
+    ip, _ch, stamp = m.group(1), m.group(2), m.group(3)
+    ts = datetime.strptime(stamp, "%Y%m%d%H%M%S")
+    cam = "CAM 01 FRONT" if ip.endswith(".21") else "CAM 02 BACK"
+    return ts.strftime("%Y-%m-%d %H:%M:%S"), cam
+
+
+def stamp_osd(img, name):
+    """Cover the generator's 2024 OSD and draw a filename-matching clock."""
+    lines = osd_from_name(name)
+    if not lines:
+        return img
+    h, w = img.shape[:2]
+    y1 = max(8, int(h * 0.20))
+    x0 = int(w * 0.48)
+    roi = img[0:y1, x0:w]
+    gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+    _, mask = cv2.threshold(gray, 190, 255, cv2.THRESH_BINARY)
+    mask = cv2.dilate(mask, np.ones((3, 3), np.uint8), iterations=2)
+    if int(cv2.countNonZero(mask)) > 20:
+        img[0:y1, x0:w] = cv2.inpaint(roi, mask, 4, cv2.INPAINT_TELEA)
+    font = cv2.FONT_HERSHEY_DUPLEX
+    scale = max(0.45, w / 1280.0 * 0.55)
+    thick = 1
+    pad = 10
+    sizes = [cv2.getTextSize(t, font, scale, thick)[0] for t in lines]
+    tw = max(s[0] for s in sizes)
+    line_h = max(s[1] for s in sizes) + 6
+    x = w - tw - pad
+    y = pad + sizes[0][1]
+    for i, text in enumerate(lines):
+        yy = y + i * line_h
+        cv2.putText(img, text, (x, yy), font, scale, (0, 0, 0), thick + 2, cv2.LINE_AA)
+        cv2.putText(img, text, (x, yy), font, scale, (255, 255, 255), thick, cv2.LINE_AA)
+    return img
+
+
+def resize_write(src, dest, max_w, stamp_name=None):
     img = cv2.imread(src)
     if img is None:
         die(f"could not read {src}")
+    if stamp_name:
+        img = stamp_osd(img, stamp_name)
     h, w = img.shape[:2]
     if w > max_w:
         scale = max_w / float(w)
@@ -213,8 +259,18 @@ def main():
             die(f"missing source still {src}")
         dest = os.path.join(GALLERY, fr["name"])
         thumb = os.path.join(GALLERY, "thumbs", fr["name"])
-        resize_write(src, dest, 1280)
-        resize_write(src, thumb, 480)
+        resize_write(src, dest, 1280, stamp_name=fr["name"])
+        # Stamp on the full still first, then shrink — thumbs inherit the clock.
+        img_full = cv2.imread(dest)
+        if img_full is None:
+            die(f"could not reread {dest}")
+        th, tw = img_full.shape[:2]
+        if tw > 480:
+            scale = 480 / float(tw)
+            img_full = cv2.resize(
+                img_full, (int(tw * scale), int(th * scale)), interpolation=cv2.INTER_AREA
+            )
+        cv2.imwrite(thumb, img_full, [int(cv2.IMWRITE_JPEG_QUALITY), 82])
         images.append(fr["name"])
         if fr["analysis"] is not None:
             analysis[fr["name"]] = fr["analysis"]
@@ -265,6 +321,7 @@ def main():
             "burst_summaries_enabled": False,
             "gate_ignore_labels": ["car"],
             "max_dir_gb": 5.0,
+            "max_scans_per_image": 2,
             "model_primary": "gemma4:e2b",
         },
         "trigger": {
@@ -276,10 +333,12 @@ def main():
         "inference": {},
         "queue": {
             "images_on_disk": len(images),
-            "unanalyzed": 1,
+            "unanalyzed": 0,
             "unverified_partials": 1,
-            "awaiting_backfill": 2,
+            "awaiting_backfill": 3,
             "llm_verified": 6,
+            "deep_s_per_frame": 42.0,
+            "deep_eta_s": 42,
         },
         "cameras": [
             {
@@ -311,7 +370,12 @@ def main():
             "avg_s": 42.0,
             "p95_s": 45.0,
         },
-        "retention": {"ts": 1781769600, "dir": "fixtures", "count": 0, "bytes_freed": 0},
+        "retention": {
+            "ts": int(time.time()) - 1800,
+            "dir": "fixtures",
+            "count": 0,
+            "bytes_freed": 0,
+        },
     })
     write_json(os.path.join(API, "inference_log.json"), [
         {

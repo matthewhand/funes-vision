@@ -18,6 +18,9 @@ node node_modules/playwright/cli.js install chromium chromium-headless-shell
 python3 tools/screenshots/make_fixtures.py   # rebuild stills if needed
 bash tools/screenshots/run_shots.sh          # proxy :8899 + shots.js
 # PNGs land in /tmp/webcam_shots/
+
+# Copy the named map into the user guide (never glob-copy desktop-*.png):
+PUBLISH_GUIDE_IMG=1 bash tools/screenshots/run_shots.sh
 ```
 
 The proxy refuses to start if `SCREENSHOT_ROOT` points at a live camera
@@ -44,6 +47,11 @@ published shots.
 
 - `page.screenshot()` on heavy views is slow, not hung. Timers are frozen
   and CSS animations (including `::before`/`::after`) are disabled.
+  `shots.js` waits for `domcontentloaded` + a gallery selector — never
+  `networkidle` (the SSE stub keeps `/api/events` open).
+- `PUBLISH_GUIDE_IMG=1` copies a fixed name map into `docs/guide/img/`
+  (`timeline.png`, `objects.png`, …). Do not `cp /tmp/webcam_shots/*.png`
+  there — those files are still named `desktop-01-…`.
 - Headless: use `documentElement.clientWidth` for viewport math; never
   `pkill headless_shell` right before launch (ETXTBSY).
 - Curated outputs for the user guide live in `docs/guide/img/`

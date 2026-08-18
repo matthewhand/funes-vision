@@ -66,4 +66,28 @@ assert.ok(/card\.setAttribute\('role', 'group'\)/.test(html),
 assert.ok(!/card\.setAttribute\('role', 'button'\)/.test(html),
   'cards must not be role=button wrapping real controls');
 
+// Lightbox must fully cover header chrome (was 0.98 alpha + z-index 100).
+assert.ok(/\.lightbox\s*\{[\s\S]{0,240}?z-index:\s*2000/.test(html),
+  'lightbox z-index must sit above header (50) and toast (1000)');
+assert.ok(/\.lightbox\s*\{[\s\S]{0,280}?background-color:\s*#04060a/.test(html),
+  'lightbox background must be opaque so "Feed" cannot ghost through');
+
+// Feature-toggle OFF is a red dot, not a struck-through setting name.
+assert.ok(/#blacklist-list \.blacklist-item\.hidden-label/.test(html),
+  'strikethrough is only for hidden object labels');
+assert.ok(!/\.blacklist-item\.hidden-label\s*\{[^}]*text-decoration:\s*line-through/.test(html)
+  || /#blacklist-list \.blacklist-item\.hidden-label/.test(html),
+  'global hidden-label strikethrough must not apply to Settings toggles');
+
+// Status panel stays on-screen and is wide enough to read Queue / ETA.
+assert.ok(/#system-dropdown/.test(html) && /width:\s*min\(360px/.test(html),
+  'status dropdown must be wider than the 220px default');
+assert.ok(/max-height:\s*min\(70vh,\s*calc\(100dvh - 12rem\)\)/.test(html),
+  'dropdowns must cap to the space under the toolbar, not 100vh-180px');
+
+// Phone search placeholder is shortened in JS (desktop keeps the long one).
+assert.ok(/si\.placeholder = window\.matchMedia\('\(max-width: 768px\)'\)/.test(html)
+  || /Search…/.test(html),
+  'mobile search placeholder must shorten so it does not clip to "Search time,"');
+
 console.log('ui-nits: all assertions passed');

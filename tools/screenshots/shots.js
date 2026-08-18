@@ -6,14 +6,16 @@ const URL = process.env.SHOTS_URL || 'http://127.0.0.1:8899/';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 fs.mkdirSync(OUT, { recursive: true });
 
+// Do not wait for networkidle: the SSE stub keeps /api/events open, so
+// Playwright's 30s idle timeout always fires. Ready = DOM + gallery chrome.
 async function settle(page) {
-  await page.waitForLoadState('networkidle').catch(() => {});
-  await sleep(1200);
+  await page.waitForLoadState('domcontentloaded').catch(() => {});
+  await page.waitForSelector('#filter-tabs, .image-card, [aria-label^="Play "]', { timeout: 8000 }).catch(() => {});
   await page.addStyleTag({
     content: `*, *::before, *::after { animation: none !important; transition: none !important; }
      [class*=spin],[class*=loading],.loader,.spinner{display:none!important;}`,
   }).catch(() => {});
-  await sleep(200);
+  await sleep(400);
 }
 
 async function freezeTimers(page) {
@@ -36,7 +38,6 @@ async function preloadLazy(page) {
     }
     sc.scrollTop = 0;
   }).catch(() => {});
-  await page.waitForLoadState('networkidle').catch(() => {});
   await sleep(400);
   await freezeTimers(page);
 }
@@ -73,8 +74,7 @@ async function run() {
   await freezeTimers(d);
   await snap(d, 'desktop-01-timeline-visits');
 
-  // Visit flipbook if a playable row exists
-  const visit = await d.$('[aria-label^="Play "], .visit-card, .event-row');
+  const visit = await d.$('[aria-label^="Play "]');
   if (visit) {
     await visit.click().catch(() => {});
     await sleep(800);
@@ -92,7 +92,7 @@ async function run() {
   await preloadLazy(d);
   await snap(d, 'desktop-04-all-grid');
 
-  await d.click('#btn-filters, [aria-label*="Filter"]').catch(() => {});
+  await d.click('#btn-filters').catch(() => {});
   await sleep(500);
   await freezeTimers(d);
   await snap(d, 'desktop-05-filters');
@@ -105,19 +105,47 @@ async function run() {
   await d.keyboard.press('Escape').catch(() => {});
 
   await d.click('#btn-system-status').catch(() => {});
+  await d.waitForSelector('#system-status-content', { timeout: 4000 }).catch(() => {});
   await sleep(800);
   await freezeTimers(d);
   await snap(d, 'desktop-07-status');
   await d.keyboard.press('Escape').catch(() => {});
 
-  const card = await d.$('.card-img, .image-card img, .image-card');
-  if (card) {
-    await card.click().catch(() => {});
-    await sleep(800);
+  await d.click('#btn-integrations').catch(() => {});
+  await sleep(600);
+  await freezeTimers(d);
+  await snap(d, 'desktop-10-integrations');
+  await d.keyboard.press('Escape').catch(() => {});
+  await d.evaluate(() => document.getElementById('btn-integrations')?.blur()).catch(() => {});
+
+  // Analyzed courier still — footer must show Detected:, not an empty queue frame.
+  const opened = await d.evaluate(() => {
+    const img = [...document.querySelectorAll('img')].find((i) =>
+      `${i.getAttribute('data-full') || ''} ${i.getAttribute('data-src') || ''} ${i.src || ''}`
+        .includes('20260618101522301'));
+    const card = img && img.closest('.image-card');
+    if (!card) return 'no-card';
+    card.click();
+    const lb = document.getElementById('lightbox');
+    return lb && lb.classList.contains('active') ? 'ok' : 'no-active';
+  }).catch((e) => e.message);
+  console.log('lightbox', opened);
+  if (opened === 'ok') {
+    await d.waitForSelector('#lightbox.active', { timeout: 3000 }).catch(() => {});
+    await d.evaluate(() => document.activeElement && document.activeElement.blur()).catch(() => {});
+    await sleep(400);
     await freezeTimers(d);
     await snap(d, 'desktop-08-lightbox');
     await d.keyboard.press('Escape').catch(() => {});
   }
+
+  const help = await dctx.newPage();
+  const helpUrl = URL.replace(/\/?$/, '/') + 'USER-GUIDE.html';
+  await help.goto(helpUrl, { waitUntil: 'domcontentloaded' });
+  await help.waitForSelector('h1, .wrap', { timeout: 5000 }).catch(() => {});
+  await sleep(400);
+  await snap(help, 'desktop-09-help');
+  await help.close();
 
   await dctx.close();
 
@@ -138,6 +166,7 @@ async function run() {
   await snap(m, 'mobile-02-all-grid');
 
   await m.click('#btn-system-status').catch(() => {});
+  await m.waitForSelector('#system-status-content', { timeout: 4000 }).catch(() => {});
   await sleep(700);
   await freezeTimers(m);
   await snap(m, 'mobile-03-status');
@@ -147,6 +176,14 @@ async function run() {
   await sleep(600);
   await freezeTimers(m);
   await snap(m, 'mobile-04-settings');
+  await m.keyboard.press('Escape').catch(() => {});
+
+  await m.click('.time-slider-wrapper .slider-header').catch(() => {});
+  await sleep(200);
+  await m.click('[data-pill="night"]').catch(() => {});
+  await sleep(400);
+  await freezeTimers(m);
+  await snap(m, 'mobile-05-night-pills');
 
   await mctx.close();
   await browser.close();

@@ -33,3 +33,37 @@ export NODE_PATH=/tmp/pw/node_modules
 cd /tmp/pw
 node "$ROOT/tools/screenshots/shots.js"
 echo "shots in $SHOTS_OUT"
+
+# Explicit name map — never glob-copy desktop-*.png into docs/guide/img/.
+MAP=(
+  desktop-01-timeline-visits:timeline
+  desktop-02-visit-player:visit-player
+  desktop-03-objects-tab:objects
+  desktop-04-all-grid:all-grid
+  desktop-05-filters:filters
+  desktop-06-settings:settings
+  desktop-07-status:status
+  desktop-08-lightbox:lightbox
+  desktop-09-help:help
+  desktop-10-integrations:integrations
+  mobile-01-timeline:mobile-timeline
+  mobile-02-all-grid:mobile-grid
+  mobile-03-status:mobile-status
+  mobile-04-settings:mobile-settings
+  mobile-05-night-pills:night-pills
+)
+
+if [[ "${PUBLISH_GUIDE_IMG:-}" == "1" ]]; then
+  dest="$ROOT/docs/guide/img"
+  mkdir -p "$dest"
+  for pair in "${MAP[@]}"; do
+    src="$SHOTS_OUT/${pair%%:*}.png"
+    dst="$dest/${pair##*:}.png"
+    if [[ ! -f "$src" ]]; then
+      echo "missing $src" >&2
+      exit 1
+    fi
+    cp "$src" "$dst"
+    echo "published ${pair##*:}.png"
+  done
+fi

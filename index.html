@@ -140,7 +140,8 @@
       background: var(--bg-secondary); border: 1px solid var(--border-color);
       border-radius: var(--radius-2); box-shadow: var(--elevation-3);
       padding: var(--space-3); z-index: 100; display: none;
-      max-height: calc(100vh - 180px);
+      /* Stay on-screen under the header+toolbar; scroll the rest. */
+      max-height: min(70vh, calc(100dvh - 12rem));
       overflow-y: auto;
       overscroll-behavior: contain;
     }
@@ -272,6 +273,7 @@
 
     .search-input {
       width: 100%;
+      min-width: 0;
       background: rgba(255, 255, 255, 0.04);
       border: 1px solid var(--border-color);
       border-radius: 8px;
@@ -279,6 +281,7 @@
       color: var(--text-primary);
       font-size: 0.85rem;
       transition: all var(--transition-speed);
+      text-overflow: ellipsis;
     }
 
     /* Inline clear (×) — appears only when the field has text. */
@@ -825,8 +828,9 @@
       margin-top: 4px;
       max-width: 100%;
       overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
       text-shadow: 0 1px 2px rgba(0,0,0,0.8);
     }
 
@@ -834,6 +838,7 @@
       display: flex;
       gap: 6px;
       flex-wrap: wrap;
+      max-width: 100%;
     }
 
     .badge-ai,
@@ -920,15 +925,21 @@
       padding: var(--space-3);
       display: none;
       margin-top: var(--space-2);
-      /* Never let a long menu (e.g. Settings with many hidden labels) run off the
-         bottom of the screen and strand its lower controls — scroll inside it. */
-      max-height: calc(100vh - 180px);
+      /* Stay fully on-screen under the header+toolbar; scroll inside.
+         180px was taller than the space below the AI/Settings triggers, so
+         the panel ran off the bottom and the scrollbar was invisible. */
+      max-height: min(70vh, calc(100dvh - 12rem));
       overflow-y: auto;
       overscroll-behavior: contain;
     }
 
     .blacklist-dropdown.active {
       display: block;
+    }
+
+    /* Status is a long read — give it room so Queue / Deep analysis / Cameras wrap less. */
+    #system-dropdown {
+      width: min(360px, calc(100vw - 24px));
     }
 
     /* On phones these menus are anchored right:0 to a trigger that now sits near
@@ -966,7 +977,10 @@
       color: var(--text-primary);
     }
 
-    .blacklist-item.hidden-label {
+    /* Strikethrough is only for hidden *object labels* (person/dog/…). Feature
+       toggles (backfill, summaries, Slack) encode OFF as hidden-label too, but
+       those should keep a red dot — not look like a deleted setting. */
+    #blacklist-list .blacklist-item.hidden-label {
       text-decoration: line-through;
       opacity: 0.6;
     }
@@ -1218,7 +1232,7 @@
       background: linear-gradient(transparent, rgba(0, 0, 0, 0.85));
       padding: 10px 12px;
       display: flex;
-      justify-content: space-between;
+      justify-content: flex-start;
       align-items: flex-end;
       opacity: 1;
       transition: opacity var(--transition-speed);
@@ -1243,7 +1257,14 @@
       flex: 1;
       min-width: 0;
     }
-    .image-grid.list .card-caption { flex: 1; min-width: 0; }
+    .image-grid.list .card-caption {
+      flex: 1; min-width: 0;
+      display: block;
+      -webkit-line-clamp: unset;
+      -webkit-box-orient: unset;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
     /* Right-aligned relative time, list-view only — fills the row's right edge
        so caption-less rows aren't a big empty band. */
     /* row-ago is hidden everywhere: in list, the absolute date+time already
@@ -1255,6 +1276,9 @@
       display: flex;
       flex-direction: column;
       gap: 2px;
+      min-width: 0;
+      max-width: 100%;
+      width: 100%;
     }
 
     .time-stamp {
@@ -1317,6 +1341,14 @@
       opacity: 0;
       pointer-events: none;
       transition: opacity var(--transition-speed);
+    }
+    /* Grid: pin/delete sit on the still, not in the caption row — otherwise
+       even opacity:0 they steal ~90px and clip badges/sentences on the last column. */
+    .image-grid:not(.list) .card-actions {
+      position: absolute;
+      right: 8px;
+      top: auto;
+      bottom: calc(100% + 8px);
     }
     /* Reveal the pin/delete/download actions only on hover or keyboard focus
        (declutter: they're not part of the at-a-glance scan). */
@@ -1468,8 +1500,8 @@
     .lightbox {
       position: fixed;
       top: 0; left: 0; right: 0; bottom: 0;
-      z-index: 100;
-      background-color: rgba(4, 6, 10, 0.98);
+      z-index: 2000;
+      background-color: #04060a;
       display: none;
       flex-direction: column;
       opacity: 0;
@@ -2074,7 +2106,7 @@
               <div class="menu-section-title">
                 Pipeline Status
               </div>
-              <div id="system-status-content" style="font-size: 0.78rem; line-height: 1.7;"></div>
+              <div id="system-status-content" style="font-size: 0.78rem; line-height: 1.4;"></div>
             </div>
           </div>
         </div>
@@ -4057,7 +4089,7 @@
       let timer = null;
 
       const overlay = document.createElement('div');
-      overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:2000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:16px;';
+      overlay.style.cssText = 'position:fixed;inset:0;background:#04060a;z-index:2000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:16px;';
       overlay.innerHTML = `
         <img id="evp-img" alt="" style="max-width:95vw;max-height:75vh;border-radius:8px;background:#111;">
         <div id="evp-label" style="color:white;font-size:0.85rem;text-align:center;"></div>
@@ -5124,6 +5156,17 @@
         : profile.subtitle;
       document.title = `${profile.title} - CamLog`;
 
+      // Phone search box is ~120px; the desktop placeholder clips to "Search time,".
+      const syncSearchPlaceholder = () => {
+        const si = document.getElementById('search-input');
+        if (!si) return;
+        si.placeholder = window.matchMedia('(max-width: 768px)').matches
+          ? 'Search…'
+          : 'Search time, labels, or caption…';
+      };
+      syncSearchPlaceholder();
+      window.addEventListener('resize', syncSearchPlaceholder);
+
       // Set switch feed details
       const btnSwitch = document.getElementById('btn-switch-feed');
       document.getElementById('switch-feed-label').textContent = profile.switchLabel;
@@ -5670,7 +5713,7 @@
               const paused = s.settings && s.settings.deep_passes_enabled === false;
               const bar = `<span style="display:inline-block;width:80px;height:6px;border-radius:3px;background:var(--border-color);vertical-align:middle;overflow:hidden;"><span style="display:inline-block;height:6px;width:${b.pct}%;background:${paused ? '#f59e0b' : '#10b981'};"></span></span>`;
               const eta = (!paused && s.queue && s.queue.deep_eta_s > 0)
-                ? ` · ≈${fmtDur(s.queue.deep_eta_s)} left at ~${s.queue.deep_s_per_frame}s/frame (one at a time)`
+                ? ` · ≈${fmtDur(s.queue.deep_eta_s)} @ ~${s.queue.deep_s_per_frame}s/frame`
                 : '';
               return `<div><b>Deep analysis:</b> ${bar} ${b.pct}% &middot;
                 ${b.analyzed.toLocaleString()} verified, ${b.pending.toLocaleString()} pending${paused ? ' <span style="color:#f59e0b;">(paused — deep passes off)</span>' : ''}${eta}</div>`;
@@ -5751,7 +5794,8 @@
                 return `<div><b>${escapeHtml(cam.name)}:</b> ${status}</div>`;
               }).join('');
             })()}
-            <div style="margin-top:8px;font-weight:700;text-transform:uppercase;font-size:0.7rem;color:var(--text-secondary);border-bottom:1px solid var(--border-color);padding-bottom:3px;">LLM Prompt & Schema</div>
+            <details style="margin-top:8px;">
+              <summary style="font-weight:700;text-transform:uppercase;font-size:0.7rem;color:var(--text-secondary);cursor:pointer;border-bottom:1px solid var(--border-color);padding-bottom:3px;">LLM Prompt & Schema</summary>
             ${await (async () => {
               try {
                 const schema = await apiFetch('/api/llm-schema', { timeout: 3000 });
@@ -5780,8 +5824,11 @@ html += `<div style="margin-top:6px;padding:4px 6px;background:var(--accent-10);
                 return `<div style="margin-top:4px;color:var(--text-secondary);font-size:0.72rem;">Schema unavailable (API ${err.message === 'timeout' ? 'timeout' : 'offline'})</div>`;
               }
             })()}
-            <div style="margin-top:8px;font-weight:700;text-transform:uppercase;font-size:0.7rem;color:var(--text-secondary);border-bottom:1px solid var(--border-color);padding-bottom:3px;">AI Audit Trail</div>
-            <div data-audit-trail style="max-height:200px;overflow-y:auto;">${trail}</div>`;
+            </details>
+            <details style="margin-top:8px;">
+              <summary style="font-weight:700;text-transform:uppercase;font-size:0.7rem;color:var(--text-secondary);cursor:pointer;border-bottom:1px solid var(--border-color);padding-bottom:3px;">AI Audit Trail</summary>
+              <div data-audit-trail style="max-height:200px;overflow-y:auto;">${trail}</div>
+            </details>`;
         } catch (err) {
           el.textContent = err.message === 'timeout'
             ? 'API not reachable (request timed out).'

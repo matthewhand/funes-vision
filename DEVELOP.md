@@ -685,7 +685,10 @@ is gitignored — old live-camera captures; do not commit it.)
 - Playwright lives in a scratch dir, not the repo. Tooling:
   [`tools/screenshots/`](tools/screenshots/README.md). `shots.js` drives
   Chromium. The script freezes animations, kills JS timers, and pre-loads
-  lazy images so `page.screenshot()` doesn't hang.
+  lazy images so `page.screenshot()` doesn't hang. It waits for
+  `domcontentloaded`, never `networkidle` (the SSE stub stays open).
+  `PUBLISH_GUIDE_IMG=1 bash tools/screenshots/run_shots.sh` copies the
+  named map into `docs/guide/img/` — do not glob-copy `desktop-*.png`.
 
 Playwright-as-CI is still deferred ([ROADMAP.md](ROADMAP.md)); this harness is
 only for fixture-first stills.

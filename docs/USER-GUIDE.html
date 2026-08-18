@@ -81,6 +81,8 @@
     Your live e2b pass <strong>does not write free-text captions</strong>.
     Expect detector badges, quieter scene flags, and at most two synthesized facts
     such as “Postal delivery on foot.” Detector-only visits often have no sentence at all.
+    The fixture catalog <strong>mixes both cameras</strong> so one walkthrough can show a dog visit and a postal visit. Live, each camera is its own site.
+    On-still OSD clocks match the filename date (18 June 2026).
   </blockquote>
 
   <nav>
@@ -186,7 +188,11 @@
     <figcaption>Filters are detector objects only. Scene flags are not chips. “All objects” is the clear-chips control.</figcaption>
   </figure>
   <p><strong>Sticky select</strong> on: tap several chips (match any). Off: one at a time. Hidden labels never appear here — unhide them in Settings; Clear all will not unhide them.</p>
-  <p>Search matches time, detector labels, event type, and caption text (fixture sentences or synthesized HA facts). Charts and cards share the same predicate.</p>
+  <p>Search matches time, detector labels, event type, and caption text (fixture sentences or synthesized HA facts). Charts and cards share the same predicate. On a wide screen the placeholder is <em>Search time, labels, or caption…</em>; on a phone it shortens to <em>Search…</em>.</p>
+  <figure>
+    <img src="guide/img/night-pills.png" alt="Phone time-range pills with Night selected">
+    <figcaption>Expand Time Range on a phone for the pills. Night is 21–05 and wraps midnight. This fixture day has no stills in that window, so Night honestly reads No matches.</figcaption>
+  </figure>
   <table>
     <tr><th>Time pill</th><th>Hours</th></tr>
     <tr><td>All day</td><td>00–23</td></tr>
@@ -237,14 +243,22 @@
   <h2 id="status">10. The AI button</h2>
   <figure>
     <img src="guide/img/status.png" alt="Pipeline status panel">
-    <figcaption>Pipeline status. Cameras are Front / Back. Cloud counts hide unless cloud is on. “This view” is loaded-frame stats, not a product called Insights.</figcaption>
+    <figcaption>Pipeline status. Cameras are Front / Back. Cloud counts hide unless cloud is on. “This view” is loaded-frame stats, not a product called Insights. Prompt/Schema and Audit start collapsed.</figcaption>
   </figure>
-  <p>Queue: <code>N new · N priority · N backfill · N verified (N on disk)</code>. Verified means a <strong>non-empty</strong> <code>_llm</code> dict. Also on this panel: Deep analysis %, Last sweep, last cleanup / host disk, Inference (last 60m), and E2B Deep-Pass (HA Flags). Live updates here reads <code>live (SSE connected)</code>, not just “Live”. The LLM line has no “local only” label. The button pulses amber while a frame is in the model.</p>
+  <figure>
+    <img src="guide/img/mobile-status.png" alt="Mobile pipeline status sheet">
+    <figcaption>On a phone the same panel is a centred scrolling sheet.</figcaption>
+  </figure>
+  <p>Queue: <code>N new · N priority · N backfill · N verified (N on disk)</code>. Verified means a <strong>non-empty</strong> <code>_llm</code> dict. Also on this panel: Deep analysis % plus an ETA (<code>≈42s @ ~42s/frame</code>), Last sweep, last cleanup / host disk, Inference (last 60m), and E2B Deep-Pass (HA Flags). Live updates here reads <code>live (SSE connected)</code>, not just “Live”. The LLM line has no “local only” label. The button pulses amber while a frame is in the model.</p>
 
   <h2 id="settings">11. Settings</h2>
   <figure>
     <img src="guide/img/settings.png" alt="Settings menu">
-    <figcaption>Green = on, red = off. First paint: vision deep passes on, idle backfill off, multi-image summaries off.</figcaption>
+    <figcaption>Green = on, red = off (the dot). Off rows are not struck through — strikethrough is only for a hidden object label.</figcaption>
+  </figure>
+  <figure>
+    <img src="guide/img/mobile-settings.png" alt="Mobile Settings sheet">
+    <figcaption>Phone Settings is a centred sheet. Same first-paint values.</figcaption>
   </figure>
   <table>
     <tr><th>Control</th><th>What it actually does</th></tr>
@@ -258,6 +272,10 @@
   </table>
 
   <h2 id="integrations">12. Integrations</h2>
+  <figure>
+    <img src="guide/img/integrations.png" alt="Integrations panel for Slack">
+    <figcaption>Slack is the only integration in the UI. MQTT and ntfy are config-file only.</figcaption>
+  </figure>
   <p>The panel is Slack. MQTT and ntfy are config-file only.</p>
   <table>
     <tr><th>Slack notify on</th><th>When it posts</th></tr>
