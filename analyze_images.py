@@ -14,7 +14,7 @@ from datetime import datetime
 
 # CONFIGURATION (defaults; override in settings.json next to this script)
 MODEL_CLOUD = "google/gemma-4-31b-it"
-MODEL_LOCAL = "gemma4:12b"  # Ollama tag (verified; "gemma-4:12b" does not exist)
+MODEL_LOCAL = "gemma4:e2b"  # Ollama tag; settings.json model_primary overrides
 # Primary/fallback inference, both via Ollama (:11434). The primary may be a
 # fast cloud model (e.g. minimax-m3:cloud); the fallback a local/private model
 # (e.g. gemma4:e4b). On failure or rate-limit the chain falls through.

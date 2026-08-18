@@ -5616,8 +5616,8 @@
             ${(() => {
               // Show latest HA flags per camera from analysis.json
               const cameras = [
-                { name: 'Front Door (21)', ip: '10.0.0.21', schema: 'front_door' },
-                { name: 'Dog Cam (22)', ip: '10.0.0.22', schema: 'dog_cam' }
+                { name: 'Front', ip: '10.0.0.21', schema: 'front_door' },
+                { name: 'Back', ip: '10.0.0.22', schema: 'dog_cam' }
               ];
               
               const haSchemas = {
@@ -5672,7 +5672,7 @@ html += `<div style="margin-top:6px;"><b style="font-size:0.75rem;">Prompt:</b><
                 html += `<div style="margin-top:2px;padding:6px;background:var(--bg-tertiary);border-radius:4px;font-size:0.7rem;color:var(--text-secondary);max-height:80px;overflow-y:auto;line-height:1.4;">${escapeHtml(schema.prompt)}</div>`;
                 html += `<div style="margin-top:8px;"><b style="font-size:0.75rem;">Output Schemas:</b></div>`;
                 for (const [name, schemaObj] of Object.entries(schema.schemas)) {
-                  const displayName = name === 'front_door' ? 'Front Door (21)' : 'Dog Cam (22)';
+                  const displayName = name === 'front_door' ? 'Front' : 'Back';
                   html += `<div style="margin-top:6px;"><i style="font-size:0.72rem;color:var(--accent-fg);">${displayName}</i></div>`;
                   html += `<div style="margin-top:2px;padding:6px;background:var(--bg-tertiary);border-radius:4px;font-size:0.68rem;color:var(--text-secondary);max-height:150px;overflow-y:auto;">`;
 const props = schemaObj.properties || {};
