@@ -1,121 +1,190 @@
 #!/usr/bin/env python3
-"""Serve the deployed gallery (static files from Webcam21) AND proxy /api/* to
-the real API on :8190, under one origin so the SPA renders fully with no CORS
-and no nginx basic-auth.
+"""Serve the SYNTHETIC screenshot gallery + a stub /api on one origin.
 
-PRIVACY: every camera frame (.jpg/.jpeg/.gif and anything under thumbs/) is
-replaced with a GENERATED synthetic placeholder — the screenshots never contain
-real webcam footage. Metadata (analysis.json/index.html/etc.) is served as-is
-(it's labels/timestamps, not footage). Screenshots only."""
-import http.server, socketserver, urllib.request, os, hashlib
-import numpy as np
-import cv2
+Default root is tools/screenshots/fixtures/gallery — never a live camera
+directory. Production paths under /mnt/models/Webcam21 or Webcam22 are
+refused. POSTs are no-ops. Real api_server.py is not contacted unless
+SCREENSHOT_API=live is set explicitly (not used for published shots).
+"""
+from __future__ import annotations
 
-ROOT = os.environ.get("SCREENSHOT_ROOT", "/mnt/models/Webcam21")
-API = "http://localhost:8190"
-# Optional: serve a dev index.html (e.g. the working copy under review) on top of
-# the real deployed asset tree, so screenshots reflect un-deployed changes without
-# touching production. Set to an absolute path; falls back to ROOT/index.html.
-INDEX_OVERRIDE = os.environ.get("SCREENSHOT_INDEX", "")
+import json
+import os
+import sys
+import urllib.request
+from http.server import SimpleHTTPRequestHandler
+from socketserver import ThreadingMixIn, TCPServer
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+REPO = os.path.dirname(os.path.dirname(HERE))
+DEFAULT_ROOT = os.path.join(HERE, "fixtures", "gallery")
+DEFAULT_API_DIR = os.path.join(HERE, "fixtures", "api")
+FORBIDDEN_MARKERS = ("/mnt/models/webcam21", "/mnt/models/webcam22")
+
+ROOT = os.path.realpath(os.environ.get("SCREENSHOT_ROOT", DEFAULT_ROOT))
+API_MODE = os.environ.get("SCREENSHOT_API", "stub").strip().lower() or "stub"
+LIVE_API = os.environ.get("SCREENSHOT_LIVE_API", "http://localhost:8190")
+API_DIR = os.path.realpath(os.environ.get("SCREENSHOT_API_DIR", DEFAULT_API_DIR))
+INDEX_OVERRIDE = os.environ.get("SCREENSHOT_INDEX") or os.path.join(REPO, "index.html")
+STATIC_DIR = os.environ.get("SCREENSHOT_STATIC") or REPO
 PORT = int(os.environ.get("SCREENSHOT_PORT", "8899"))
-IMG_EXT = (".jpg", ".jpeg", ".gif")
-# Default: serve REAL frames (chat captures, the owner's private session).
-# Set SCREENSHOT_PLACEHOLDER=1 to swap every frame for a synthetic placeholder
-# (used when generating repo/guide images so no footage ever lands on disk-in-git).
-PLACEHOLDER = os.environ.get("SCREENSHOT_PLACEHOLDER", "") == "1"
-
-_cache = {}
-
-def placeholder(path):
-    """Deterministic synthetic 'SAMPLE FEED' frame for a given request path, so
-    a thumb and its full image (and re-renders) stay consistent. JPEG bytes."""
-    if path in _cache:
-        return _cache[path]
-    h = int(hashlib.md5(path.encode()).hexdigest(), 16)
-    w, ht = 480, 300
-    # diagonal gradient between two hash-derived muted slate tones
-    base = np.array([30 + (h & 31), 38 + ((h >> 5) & 31), 52 + ((h >> 10) & 31)], np.float32)
-    accent = np.array([60 + ((h >> 15) & 63), 90 + ((h >> 20) & 63), 130 + ((h >> 25) & 63)], np.float32)
-    yy, xx = np.mgrid[0:ht, 0:w].astype(np.float32)
-    t = ((xx / w) + (yy / ht)) / 2.0
-    img = (base[None, None, :] * (1 - t[..., None]) + accent[None, None, :] * t[..., None]).astype(np.uint8)
-    # subtle frame border + label
-    cv2.rectangle(img, (6, 6), (w - 7, ht - 7), (90, 110, 150), 1)
-    cv2.putText(img, "SAMPLE FEED", (w // 2 - 118, ht // 2 - 6),
-                cv2.FONT_HERSHEY_SIMPLEX, 1.1, (235, 240, 248), 2, cv2.LINE_AA)
-    cv2.putText(img, "synthetic placeholder", (w // 2 - 96, ht // 2 + 26),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (180, 195, 215), 1, cv2.LINE_AA)
-    cv2.putText(img, f"#{h % 9000 + 1000}", (16, ht - 16),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (170, 185, 205), 1, cv2.LINE_AA)
-    ok, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 80])
-    data = buf.tobytes()
-    _cache[path] = data
-    return data
+IMG_EXT = (".jpg", ".jpeg", ".gif", ".png", ".webp")
 
 
-def is_image(path):
-    p = path.split("?", 1)[0].lower()
-    return p.endswith(IMG_EXT) or "/thumbs/" in p
+def _is_forbidden(path):
+    p = os.path.realpath(path).lower()
+    return any(p == m or p.startswith(m + "/") for m in FORBIDDEN_MARKERS)
 
 
-class H(http.server.SimpleHTTPRequestHandler):
+if _is_forbidden(ROOT):
+    sys.stderr.write(
+        f"REFUSING SCREENSHOT_ROOT={ROOT}\n"
+        "Screenshot captures must not read live camera directories.\n"
+        "Use tools/screenshots/fixtures/gallery (the default).\n"
+    )
+    sys.exit(2)
+
+
+def _json_bytes(path, fallback):
+    try:
+        with open(path, "rb") as f:
+            return f.read()
+    except OSError:
+        return json.dumps(fallback).encode()
+
+
+class H(SimpleHTTPRequestHandler):
     def __init__(self, *a, **k):
         super().__init__(*a, directory=ROOT, **k)
 
-    def _serve_placeholder(self):
-        data = placeholder(self.path)
-        self.send_response(200)
-        self.send_header("Content-Type", "image/jpeg")
-        self.send_header("Content-Length", str(len(data)))
-        self.end_headers()
-        self.wfile.write(data)
+    def log_message(self, *a):
+        return
 
-    def _proxy(self):
+    def _send(self, code, body, ctype):
+        if isinstance(body, str):
+            body = body.encode()
+        self.send_response(code)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _send_file(self, path, ctype):
+        try:
+            with open(path, "rb") as f:
+                body = f.read()
+        except OSError:
+            self.send_error(404)
+            return
+        self._send(200, body, ctype)
+
+    def _stub_api(self):
+        path = self.path.split("?", 1)[0]
+        if self.command == "POST":
+            ln = int(self.headers.get("Content-Length", 0) or 0)
+            if ln:
+                self.rfile.read(ln)
+            # Never mutate production. Pretend success.
+            return self._send(200, b'{"ok":true,"fixture":true}', "application/json")
+        if path == "/api/events":
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("X-Accel-Buffering", "no")
+            self.end_headers()
+            self.wfile.write(b"event: ping\ndata: {}\n\n")
+            try:
+                self.wfile.flush()
+            except Exception:
+                pass
+            return
+        mapping = {
+            "/api/settings": (os.path.join(API_DIR, "settings.json"), {}),
+            "/api/status": (os.path.join(API_DIR, "status.json"), {"ok": False}),
+            "/api/inference_log": (os.path.join(API_DIR, "inference_log.json"), []),
+            "/api/integrations": (os.path.join(API_DIR, "integrations.json"), {"slack": {"enabled": False}}),
+            "/api/pins": (os.path.join(ROOT, "pins.json"), []),
+        }
+        if path in mapping:
+            fp, fb = mapping[path]
+            return self._send(200, _json_bytes(fp, fb), "application/json")
+        if path == "/api/llm-schema":
+            schema = os.path.join(API_DIR, "llm-schema.json")
+            if os.path.isfile(schema):
+                return self._send_file(schema, "application/json")
+            self.send_error(404)
+            return
+        if path == "/api/health":
+            return self._send(200, b'{"status":"ok","fixture":true}', "application/json")
+        self.send_error(404)
+
+    def _proxy_live(self):
         if self.path.startswith("/api/events"):
-            self.send_response(404); self.end_headers(); return
+            self.send_error(404)
+            return
         try:
             data = None
             if self.command == "POST":
                 ln = int(self.headers.get("Content-Length", 0) or 0)
                 data = self.rfile.read(ln) if ln else b""
-            req = urllib.request.Request(API + self.path, data=data, method=self.command)
+            req = urllib.request.Request(LIVE_API + self.path, data=data, method=self.command)
             for h in ("Content-Type", "Accept"):
-                if self.headers.get(h): req.add_header(h, self.headers[h])
+                if self.headers.get(h):
+                    req.add_header(h, self.headers[h])
             with urllib.request.urlopen(req, timeout=10) as r:
                 body = r.read()
                 self.send_response(r.status)
                 self.send_header("Content-Type", r.headers.get("Content-Type", "application/json"))
                 self.send_header("Content-Length", str(len(body)))
-                self.end_headers(); self.wfile.write(body)
+                self.end_headers()
+                self.wfile.write(body)
         except Exception as e:
-            self.send_response(502); self.end_headers()
-            try: self.wfile.write(str(e).encode())
-            except Exception: pass
+            self.send_response(502)
+            self.end_headers()
+            try:
+                self.wfile.write(str(e).encode())
+            except Exception:
+                pass
 
-    def _serve_index_override(self):
-        with open(INDEX_OVERRIDE, "rb") as f:
-            body = f.read()
-        self.send_response(200)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers(); self.wfile.write(body)
-
-    def do_GET(self):
-        if self.path.startswith("/api/"): return self._proxy()
-        if PLACEHOLDER and is_image(self.path): return self._serve_placeholder()
+    def _serve_overlay(self):
         path = self.path.split("?", 1)[0]
-        if INDEX_OVERRIDE and path in ("/", "/index.html"):
-            return self._serve_index_override()
+        if path in ("/", "/index.html") and INDEX_OVERRIDE and os.path.isfile(INDEX_OVERRIDE):
+            return self._send_file(INDEX_OVERRIDE, "text/html; charset=utf-8")
+        # Static chrome from the repo if the fixture tree does not have it.
+        rel = path.lstrip("/")
+        if rel in ("manifest.json", "icon.svg", "favicon.ico"):
+            candidate = os.path.join(ROOT, rel)
+            if not os.path.isfile(candidate):
+                candidate = os.path.join(STATIC_DIR, rel)
+            if os.path.isfile(candidate):
+                ctype = {
+                    "manifest.json": "application/manifest+json",
+                    "icon.svg": "image/svg+xml",
+                    "favicon.ico": "image/x-icon",
+                }[rel]
+                return self._send_file(candidate, ctype)
         return super().do_GET()
 
-    def do_POST(self): return self._proxy()
-    def log_message(self, *a): pass
+    def do_GET(self):
+        if self.path.startswith("/api/"):
+            return self._stub_api() if API_MODE != "live" else self._proxy_live()
+        return self._serve_overlay()
+
+    def do_POST(self):
+        if self.path.startswith("/api/"):
+            return self._stub_api() if API_MODE != "live" else self._proxy_live()
+        self.send_error(405)
 
 
-class TS(socketserver.ThreadingMixIn, http.server.HTTPServer):
+class TS(ThreadingMixIn, TCPServer):
+    allow_reuse_address = True
     daemon_threads = True
 
 
-print(f"serving {ROOT} + /api->{API} on :{PORT} "
-      f"(frames: {'PLACEHOLDER' if PLACEHOLDER else 'REAL'})")
-TS(("127.0.0.1", PORT), H).serve_forever()
+if __name__ == "__main__":
+    print(
+        f"serving root={ROOT} api={API_MODE} index={INDEX_OVERRIDE} on :{PORT} "
+        f"(frames=FIXTURE, production-roots=REFUSED)"
+    )
+    TS(("127.0.0.1", PORT), H).serve_forever()

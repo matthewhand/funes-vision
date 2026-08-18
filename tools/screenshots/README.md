@@ -1,8 +1,10 @@
 # Screenshot tooling
 
-Captures the live SPA for the README/user guide via Playwright (Chromium).
-Playwright is **not** a repo dependency — install it into a scratch dir so the
-no-build app stays dep-free:
+Captures the gallery for the user guide via Playwright (Chromium).
+**Default source is the synthetic fixture gallery** — never live camera
+footage under `/mnt/models/Webcam21` or `/mnt/models/Webcam22`.
+
+Playwright is **not** a repo dependency — install it into a scratch dir:
 
 ```sh
 mkdir -p /tmp/pw && cd /tmp/pw && npm init -y >/dev/null
@@ -10,30 +12,32 @@ npm install playwright@1.61.0
 node node_modules/playwright/cli.js install chromium chromium-headless-shell
 ```
 
-## Run
-
-The SPA calls a same-origin `/api`, and the public site is behind nginx basic
-auth — so we serve the deployed gallery and reverse-proxy `/api` to the real
-API (`:8190`) under one local origin, then point Playwright at it.
+## Run (fixture-only, safe)
 
 ```sh
-python3 tools/screenshots/proxy.py &          # serves Webcam21 + /api on :8899
-cd /tmp/pw && node /path/to/repo/tools/screenshots/shots.js   # writes /tmp/webcam_shots/*.png
+python3 tools/screenshots/make_fixtures.py   # rebuild stills if needed
+bash tools/screenshots/run_shots.sh          # proxy :8899 + shots.js
+# PNGs land in /tmp/webcam_shots/
 ```
 
-## Gotchas (why the script is shaped the way it is)
+The proxy refuses to start if `SCREENSHOT_ROOT` points at a live camera
+directory. `/api` is stubbed from `fixtures/api/` so pin/delete/settings
+cannot mutate the real box.
 
-- **Slow capture, not a repaint.** `page.screenshot()` on heavy views is slow,
-  not hung. Investigated: there is NO `requestAnimationFrame` loop in the app;
-  the only animation is a tiny `live-dot` pulse. The script freezes CSS
-  animations **including `::before`/`::after` pseudo-elements** (the universal
-  selector alone misses them, e.g. `.skeleton-card::after`), hides spinners,
-  kills JS timers (`freezeTimers`), pre-scrolls to load lazy thumbnails
-  (`preloadLazy`), and passes `animations:'disabled'`.
-- The **default Timeline view** renders up to 300 visit rows with thumbnails,
-  so `captureScreenshot` takes ~12–13 s — finite, not a hang. The screenshot
-  `timeout` is 25 s for this reason; a shorter timeout falsely looks like a
-  "Timeline never settles" bug (it isn't one).
-- Headless: use `documentElement.clientWidth` (not `window.innerWidth`) for the
-  viewport; never `pkill headless_shell` right before launching (ETXTBSY).
-- Curated outputs live in `docs/img/`.
+## Env
+
+| Var | Default | Meaning |
+|-----|---------|---------|
+| `SCREENSHOT_ROOT` | `tools/screenshots/fixtures/gallery` | Static gallery tree |
+| `SCREENSHOT_INDEX` | repo `index.html` | Overlay working-copy UI |
+| `SCREENSHOT_API` | `stub` | `stub` (safe) or `live` (`:8190`) |
+| `SCREENSHOT_PORT` | `8899` | Local origin |
+| `SHOTS_URL` / `SHOTS_OUT` | `:8899` / `/tmp/webcam_shots` | Playwright |
+
+## Gotchas
+
+- `page.screenshot()` on heavy views is slow, not hung. Timers are frozen
+  and CSS animations (including `::before`/`::after`) are disabled.
+- Headless: use `documentElement.clientWidth` for viewport math; never
+  `pkill headless_shell` right before launch (ETXTBSY).
+- Curated outputs for the user guide live in `docs/img/`.
