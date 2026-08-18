@@ -2066,7 +2066,7 @@
           <!-- Time-of-day Range Slider -->
           <div class="time-slider-wrapper">
             <div class="slider-header">
-              <span class="slider-label"><i data-lucide="clock" style="width:14px;height:14px;"></i> Time Range: <span id="time-range-display">00:00 - 23:59</span></span>
+              <span class="slider-label"><i data-lucide="clock" style="width:14px;height:14px;"></i> Time Range: <span id="time-range-display">All day</span></span>
               <span class="slider-header-actions">
                 <button class="time-reset-btn" id="btn-reset-time">Reset</button>
                 <i data-lucide="chevron-down" class="slider-caret"></i>
@@ -2988,6 +2988,14 @@
     }
     // === /pure:prefersReducedMotion ===
 
+    // === pure:hideLabelSwitchName ===
+    // Settings hide/show row. Name the switch "{label} detections" and let
+    // aria-checked (bindSwitch) carry on vs off — never "Show …" while shown.
+    function hideLabelSwitchName(label) {
+      return `${label} detections`;
+    }
+    // === /pure:hideLabelSwitchName ===
+
     // === pure:spaceTogglesPlayback ===
     // Space should toggle play only when focus is NOT already on a control that
     // handles activation (button/link/input/switch). Pure: pass event.target.
@@ -3470,7 +3478,7 @@
         const item = document.createElement('div');
         item.className = `blacklist-item ${isHidden ? 'hidden-label' : ''}`;
         item.dataset.label = label;
-        item.setAttribute('aria-label', `Show ${label} detections`);
+        item.setAttribute('aria-label', hideLabelSwitchName(label));
         item.innerHTML = `
           <span style="text-transform: capitalize;">${label}</span>
           <div class="blacklist-status"></div>
@@ -4453,6 +4461,10 @@
           ? 'All day'
           : `${formatHour(state.timeStart)} - ${formatHour(state.timeEnd)}`;
       }
+      const ss = document.getElementById('time-start');
+      const se = document.getElementById('time-end');
+      if (ss) ss.setAttribute('aria-valuetext', formatHour(state.timeStart));
+      if (se) se.setAttribute('aria-valuetext', formatHour(state.timeEnd));
       const wrapper = document.querySelector('.time-slider-wrapper');
       if (wrapper) {
         const isDefault = timeRangeIsDefault(state.timeStart, state.timeEnd);
