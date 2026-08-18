@@ -21,19 +21,19 @@ MODEL_LOCAL = "gemma4:e2b"  # Ollama tag; settings.json model_primary overrides
 MODEL_PRIMARY = MODEL_LOCAL  # default; overridden by settings `model_primary`
 MODEL_FALLBACK = ""          # optional; settings `model_fallback`
 BURST_THRESHOLD_SECONDS = 300  # Group images within 5 mins
-MIN_MEM_FOR_LOCAL_GB = 16.0
+MIN_MEM_FOR_LOCAL_GB = 6.0
 MAX_AGE_DAYS = 30   # retention: no-detection images older than this are removed
 MAX_DIR_GB = 5.0    # retention: per-camera disk budget
 ALLOW_CLOUD = False  # OpenRouter only when settings allow_cloud is true
 OLLAMA_URL = "http://localhost:11434"
-MAX_DEEP_PASSES = 15  # LLM calls (local or cloud) per camera per sweep
+MAX_DEEP_PASSES = 30  # LLM calls (local or cloud) per camera per sweep
 DEEP_CONCURRENCY = 1   # parallel backfill deep passes; >1 only sane for a cloud
                        # model (no local RAM contention). Rate-limit backoff guards it.
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 FAST_PASS_ENGINE = "yolo"  # "yolo" (recommended) or "haar" (legacy cascades)
 YOLO_DIR = os.path.join(BASE_DIR, "models", "yolo")
 YOLO_CONF = 0.45
-DEEP_BACKFILL = True  # idle sweeps spend leftover LLM budget verifying negatives, newest first
+DEEP_BACKFILL = False  # idle archive verification; off unless settings enable it
 DEEP_PASSES_ENABLED = True  # master switch for ALL Gemma/LLM work (priority + backfill + bursts);
                             # set false to run detector-only and free CPU/RAM
 BURST_SUMMARIES_ENABLED = False  # multi-image (burst) LLM captions; off by default —

@@ -3457,7 +3457,7 @@
 
         const n = freqMap.get(obj) || 0;
         const countHtml = n ? `<span class="chip-count">${formatCount(n)}</span>` : '';
-        btn.innerHTML = `<i data-lucide="${icon}" style="width:14px;height:14px;vertical-align:middle;"></i>${obj}${countHtml}`;
+        btn.innerHTML = `<i data-lucide="${icon}" style="width:14px;height:14px;vertical-align:middle;"></i>${escapeHtml(obj)}${countHtml}`;
         btn.setAttribute('aria-label', n ? `${obj}, ${n}` : obj);
         btn.onclick = () => {
           if (state.stickySelect) {
@@ -4545,7 +4545,7 @@
         <div class="empty-state">
           <i data-lucide="image-off"></i>
           <h3>${escapeHtml(h)}</h3>
-          <p>${message}</p>
+          <p>${escapeHtml(message)}</p>
           <div style="display:flex; gap:8px; justify-content:center; margin-top:12px;">${actionsHtml}</div>
         </div>
       `;
@@ -5384,8 +5384,8 @@
               const ago = Math.max(0, Math.round(Date.now() / 1000 - d.ts));
               const when = ago < 90 ? `${ago}s ago` : ago < 5400 ? `${Math.round(ago / 60)}m ago` : `${Math.round(ago / 3600)}h ago`;
               delEl.innerHTML = d.ok
-                ? `<span style="color:#10b981;">✓ last sent ${when}</span> <span style="color:var(--text-secondary);">(${d.kind})</span>`
-                : `<span style="color:#ef4444;">✗ last send failed ${when}: ${(d.detail || '').slice(0, 60)}</span>`;
+                ? `<span style="color:#10b981;">✓ last sent ${escapeHtml(when)}</span> <span style="color:var(--text-secondary);">(${escapeHtml(String(d.kind || ''))})</span>`
+                : `<span style="color:#ef4444;">✗ last send failed ${escapeHtml(when)}: ${escapeHtml(String(d.detail || '').slice(0, 60))}</span>`;
             }
           }
         } catch (e) {
@@ -5531,7 +5531,9 @@
           // Live inference state
           let inferHtml;
           if (s.inference && s.inference.started) {
-            inferHtml = `<span style="color:#f59e0b;">&#9679;</span> <b>Analyzing now:</b> ${escapeHtml(s.inference.image)}<br>
+            const inferMeta = parseFilename(s.inference.image);
+            const inferNice = lightboxTitle(inferMeta) || s.inference.image;
+            inferHtml = `<span style="color:#f59e0b;">&#9679;</span> <b>Analyzing now:</b> ${escapeHtml(inferNice)}<br>
               &nbsp;&nbsp;${escapeHtml(s.inference.model)} &middot; ${escapeHtml(s.inference.trigger)} &middot; running ${fmtDur(s.inference.running_for_s)}`;
             // Live caption building as the LLM streams it ("AI is looking at this…")
             // — raw model output, must be escaped before innerHTML.
@@ -5653,9 +5655,11 @@
                 } else {
                   const activeFlags = getHAFlags(latestRecord).slice(0, 4); // First 4 flags
                   const flagsText = activeFlags.length > 0
-                    ? activeFlags.map(f => f.isString ? `${f.label}:${f.value}` : f.label).join(', ')
+                    ? activeFlags.map(f => f.isString
+                        ? `${escapeHtml(f.label)}:${escapeHtml(String(f.value))}`
+                        : escapeHtml(f.label)).join(', ')
                     : 'no flags';
-                  const model = latestRecord._llm_model ? ` · ${latestRecord._llm_model}` : '';
+                  const model = latestRecord._llm_model ? ` · ${escapeHtml(latestRecord._llm_model)}` : '';
                   const latency = latestRecord._llm_ms ? ` · ${Math.round(latestRecord._llm_ms)}ms` : '';
                   status = `${flagsText}${model}${latency}`;
                 }
@@ -5712,7 +5716,9 @@ html += `<div style="margin-top:6px;padding:4px 6px;background:var(--accent-10);
           if (s.inference && s.inference.started) {
             dot.className = 'inferring';
             label.textContent = `AI ${fmtDur(s.inference.running_for_s)}`;
-            btnSystemStatus.title = `Analyzing ${s.inference.image} (${s.inference.trigger}) - tap for details`;
+            const inferMeta = parseFilename(s.inference.image);
+            const inferNice = lightboxTitle(inferMeta) || s.inference.image;
+            btnSystemStatus.title = `Analyzing ${inferNice} (${s.inference.trigger}) - tap for details`;
           } else {
             dot.className = 'idle';
             label.textContent = 'AI';

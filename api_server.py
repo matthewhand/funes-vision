@@ -65,7 +65,7 @@ def setting_valid(key, value):
     spec = MUTABLE_SETTINGS[key]
     if "choices" in spec:
         return value in spec["choices"]
-    return (isinstance(value, (int, float)) and not isinstance(value, bool)
+    return (isinstance(value, int) and not isinstance(value, bool)
             and spec["min"] <= value <= spec["max"])
 
 

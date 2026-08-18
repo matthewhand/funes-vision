@@ -37,6 +37,8 @@ class TestSettingValid(unittest.TestCase):
         self.assertFalse(api_server.setting_valid("idle_sweep_seconds", 5))    # below min
         self.assertFalse(api_server.setting_valid("idle_sweep_seconds", 9999))  # above max
         self.assertFalse(api_server.setting_valid("idle_sweep_seconds", True))  # bool rejected
+        self.assertFalse(api_server.setting_valid("idle_sweep_seconds", 60.0))  # float rejected
+        self.assertFalse(api_server.setting_valid("idle_sweep_seconds", 15.5))
 
 
 class TestBackoff(unittest.TestCase):
