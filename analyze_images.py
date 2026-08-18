@@ -606,8 +606,8 @@ def merge_llm_into_fastpass(fp_results, llm_result, skip_reason=None, model=None
 def run_deep_pass(image_path, img_name, can_run_chain, api_key, trigger, fp_labels=None):
     """One audited LLM deep pass: local first, cloud fallback.
 
-    The successful verdict carries a "_yolo" field with the fast-pass
-    detector's labels so the UI can require detector+LLM consensus.
+    The successful result is merged onto the detector record
+    (`merge_llm_into_fastpass`): YOLO labels stay, HA flags attach.
     fp_labels=None means "run the detector fresh" (used for re-queued
     partials whose stored labels may be stale, and for backfill)."""
     global LAST_DURATION_S
@@ -1341,7 +1341,7 @@ def main(retention_only=False):
                     # zero-second failure.
                     if deep_pass_count < max_deep_passes and llm_ready:
                         # Stale stored labels (re-queued partials) force a
-                        # fresh detector run for the consensus record
+                        # fresh detector run so YOLO flags stay current
                         fresh_fp = None if was_partial else \
                             sorted(k for k, v in fp_results.items() if v is True)
                         result = run_deep_pass(image_path, img, can_run_chain, api_key,
@@ -1400,8 +1400,8 @@ def main(retention_only=False):
 
         # 1b. Idle backfill: spend any leftover deep-pass budget verifying
         # fast-pass negatives with the LLM, newest first, so the whole
-        # archive eventually gets a Gemma verdict (which replaces the
-        # fast-pass marker - the LLM result always trumps the detector).
+        # archive eventually gets HA flags merged onto the detector record
+        # (YOLO person/dog/car labels are never overwritten).
         if DEEP_BACKFILL and deep_pass_count < max_deep_passes and llm_ready:
             def awaiting_backfill(entry):
                 if entry.get("fast_pass") == "negative":

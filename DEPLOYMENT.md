@@ -114,8 +114,9 @@ Standalone binary — NOT the official installer, NOT docker:
 - binary: `/mnt/models/ollama-bin/bin/ollama` (v0.30.7 arm64 tarball)
 - blobs: `/mnt/models/ollama/models` via `OLLAMA_MODELS` (pinned in the
   unit; the 45G root disk cannot hold models)
-- model: `gemma4:12b` (7.6GB). ~5.5 min/image on this 4-core ARM CPU,
-  Nice=19 so it never starves the box.
+- model on this box: **`gemma4:e2b`**, about **~40 s/image** on this 4-core
+  ARM CPU (Nice=19 so it never starves the box). `gemma4:12b` at
+  ~5.5 min/image is **not** the live tag here.
 
 The official install script was once run by accident: it puts ~2GB in
 `/usr/local/lib/ollama` and installs a broken unit (nonexistent
@@ -139,9 +140,9 @@ AlexeyAB/darknet GitHub releases; path configured as `yolo_dir`.
 
 ### How retention maps to this disk
 
-- **`max_dir_gb` (default 3.0)** applies **per camera directory** (sum of
+- **`max_dir_gb` (live 5.0)** applies **per camera directory** (sum of
   image files only), not to the whole volume and not to `/`.
-- Two cameras at budget ≈ 6 GB of JPEGs; the rest of `/mnt/models` is
+- Two cameras at budget ≈ 10 GB of JPEGs; the rest of `/mnt/models` is
   models and other data. Host ENOSPC can still happen while each camera
   looks “under budget”.
 - Control-plane JSON (`analysis.json` etc.) lives under

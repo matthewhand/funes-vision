@@ -1,7 +1,8 @@
 # Developer & Operations Guide
 
 Architecture, data formats, configuration, and operational detail for the
-webcam AI gallery. For end-user usage see [README.md](README.md).
+webcam AI gallery. For end-user usage see [docs/USER-GUIDE.md](docs/USER-GUIDE.md)
+and [README.md](README.md).
 
 ## System overview
 
@@ -16,9 +17,9 @@ Hikvision cameras ──FTP──> /mnt/models/Webcam21 (webcam)   nginx :8180 (
                         │ 1. retention (age + disk budget, pin-aware)
                         │ 2. thumbnails (320px JPEG -> thumbs/)
                         │ 3. fast pass: YOLO (yolov4-tiny) or Haar
-                        │ 4. deep pass: gemma4:12b via local Ollama
-                        │    (OpenRouter fallback if allow_cloud)
-                        │ 5. burst detection + LLM burst summaries
+                        │ 4. deep pass: gemma4:e2b via local Ollama
+                        │    (HA flags; YOLO labels kept; OpenRouter if allow_cloud)
+                        │ 5. burst detection + optional LLM burst summaries
                         │ 6. stale-entry pruning
                         ▼
             analysis.json / bursts.json / pins.json / images.json
@@ -70,12 +71,15 @@ no restarts needed). Per camera dir, in order:
    COCO classes mapped to person/car/bird/cat/dog, conf 0.45, ~0.2s/image.
    Haar = legacy frontal-face/fullbody/frontalcatface cascades.
 5. **Deep pass** — the `model_primary` vision model through Ollama
-   (`analyze_image_local`, /api/chat with `format: json`). `model_primary` can be
-   a local tag *or* an Ollama `:cloud` model (e.g. `minimax-m3:cloud`) — same
-   `:11434` path either way. OpenRouter remains a separate fallback when
-   `allow_cloud` is true. Budgeted: `max_deep_passes` per camera per sweep
-   counts local AND cloud calls. **An LLM verdict replaces the entry
-   wholesale — the LLM always trumps the fast-pass detector.**
+   (`analyze_image_local`, /api/chat with `format: json` + the front/back HA
+   schema). Live tag is `gemma4:e2b`. `model_primary` can be a local tag *or*
+   an Ollama `:cloud` model (e.g. `minimax-m3:cloud`) — same `:11434` path
+   either way. OpenRouter remains a separate fallback when `allow_cloud` is
+   true. Budgeted: `max_deep_passes` per camera per sweep counts local AND
+   cloud calls. **The LLM writes HA flags** (`postal_delivery`, `porch_access`,
+   `animal_detected`, …). **`merge_llm_into_fastpass` never overwrites
+   detector labels** (`person`/`car`/`dog`/…). There is no free-text
+   `description` field.
    - *Which models run here* (`runnable_chain`): the primary→fallback chain is
      filtered to what THIS host can serve — a `:cloud` model always (it runs on
      Ollama's servers, no local RAM), a local model only when free RAM ≥
@@ -94,7 +98,8 @@ no restarts needed). Per camera dir, in order:
      is recorded as a partial but does NOT consume urgent budget.
 6. **Idle backfill** (`deep_backfill`) — leftover budget verifies
    fast-pass negatives and ignored-label partials, closest-to-a-detection
-   first then newest, so the archive converges on LLM verdicts. Fanned out
+   first then newest, so the archive converges on HA flags. **Off on this
+   box** (`deep_backfill: false`). Fanned out
    across `deep_concurrency` workers (`concurrency_workers` clamps to
    `[1, len(targets)]`); results are consumed in the main thread so
    `analysis_data` is never mutated concurrently, and a peer tripping
@@ -111,13 +116,12 @@ no restarts needed). Per camera dir, in order:
 8. **Pruning** — analysis/burst entries whose files no longer exist
    (retention, API delete, external cleanup) are removed.
 
-Inference timing on this box (4-core, no GPU): **local** vision models don't
-fit RAM here, so the deep pass runs on the cloud primary (`minimax-m3:cloud`)
-at **~7–25 s/image** (rising under `deep_concurrency`, which the endpoint only
-partially parallelizes — ~1.4× at 3). Sustained net catch-up is therefore
-~300–360 frames/hr; the historical backfill of a large archive takes many
-hours and is meant to grind across sweeps. `max_deep_passes` bounds a sweep so
-it can't hold the 1h lock indefinitely.
+Inference timing on this box (4-core ARM, no GPU): live model is local
+**`gemma4:e2b` at ~40 s/image** (recent priority passes cluster around 42–44 s;
+occasional outliers are much slower). `allow_cloud` is false; the deep pass
+does **not** run `gemma4:12b` (~5.5 min/image) or a cloud primary here.
+`max_deep_passes` (30) bounds a sweep so it can't hold the 1h lock indefinitely.
+Idle backfill is off, so the archive is not grinding toward full HA coverage.
 
 ### Retention (file rotation)
 
@@ -130,7 +134,7 @@ demand via `--retention-only` / the cron watchdog) under the global flock.
 | Key | Live default | Meaning |
 |-----|--------------|---------|
 | `max_age_days` | 30 | Age pass: delete **analyzed negatives** older than this |
-| `max_dir_gb` | 3.0 | Per-camera dir budget (sum of image file sizes in that dir) |
+| `max_dir_gb` | 5.0 | Per-camera dir budget (sum of image file sizes in that dir) |
 | `pins.json` | `[]` | Filenames never deleted by retention |
 
 These knobs are **not** in the UI/`POST /api/settings` allow-list — edit
@@ -312,9 +316,11 @@ needed” runs.
 
 ### api_server.py (port 8190)
 Stdlib-only HTTP server, the single write channel (nginx mounts are ro). It
-exposes 9 routes — `pins`, `pin`, `delete`, `settings` (GET/POST), `integrations`
-(GET/POST + `/test`), `status`, `health`, `inference_log`, and the `events` SSE
-stream (`image.new` / `detection.preliminary` / `new-detection` / `new-burst`;
+exposes 11 routes — `pins`, `pin`, `delete`, `settings` (GET/POST), `integrations`
+(GET/POST + `/test`), `status`, `health`, `inference_log`, `POST /api/clip`
+(GIF for the player; MP4 accepted by the API only), `GET /api/llm-schema`
+(live prompt + front/back HA schemas), and the `events` SSE stream
+(`image.new` / `detection.preliminary` / `new-detection` / `new-burst`;
 `X-Accel-Buffering: no` so it survives the proxy unbuffered).
 
 **Methods, request/response payloads, status codes, and the SSE event schema
@@ -339,13 +345,14 @@ localStorage: `webcam_ai_blacklist` (hidden labels) and
   blacklist filter -> filter buttons / badges / chart highlighting.
 - Tabs: Objects (detections only), All, Timeline (events).
 - Timeline: `computeVisits()` groups each label's contiguous presence
-  into visits (start/end, duration, frame count, ongoing flag, first
-  Gemma caption) from chronological verdicts; single-frame flickers
-  smoothed; each visit's frame run (2 context frames + up to 60) plays
-  via `openEventPlayer()` (2.5fps thumbnail flipbook).
-- Captions: Gemma's optional `description` string per entry (non-empty
-  scenes only); shown on cards/lightbox/visits and searchable. It's not
-  a boolean key so `effectiveLabels`/`labelStates`/consensus ignore it.
+  into visits (start/end, duration, frame count, ongoing flag) from
+  chronological detector (+ leftover `description`) records; single-frame
+  flickers smoothed; each visit's frame run (2 context frames + up to 60)
+  plays via `openEventPlayer()` (2.5fps thumbnail flipbook). Player
+  download is **GIF only**.
+- Captions: the UI still reads `analysis.description`. The e2b deep pass
+  **does not write that field** — it writes HA flags instead (shown as
+  badges / ℹ schema). Old catalog rows may still have a caption.
 - Charts: day-planner (per-day 24h timelines, red marks at match
   time-of-day) + hourly histogram (red overlay = matching share).
 - Grid lazy-loads `thumbs/<file>` with onerror fallback to full res;
@@ -397,9 +404,12 @@ localStorage: `webcam_ai_blacklist` (hidden labels) and
 `analysis.json` entry states:
 - `{"fast_pass": "negative"}` — detector saw nothing; LLM hasn't looked.
 - `{labels..., "fast_pass": "partial"}` — detector hit, awaiting LLM
-  (UI: "Unverified" / `label?` badges).
-- `{labels...}` (no `fast_pass` key) — LLM verdict, final.
-  All-false = verified clear.
+  (UI: "Unverified" / `label?` badges), or a skipped/failed deep pass
+  (`_llm_skip`).
+- Detector labels + HA flags (no `fast_pass` key after a successful merge)
+  — YOLO `person`/`car`/`dog`/… **kept**; flags such as `postal_delivery`
+  / `porch_access` / `animal_detected` attached; raw flags also under `_llm`.
+  The LLM does **not** replace the detector record wholesale.
 
 Flipping a verified entry back to `"fast_pass": "partial"` re-queues it
 for priority LLM re-scan (used for the one-off re-scan of mislabeled
@@ -442,18 +452,18 @@ move → verify) lives in [ROADMAP.md](ROADMAP.md).
 | `idle_sweep_seconds` | 60 | idle re-scan cadence (UI-settable, 15–3600) |
 | `timezone` | Australia/Sydney | display TZ; `WEBCAM_TZ` env overrides (see [Paths & XDG](#paths--xdg)) |
 | `max_age_days` | 30 | retention: age limit for **analyzed no-detection** images (not UI-mutable; edit file) |
-| `max_dir_gb` | 3.0 | retention: per-camera image-byte budget in GiB (code fallback 4.0; not UI-mutable) |
+| `max_dir_gb` | 5.0 | retention: per-camera image-byte budget in GiB (code fallback 4.0 if the key is missing; not UI-mutable) |
 | `min_mem_for_local_gb` | 6.0 | min free RAM to attempt a **local** model; a `:cloud` model ignores this (see `runnable_chain`) |
 | `allow_cloud` | false | permit OpenRouter fallback (separate from an Ollama `:cloud` primary) |
 | `ollama_url` | http://localhost:11434 | local LLM endpoint |
-| `model_local` | gemma4:12b | Ollama model tag (back-compat default for `model_primary`) |
-| `model_primary` | (=`model_local`) | primary inference model via Ollama (local tag or a `:cloud` model) |
-| `model_fallback` | "" | optional fallback tried when the primary errors/rate-limits |
-| `max_deep_passes` | 4 | LLM calls per camera per sweep (local+cloud) |
+| `model_local` | gemma4:e2b | Ollama model tag (back-compat default for `model_primary`; import-time fallback in code is still `gemma4:12b`) |
+| `model_primary` | gemma4:e2b | primary inference model via Ollama (local tag or a `:cloud` model) |
+| `model_fallback` | gemma4:e2b | optional fallback tried when the primary errors/rate-limits |
+| `max_deep_passes` | 30 | LLM calls per camera per sweep (local+cloud; import-time fallback is 15) |
 | `deep_concurrency` | 1 | parallel **backfill** deep passes. Safe only with a `:cloud` model (no local RAM contention); the cloud endpoint partially parallelizes (~1.4× at 3). Rate-limit backoff + per-sweep `RATE_LIMITED` still guard it |
 | `fast_pass_engine` | yolo | `yolo` or `haar` (UI-selectable) |
 | `deep_passes_enabled` | true | master switch for ALL Gemma work (priority+backfill+bursts); false = detector-only, no LLM (UI-toggleable) |
-| `deep_backfill` | true | idle LLM verification of the archive (UI-toggleable) |
+| `deep_backfill` | false | idle LLM verification of the archive (UI-toggleable; **off** on this box) |
 | `burst_summaries_enabled` | false | multi-image (burst) LLM captions of a visit; off does not affect single-frame deep passes (UI-toggleable) |
 | `gate_ignore_labels` | ["car"] | labels that alone don't trigger urgent deep passes |
 | `camera_offline_hours` | 24 | no frames in this long → a Slack "camera offline?" alert |
@@ -534,6 +544,10 @@ ntfy is config-file-driven (no UI panel yet): it pushes the summary/caption as
 the message body with a **Click** link back into the gallery (needs
 `public_base_url`); unlike Slack it does **not** upload the frame. Enable by
 adding the block above and setting `enabled: true`.
+
+Optional **HA MQTT** (`ha_mqtt.py`, `integrations.json` `mqtt` block) publishes
+retained vision flags to a broker and **may leave the box**. It is not in the
+Slack settings UI. `GET /api/integrations` redacts Slack only.
 
 `notify_mode` (per integration) controls *what* triggers a post:
 - `context` (default, quietest) — only burst/sequence summaries
@@ -616,15 +630,21 @@ that can't be reduced to a pure helper is proven via the deployed app.
 
 ## Screenshots
 
-The README/user-guide images in `docs/img/` are captured from the **live app**
-with Playwright (Chromium) — kept out of the test suite and dependency tree
-(installed into a scratch dir, not the repo). Tooling + run instructions:
-[`tools/screenshots/`](tools/screenshots/README.md). In brief: `proxy.py`
-serves the deployed gallery and reverse-proxies `/api`→:8190 under one local
-origin (bypassing nginx basic-auth and CORS), then `shots.js` drives Chromium
-across views/viewports. The script freezes animations, kills JS timers, and
-pre-loads lazy images so `page.screenshot()` doesn't hang on the SPA's
-continuous repaint. (This supersedes the earlier "Playwright deferred" note.)
+The README/user-guide images in `docs/img/` must come from a **synthetic
+fixture gallery**, never from live Webcam21/Webcam22 footage.
+
+- Point `SCREENSHOT_ROOT` at the fixture tree. **`SCREENSHOT_ROOT` must not
+  be `/mnt/models/Webcam21` or `/mnt/models/Webcam22`.**
+- Set `SCREENSHOT_PLACEHOLDER=1` so the proxy cannot fall through to real
+  JPEGs if a path is wrong.
+- Playwright lives in a scratch dir, not the repo. Tooling:
+  [`tools/screenshots/`](tools/screenshots/README.md). `proxy.py` reverse-proxies
+  `/api`→:8190 under one local origin (bypassing nginx basic-auth and CORS);
+  `shots.js` drives Chromium. The script freezes animations, kills JS timers,
+  and pre-loads lazy images so `page.screenshot()` doesn't hang.
+
+Playwright-as-CI is still deferred ([ROADMAP.md](ROADMAP.md)); this harness is
+only for fixture-first stills.
 
 ## Services & infrastructure
 

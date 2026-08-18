@@ -10,7 +10,8 @@ still planned see [ROADMAP.md](ROADMAP.md).
 
 Long-lived services cooperate through the shared image directories and a handful
 of JSON files. A **cron watchdog** is the independent safety net for cleanup
-and stuck sweeps. Nothing leaves the box by default.
+and stuck sweeps. Frames stay local; Slack and optional HA MQTT may leave
+the box. `allow_cloud` is off by default.
 
 ```
  Cameras ──(motion JPEGs)──▶ /mnt/models/Webcam2{1,2}
@@ -46,19 +47,20 @@ and stuck sweeps. Nothing leaves the box by default.
   successful analysis exit.
 - **`analyze_images.py`** — the analysis pipeline. A **fast pass** (YOLO
   `yolov4-tiny`, COCO classes mapped to person/car/bird/cat/dog) labels subjects
-  in well under a second; a **deep pass** sends the frame to a vision LLM
-  through Ollama for a reasoned verdict and a short caption. A **consensus**
-  rule reconciles the two into the preliminary/verified/disputed lifecycle.
-  People/animals jump the queue; everything else is backfilled when the box is
-  idle, newest first. **Retention** (age + per-dir byte budget, pin-aware) runs
+  in well under a second; a **deep pass** (`gemma4:e2b`) answers a fixed HA
+  schema (`postal_delivery`, `porch_access`, `animal_detected`, …) and
+  **never overwrites** YOLO labels. There is no free-text caption. People/animals
+  jump the queue; idle backfill is a separate switch (off on this box).
+  **Retention** (age + per-dir byte budget, pin-aware) runs
   first every sweep; `--retention-only` is the fast cleanup entry point for
   cron. Catalogs load with truncation recovery and write atomically.
 - **`tools/watchdog.sh` + `/etc/cron.d/webcam-watchdog`** — independent of
   systemd process health: restart dead/stuck pipeline units, force hourly
   retention from `settings.json`. See [DEVELOP.md](DEVELOP.md#cron-watchdog-toolswatchdogsh).
 - **`api_server.py` (:8190)** — a stdlib `ThreadingHTTPServer`. REST endpoints
-  for pins, delete, settings, integrations, status, and health; an SSE
-  `/api/events` stream for live gallery updates. No framework, no build step.
+  for pins, delete, settings, integrations, status, health, clip (GIF),
+  and `GET /api/llm-schema`; an SSE `/api/events` stream for live gallery
+  updates. No framework, no build step.
 - **`index.html`** — a single-file vanilla-JS SPA (no build). Reads the JSON
   catalogs, renders the Timeline/Objects/All views, and subscribes to
   `/api/events` with graceful fallback to polling. Surfaces last retention
@@ -74,10 +76,9 @@ and stuck sweeps. Nothing leaves the box by default.
   `/mnt/models` does inference; `allow_cloud=false` is the default kill switch.
 - **Event-driven over polling.** `inotifywait` reacts to captures immediately
   rather than scanning on a timer.
-- **Two-tier inference.** A cheap detector gives instant feedback; the expensive
-  LLM (~minutes per image on this box) confirms and narrates when it can. The
-  lifecycle (preliminary → verified/disputed) makes that latency visible instead
-  of hiding it.
+- **Two-tier inference.** A cheap detector gives instant feedback; the local
+  LLM (~40 s/image on this box with `gemma4:e2b`) attaches HA flags when it
+  can. Detector labels stay authoritative.
 - **App-owned retention + cron backstop.** Cleanup uses the same pin-aware
   rules as the pipeline (not a foreign `find | rm`). Cron exists so a “green”
   systemd unit that is stuck mid-analyze cannot silently fill the disk.
@@ -138,7 +139,8 @@ The presentation shifted from a grid of frames to a **Timeline of visits**
 view. An **inference audit trail** and live pipeline status were added for
 observability. **SSE** (`/api/events`) began pushing
 image.new / new-detection / detection.preliminary / new-burst events to the open gallery,
-and a **pluggable integrations module** (Slack first) was introduced. This is
-the current era; the remaining live-streaming work (per-image LLM token
-streaming, a true pipeline→API push, incremental DOM
+and a **pluggable integrations module** (Slack first) was introduced. The
+SPA is still this era; the live deep pass is HA flags, not Gemma captions
+(see Current architecture). Remaining live-streaming work (per-image LLM
+token streaming, a true pipeline→API push, incremental DOM
 patching) is tracked in [ROADMAP.md](ROADMAP.md).

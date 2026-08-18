@@ -15,6 +15,8 @@ Endpoints (JSON unless noted):
   GET  /api/status                -> pipeline/camera/disk/metrics snapshot
   GET  /api/health                -> {ok|degraded} for uptime monitors (200/503)
   GET  /api/inference_log         -> recent LLM audit trail
+  GET  /api/llm-schema            -> live prompt + front/back HA JSON schemas
+  POST /api/clip                  -> GIF (player) or MP4 (API-only) from frame names
   GET  /api/events                -> SSE stream: image.new / new-detection / detection.preliminary / new-burst
 """
 import json
