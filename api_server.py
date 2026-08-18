@@ -180,10 +180,6 @@ def find_image(filename):
 # idle loop), so a recent mtime means the pipeline is alive even when cameras
 # are quiet. Cameras only capture on motion, so "stale" is generous.
 LASTRUN_MARKER = "/tmp/webcam_analysis.lastrun"
-try:
-    CAMERA_STALE_S = float(json.load(open(SETTINGS_FILE)).get("camera_offline_hours", 24)) * 3600
-except (OSError, ValueError, TypeError):
-    CAMERA_STALE_S = 24 * 3600
 SWEEP_STALE_S = 3600  # no sweep in 1h (= analysis lock timeout) -> stalled.
                       # A full both-camera catch-up sweep legitimately takes
                       # ~45 min, so a shorter window false-degrades /api/health.
@@ -232,10 +228,17 @@ def _fs_stats():
         return None
 
 
-def _camera_stats(max_dir_gb):
+def _camera_stale_s(settings=None):
+    """Same silence clock as analyze_images.run_health_checks (default 24h)."""
+    from analyze_images import camera_offline_hours
+    return camera_offline_hours(settings) * 3600
+
+
+def _camera_stats(max_dir_gb, settings=None):
     """Per-camera liveness + disk usage (one scandir per dir)."""
     now = time.time()
     budget = max_dir_gb * 1024 ** 3
+    stale_s = _camera_stale_s(settings)
     cams = []
     for d in WATCH_DIRS:
         newest, count, total = 0.0, 0, 0
@@ -259,7 +262,7 @@ def _camera_stats(max_dir_gb):
             "bytes": total,
             "budget_pct": round(100 * total / budget, 1) if budget else None,
             "last_frame_age_s": round(now - newest) if newest else None,
-            "stale": (newest == 0) or (now - newest > CAMERA_STALE_S),
+            "stale": (newest == 0) or (now - newest > stale_s),
         })
     return cams
 
@@ -354,7 +357,7 @@ def pipeline_status():
         status["trigger"]["last_sweep_age_s"] = round(time.time() - os.path.getmtime(LASTRUN_MARKER))
     except OSError:
         status["trigger"]["last_sweep_age_s"] = None
-    status["cameras"] = _camera_stats(settings.get("max_dir_gb", 5.0))
+    status["cameras"] = _camera_stats(settings.get("max_dir_gb", 5.0), settings)
     status["filesystem"] = _fs_stats()
     status["timezone"] = resolve_timezone(os.getenv("WEBCAM_TZ"), settings.get("timezone"))
     status["metrics"] = _inference_metrics()

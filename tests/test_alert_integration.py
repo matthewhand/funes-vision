@@ -186,6 +186,20 @@ class AlertIntegrationTest(unittest.TestCase):
         # or active state without due)
         self.assertEqual(len(self.calls), 1)
 
+    def test_missing_offline_hours_key_uses_24_not_12(self):
+        settings_path = os.path.join(self.tmp.name, "settings.json")
+        with open(settings_path, "w") as f:
+            json.dump({"max_dir_gb": 5}, f)
+        self.scan_total = 100  # under budget — only camera-offline can fire
+        self.scan_newest = self.now - 13 * 3600
+        with mock.patch.object(ai, "_settings_path", settings_path):
+            self._run()
+            self.assertEqual(self.calls, [])  # 13h is past 12h, not past 24h
+            self.scan_newest = self.now - 25 * 3600
+            self._run()
+        self.assertEqual(len(self.calls), 1)
+        self.assertIn("camera offline", self.calls[0][0])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -43,6 +43,8 @@ WATCH_DIRS = []  # REQUIRED via settings.json watch_dirs - deployment specific
 # in frame 24/7). Persisted as _llm_skip=no_trigger (not partial — that
 # would re-queue as urgent). Idle backfill verifies them later if enabled.
 GATE_IGNORE_LABELS = ["car"]
+# Slack "camera offline?" and /api/status stale share this default.
+CAMERA_OFFLINE_HOURS_DEFAULT = 24
 
 _settings_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "settings.json")
 if os.path.exists(_settings_path):
@@ -1118,16 +1120,25 @@ def _recovery_text(key):
         return f"✅ {key[5:]}: storage back under budget."
     return f"✅ Recovered: {key}"
 
+
+def camera_offline_hours(settings=None, path=None):
+    """Hours of silence before a camera is offline. Missing/invalid → 24."""
+    try:
+        if settings is None:
+            with open(path or _settings_path) as f:
+                settings = json.load(f)
+        hours = settings.get("camera_offline_hours", CAMERA_OFFLINE_HOURS_DEFAULT)
+        return float(hours)
+    except (OSError, ValueError, TypeError, AttributeError):
+        return float(CAMERA_OFFLINE_HOURS_DEFAULT)
+
+
 def run_health_checks(watch_dirs, api_key):
     """Evaluate pipeline / camera / storage health and push DEBOUNCED Slack
     alerts (plus recovery notices) through the integrations layer. Runs once
     per sweep; fully guarded so it can never break the pipeline."""
     now = time.time()
-    try:
-        offline_hours = json.load(open(_settings_path)).get("camera_offline_hours", 12)
-    except Exception:
-        offline_hours = 12
-    offline_s = offline_hours * 3600
+    offline_s = camera_offline_hours() * 3600
 
     alerts = {}
     # Inference capability. Only a genuinely DOWN Ollama (server unreachable)

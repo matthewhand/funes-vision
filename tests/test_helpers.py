@@ -1017,5 +1017,46 @@ class TestE2bSchema(unittest.TestCase):
         self.assertEqual(captured["caption"], "")
 
 
+class TestCameraOfflineHours(unittest.TestCase):
+    """Slack cam_* alerts and /api/status stale share one default: 24h."""
+
+    def test_missing_settings_key_uses_24_not_12(self):
+        hours = analyze_images.camera_offline_hours({})
+        self.assertEqual(hours, 24)
+        self.assertNotEqual(hours, 12)
+
+    def test_missing_key_in_file_uses_24(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = os.path.join(td, "settings.json")
+            with open(path, "w") as f:
+                json.dump({"max_dir_gb": 5.0}, f)
+            self.assertEqual(analyze_images.camera_offline_hours(path=path), 24)
+
+    def test_unreadable_settings_uses_24(self):
+        self.assertEqual(
+            analyze_images.camera_offline_hours(path="/no/such/settings.json"), 24)
+
+    def test_explicit_value_honored(self):
+        self.assertEqual(
+            analyze_images.camera_offline_hours({"camera_offline_hours": 8}), 8)
+
+    def test_status_stale_uses_24h_when_key_missing(self):
+        with tempfile.TemporaryDirectory() as d:
+            img = os.path.join(d, "x.jpg")
+            open(img, "w").close()
+            now = time.time()
+            os.utime(img, (now - 13 * 3600, now - 13 * 3600))
+            orig = api_server.WATCH_DIRS
+            api_server.WATCH_DIRS = [d]
+            try:
+                mid = api_server._camera_stats(5.0, {})
+                os.utime(img, (now - 25 * 3600, now - 25 * 3600))
+                late = api_server._camera_stats(5.0, {})
+            finally:
+                api_server.WATCH_DIRS = orig
+        self.assertFalse(mid[0]["stale"])   # 13h < 24h default (would be stale at 12)
+        self.assertTrue(late[0]["stale"])   # 25h > 24h
+
+
 if __name__ == "__main__":
     unittest.main()
