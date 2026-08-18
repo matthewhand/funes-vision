@@ -1904,10 +1904,10 @@
         </button>
         <!-- Tabs + the count of what they're showing, kept together -->
         <div class="tab-cluster" style="display: flex; align-items: center; gap: var(--space-3);">
-          <div class="tab-group" id="filter-tabs" role="tablist" aria-label="Gallery view">
-            <button class="tab-btn active" data-filter="events" role="tab" aria-selected="true" title="Object visits grouped over time, each with an AI caption">Timeline</button>
-            <button class="tab-btn" data-filter="objects" role="tab" aria-selected="false" title="Frames with a detected object">Objects</button>
-            <button class="tab-btn" data-filter="all" role="tab" aria-selected="false" title="Every captured snapshot">All</button>
+          <div class="tab-group" id="filter-tabs" role="group" aria-label="Gallery view">
+            <button type="button" class="tab-btn active" data-filter="events" aria-pressed="true" title="Object visits grouped over time, each with an AI caption">Timeline</button>
+            <button type="button" class="tab-btn" data-filter="objects" aria-pressed="false" title="Frames with a detected object">Objects</button>
+            <button type="button" class="tab-btn" data-filter="all" aria-pressed="false" title="Every captured snapshot">All</button>
           </div>
           <span class="stats-info" id="stats-label">Loading snapshots…</span>
         </div>
@@ -2128,7 +2128,7 @@
     <div class="lightbox-header">
       <div class="lightbox-title" id="lightbox-title">Image Details</div>
       <div class="lightbox-controls">
-        <button class="lightbox-btn" id="lightbox-play" aria-label="Play Slideshow" title="Play Slideshow">
+        <button class="lightbox-btn" id="lightbox-play" aria-label="Play slideshow" title="Play slideshow">
           <i data-lucide="play" id="play-icon"></i>
         </button>
         <button class="lightbox-btn" id="lightbox-zoom-in" aria-label="Zoom In (+)" title="Zoom In (+)">
@@ -4746,7 +4746,9 @@
       state.isSlideshowPlaying = true;
       const playIcon = document.getElementById('play-icon');
       playIcon.setAttribute('data-lucide', 'pause');
-      document.getElementById('lightbox-play').title = 'Pause Slideshow';
+      const playBtn = document.getElementById('lightbox-play');
+      playBtn.title = 'Pause slideshow';
+      playBtn.setAttribute('aria-label', 'Pause slideshow');
       lucide.createIcons();
       resetSlideshowTimer();
     }
@@ -4759,7 +4761,9 @@
       }
       const playIcon = document.getElementById('play-icon');
       playIcon.setAttribute('data-lucide', 'play');
-      document.getElementById('lightbox-play').title = 'Play Slideshow';
+      const playBtn = document.getElementById('lightbox-play');
+      playBtn.title = 'Play slideshow';
+      playBtn.setAttribute('aria-label', 'Play slideshow');
       document.getElementById('slideshow-progress').style.width = '0%';
       lucide.createIcons();
     }
@@ -5099,7 +5103,7 @@
         document.querySelectorAll('#filter-tabs .tab-btn').forEach(btn => {
           const on = btn.dataset.filter === state.activeFilter;
           btn.classList.toggle('active', on);
-          btn.setAttribute('aria-selected', on ? 'true' : 'false');
+          btn.setAttribute('aria-pressed', on ? 'true' : 'false');
         });
         renderObjectFilters();
         renderDateSidebar();
@@ -5147,10 +5151,10 @@
         if (e.target.classList.contains('tab-btn')) {
           document.querySelectorAll('#filter-tabs .tab-btn').forEach(btn => {
             btn.classList.remove('active');
-            btn.setAttribute('aria-selected', 'false');
+            btn.setAttribute('aria-pressed', 'false');
           });
           e.target.classList.add('active');
-          e.target.setAttribute('aria-selected', 'true');
+          e.target.setAttribute('aria-pressed', 'true');
           state.activeFilter = e.target.dataset.filter;
           applyFiltersAndSearch();
         }

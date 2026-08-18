@@ -1,33 +1,32 @@
-// Contract test: the Timeline/Objects/All filter tabs form a proper ARIA
-// tablist (keyboard/screen-reader navigation) with descriptive tooltips.
+// Timeline/Objects/All are a pressed-button group, not a fake WAI-ARIA tablist
+// (we never implemented arrow-key tablist behavior).
 // Run: node tests/test_tab_aria.js
 const fs = require('fs');
 const assert = require('assert');
 
 const html = fs.readFileSync(__dirname + '/../index.html', 'utf8');
 
-// the container is a tablist
 const grp = html.match(/<div class="tab-group" id="filter-tabs"[^>]*>/);
 assert(grp, '#filter-tabs container not found');
-assert(/role="tablist"/.test(grp[0]), '#filter-tabs must have role="tablist"');
+assert(/role="group"/.test(grp[0]), '#filter-tabs must have role="group"');
+assert(!/role="tablist"/.test(grp[0]), '#filter-tabs must not pretend to be a tablist');
 
-// extract the three tab buttons
 const block = html.match(/<div class="tab-group" id="filter-tabs"[^>]*>([\s\S]*?)<\/div>/)[1];
 const tabs = block.match(/<button[^>]*data-filter="[^"]*"[^>]*>/g) || [];
-assert.strictEqual(tabs.length, 3, 'expected 3 filter tabs, got ' + tabs.length);
+assert.strictEqual(tabs.length, 3, 'expected 3 view buttons, got ' + tabs.length);
 
-let selected = 0;
+let pressed = 0;
 for (const t of tabs) {
-  assert(/role="tab"/.test(t), 'each tab needs role="tab": ' + t);
-  assert(/aria-selected="(true|false)"/.test(t), 'each tab needs aria-selected: ' + t);
-  assert(/title="[^"]{8,}"/.test(t), 'each tab needs a descriptive title tooltip: ' + t);
-  if (/aria-selected="true"/.test(t)) selected++;
+  assert(!/role="tab"/.test(t), 'must not use role=tab without a tablist: ' + t);
+  assert(/aria-pressed="(true|false)"/.test(t), 'each view needs aria-pressed: ' + t);
+  assert(/title="[^"]{8,}"/.test(t), 'each view needs a descriptive title: ' + t);
+  if (/aria-pressed="true"/.test(t)) pressed++;
 }
-assert.strictEqual(selected, 1, 'exactly one tab should start aria-selected="true"');
+assert.strictEqual(pressed, 1, 'exactly one view should start aria-pressed="true"');
 
 const objects = tabs.find(t => /data-filter="objects"/.test(t));
-assert(objects, 'objects tab missing');
+assert(objects, 'objects view missing');
 assert.ok(!/AI-verified/i.test(objects), 'Objects tooltip must not claim AI-verified');
 assert.ok(/detected object/i.test(objects), 'Objects tooltip should say frames with a detected object');
 
-console.log('tab-aria: tablist + 3 tabs (role/aria-selected/title), one selected');
+console.log('tab-aria: pressed-button group + 3 views, one pressed');
