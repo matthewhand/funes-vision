@@ -113,12 +113,14 @@ vision-model audit trail.
 
 ## Alerts
 
-Slack (if enabled) can post a visit. With **multi-image summaries off**
-and Slack set to *context*, it will stay quiet — that is intentional.
-Switch Slack to *objects* if you want a ping on each detected person/dog.
+Slack (if enabled) does **not** always post a sequence. With
+**multi-image summaries off** and Slack set to *context*, it will stay
+quiet — that is intentional. Switch Slack to *objects* if you want a
+ping on each detected person/dog.
 
-Home Assistant MQTT is optional and **off unless you enable it**. It
-publishes flags, not JPEGs.
+Home Assistant MQTT is optional and **off unless you enable it**, and
+it needs an **explicit broker host** (no default address). It publishes
+flags, not JPEGs.
 
 ## What the box does without you
 
@@ -134,7 +136,9 @@ Frames and inference stay on this machine by default. Things that *can*
 leave, only if you turn them on:
 
 - Slack messages (and uploaded clips, if configured)
-- Home Assistant MQTT flag JSON (no image bytes)
+- ntfy text (only if you set a server URL; there is no public ntfy.sh default)
+- Home Assistant MQTT flag JSON (no image bytes; off unless you enable it
+  and set a host)
 
 This guide’s screenshots are generated fiction. They are not your house.
 They were captured with `tools/screenshots/run_shots.sh`, which **refuses**

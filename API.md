@@ -60,11 +60,20 @@ Update one or more mutable settings (validated; others ignored).
 ### `POST /api/integrations`
 Merge Slack settings into `integrations.json` (gitignored, mode 600). Blank
 token fields preserve the stored secret (the redacted GET can't echo it back).
+Only the `slack` object is written; existing `mqtt` / `ntfy` blocks are left
+intact. If the file is missing, a slack-only object is created. If the file
+exists but is unreadable, unparseable, whitespace-only, or not a JSON object,
+the write is refused so MQTT/ntfy secrets are never truncated away.
 - **Body** `{"slack": {"enabled"?, "bot_token"?, "app_token"?, "channel_id"?,
   "public_base_url"?, "notify_mode"?}}`
 - **200** → `{"ok": true, ...redacted_integrations()}`
 - **400** → `{"error": ...}` if `public_base_url` lacks an `http(s)://` scheme,
   `notify_mode` ∉ `context|objects|all`, or no recognized fields were sent
+- **409** → `{"error": "...refusing to overwrite"}` if `integrations.json` is
+  present but corrupt or unreadable (`IntegrationsUnreadable`). Bytes on disk
+  are unchanged.
+- **500** → `{"error": "could not write integrations: ..."}` on a write
+  `OSError` after a successful read
 
 ### `POST /api/integrations/test`
 Send a Slack test message using the stored config.
@@ -83,7 +92,15 @@ Live pipeline snapshot. Shape (keys may be absent if a source is unavailable):
 - `inference` → `{}` when idle, otherwise the live `inference_status.json`
   object plus `running_for_s` (the ℹ panel’s “Analyzing now” line)
 - `queue` → `{images_on_disk, unanalyzed, unverified_partials,
-  awaiting_backfill, llm_verified}`
+  awaiting_backfill, llm_verified}` (`queue_from_analysis`):
+  - `unverified_partials` — `fast_pass == "partial"`
+  - `awaiting_backfill` — `fast_pass == "negative"` **or**
+    `_llm_skip == "no_trigger"` (car-only skip). Counted even when idle
+    backfill is off, so the number stays honest.
+  - `llm_verified` — successful merge only: `_llm` is a dict **and**
+    `_llm_skip` is absent. Missing `fast_pass` is **not** enough.
+    `{car: true, _llm_skip: "no_trigger"}` and bare `{person: true}` are
+    not verdicts.
 - `cameras[]` → `{name, images, bytes, budget_pct, last_frame_age_s, stale}`
   (`budget_pct` = image bytes in that camera dir vs `max_dir_gb`; UI warns
   above ~85%; pipeline Slack alert and watchdog `auto` kick at ~90%)
@@ -144,8 +161,8 @@ A named `event: ping` heartbeat is sent each cycle.
 | Event | Payload | Fires when |
 |-------|---------|-----------|
 | `image.new` | `{"file": "<name>"}` | A frame first appears in `analysis.json` (right after the fast pass) — the earliest new-frame signal the API has. |
-| `detection.preliminary` | `{"file": "<name>", "labels": ["car", ...]}` | A detector-only hit (a `fast_pass` record with a true label) appears, before/without an LLM verdict. Suppressed once promoted to verified. The only live detections while deep passes are off. |
-| `new-detection` | `{"file": "<name>", "labels": ["person", ...]}` | An image gains a final LLM verdict with ≥1 true label. |
+| `detection.preliminary` | `{"file": "<name>", "labels": ["car", ...]}` | A detector-only hit (`fast_pass` present, not `is_llm_verified`) with a true label, before/without an LLM verdict. Suppressed once promoted to verified. The only live detections while deep passes are off. Car-only `no_trigger` rows have no `fast_pass` and are not preliminary either. |
+| `new-detection` | `{"file": "<name>", "labels": ["person", ...]}` | An image gains a successful LLM merge (`_llm` dict, no `_llm_skip`) with ≥1 true label. Absence of `fast_pass` is not a verdict. |
 | `ping` | `{}` | Heartbeat every ~3 s; lets the client detect a silently-stalled connection (also keeps proxies unbuffered). |
 | `new-burst` | `{"id": "<burst-id>", "summary": "<text>"}` | A new burst/visit is written to `bursts.json`. |
 

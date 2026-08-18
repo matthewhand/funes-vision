@@ -96,9 +96,12 @@ no restarts needed). Per camera dir, in order:
      therefore never get hammered through a backlog.
    - *Urgency gate*: a fast-pass hit consisting only of
      `gate_ignore_labels` (default `["car"]` — a car parked in frame 24/7)
-     is recorded as a partial but does NOT consume urgent budget.
+     is stored as detector labels plus `_llm_skip: no_trigger`. It is
+     **not** marked `partial` (that would re-enter the priority queue) and
+     does not consume urgent budget. `/api/status` counts these under
+     `awaiting_backfill`.
 6. **Idle backfill** (`deep_backfill`) — leftover budget verifies
-   fast-pass negatives and ignored-label partials, closest-to-a-detection
+   fast-pass negatives, `no_trigger` skips, and ignore-only partials, closest-to-a-detection
    first then newest, so the archive converges on HA flags. **Off on this
    box** (`deep_backfill: false`). Fanned out
    across `deep_concurrency` workers (`concurrency_workers` clamps to
@@ -400,17 +403,33 @@ localStorage: `webcam_ai_blacklist` (hidden labels) and
 | `retention_log.json` | pipeline | deletion audit (count + bytes); gitignored, local-only |
 | `integrations_state.json` | pipeline | last Slack delivery result; gitignored, local-only |
 | `alert_state.json` | pipeline | health-alert debounce/recovery state; gitignored, local-only |
-| `integrations.json` | api_server | Slack secrets; gitignored, mode 600 (see [Integrations](#integrations)) |
+| `integrations.json` | api_server | Slack / ntfy / MQTT secrets; gitignored, mode 600 (see [Integrations](#integrations)) |
 
 `analysis.json` entry states:
 - `{"fast_pass": "negative"}` — detector saw nothing; LLM hasn't looked.
 - `{labels..., "fast_pass": "partial"}` — detector hit, awaiting LLM
   (UI: "Unverified" / `label?` badges), or a skipped/failed deep pass
-  (`_llm_skip`).
-- Detector labels + HA flags (no `fast_pass` key after a successful merge)
-  — YOLO `person`/`car`/`dog`/… **kept**; flags such as `postal_delivery`
-  / `porch_access` / `animal_detected` attached; raw flags also under `_llm`.
-  The LLM does **not** replace the detector record wholesale.
+  (`_llm_skip` other than `no_trigger`).
+- `{car: true, "_llm_skip": "no_trigger"}` — ignore-only detector hit
+  (default: car). Not `partial` (would re-queue as urgent). Not a verdict.
+- Successful merge: detector labels + HA flags, a dict `_llm`, no
+  `_llm_skip`. `fast_pass` is dropped. YOLO `person`/`car`/`dog`/… **kept**;
+  flags such as `postal_delivery` / `porch_access` / `animal_detected`
+  attached. The LLM does **not** replace the detector record wholesale.
+  **This is the only `llm_verified` / SSE `new-detection` shape.** Missing
+  `fast_pass` alone is not a verdict — bare `{person: true}` and car-only
+  `no_trigger` rows are not counted.
+
+`GET /api/status` `queue` (`queue_from_analysis` / `is_llm_verified` /
+`is_awaiting_backfill`):
+- `unverified_partials` — `fast_pass == "partial"`
+- `awaiting_backfill` — negatives **plus** `_llm_skip == "no_trigger"`,
+  even when `deep_backfill` is off, so the count stays honest
+- `llm_verified` — `_llm` is a dict and `_llm_skip` is absent
+
+SSE `new-detection` uses the same `is_llm_verified` gate
+(`_verified_detections`). `detection.preliminary` requires a `fast_pass`
+key and is disjoint from verified.
 
 Flipping a verified entry back to `"fast_pass": "partial"` re-queues it
 for priority LLM re-scan (used for the one-off re-scan of mislabeled
@@ -471,8 +490,10 @@ move → verify) lives in [ROADMAP.md](ROADMAP.md).
 
 ## Observability & health alerts
 
-Beyond `/api/status` + `/api/health` (above), the pipeline pushes **debounced
-Slack alerts** at the end of each sweep (`run_health_checks` in
+`/api/status` `queue` (above) and `/api/health` are the read path — verified
+counts need a successful `_llm` merge, not the absence of `fast_pass`.
+Beyond those, the pipeline pushes **debounced Slack alerts** at the end of
+each sweep (`run_health_checks` in
 `analyze_images.py`) when: local Ollama is down with no cloud fallback, a
 camera has gone silent past `camera_offline_hours`, storage exceeds 90% of
 `max_dir_gb`, or ≥3 inferences failed in the last hour. State lives in
@@ -520,7 +541,7 @@ Lives at the repo root, **gitignored**, written `0600` by `api_server.py`,
 and deliberately **excluded from the nginx web-root sync** (`create-index.sh`
 copies only `index.html` + the four public JSON files), so bot tokens are
 never world-readable. `GET /api/integrations` only ever returns a redacted
-view. Schema:
+view (Slack only). Schema:
 
 ```json
 {
@@ -533,21 +554,40 @@ view. Schema:
   },
   "ntfy": {
     "enabled": false,
-    "server_url": "https://ntfy.sh",   "topic": "my-secret-topic",
+    "server_url": "https://ntfy.example.com",
+    "topic": "my-secret-topic",
     "token": "tk_… (optional, for protected topics)",
     "public_base_url": "https://dogcam.example.org",
     "notify_mode": "context"
+  },
+  "mqtt": {
+    "enabled": false,
+    "host": "broker.internal",
+    "port": 1883
   }
 }
 ```
 
+`POST /api/integrations` merges Slack fields only. A missing file becomes a
+slack-only object (mode 600). Existing `mqtt` / `ntfy` blocks are preserved.
+If the file is present but corrupt, unreadable, whitespace-only, or not a
+JSON object, the handler returns **409** (`IntegrationsUnreadable`) and
+**does not write** — MQTT/ntfy secrets are never truncated away. GET still
+treats a corrupt file as `{}` (fail-closed read path).
+
 ntfy is config-file-driven (no UI panel yet): it pushes the summary/caption as
 the message body with a **Click** link back into the gallery (needs
 `public_base_url`); unlike Slack it does **not** upload the frame. Enable by
-adding the block above and setting `enabled: true`.
+adding the block above and setting `enabled: true`. **`server_url` is
+required** (topic alone is not enough). There is no `https://ntfy.sh`
+default — a missing or blank `server_url` does not publish.
 
 Optional **HA MQTT** (`ha_mqtt.py`, `integrations.json` `mqtt` block) publishes
-retained vision flags to a broker and **may leave the box**. It is not in the
+retained vision flags to a broker and **may leave the box**. `enabled`
+defaults **false** (missing file, missing `mqtt` block, or empty block).
+A broker is used only when `host` / `hosts` or `MQTT_HOST` is set — there
+is no `10.0.0.111` / `127.0.0.1` fallback (`DEFAULT_HOSTS` is gone).
+Enabled with an empty host list is a no-op (`no hosts`). It is not in the
 Slack settings UI. `GET /api/integrations` redacts Slack only.
 
 `notify_mode` (per integration) controls *what* triggers a post:
