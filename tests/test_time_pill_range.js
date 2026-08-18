@@ -11,7 +11,7 @@ assert.deepStrictEqual(timePillRange('all'), [0, 23]);
 assert.deepStrictEqual(timePillRange('morning'), [6, 11]);
 assert.deepStrictEqual(timePillRange('afternoon'), [12, 16]);
 assert.deepStrictEqual(timePillRange('evening'), [17, 20]);
-assert.deepStrictEqual(timePillRange('night'), [21, 23]);
+assert.deepStrictEqual(timePillRange('night'), [21, 5]);
 assert.deepStrictEqual(timePillRange('bogus'), [0, 23]);   // fallback
 
 assert.strictEqual(timeRangeIsDefault(0, 23), true);

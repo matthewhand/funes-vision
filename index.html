@@ -3175,18 +3175,29 @@
     // === /pure:frameStatusBadge ===
 
     // === pure:timePillRange ===
-    // [startHour, endHour] for a named time-of-day quick-pick pill. Pure.
+    // [startHour, endHour] for a named time-of-day quick-pick pill. Night
+    // wraps midnight as [21, 5] (9pm–5am). Pure.
     function timePillRange(name) {
       switch (name) {
         case 'morning': return [6, 11];
         case 'afternoon': return [12, 16];
         case 'evening': return [17, 20];
-        case 'night': return [21, 23];
+        case 'night': return [21, 5];
         case 'all':
         default: return [0, 23];
       }
     }
     // === /pure:timePillRange ===
+
+    // === pure:hourInRange ===
+    // Inclusive hour-of-day membership. When start > end the range wraps
+    // midnight (Night 21–5 is 21..23 and 0..5). Invalid hours fail. Pure.
+    function hourInRange(hr, start, end) {
+      if (!Number.isInteger(hr) || hr < 0 || hr > 23) return false;
+      if (start <= end) return hr >= start && hr <= end;
+      return hr >= start || hr <= end;
+    }
+    // === /pure:hourInRange ===
 
     // === pure:timeRangeIsDefault ===
     // True when the time range covers the whole day (the "All" default). Pure.
@@ -3616,9 +3627,9 @@
         // 3. Date Timeline filter
         if (state.activeDateFilter !== 'all' && meta.dateStr !== state.activeDateFilter) return false;
 
-        // 4. Time-of-day Range filter
+        // 4. Time-of-day Range filter (wraps midnight when start > end)
         const hr = meta.hour;
-        if (hr < state.timeStart || hr > state.timeEnd) return false;
+        if (!hourInRange(hr, state.timeStart, state.timeEnd)) return false;
 
         // 5. Specific Hourly Chart filter
         if (state.activeHourChartFilter !== null && meta.hour !== state.activeHourChartFilter) return false;
@@ -3774,8 +3785,9 @@
     // === pure:visitPassesTimeFilter ===
     // Timeline visit vs the same time-of-day slider + hour-chart predicates
     // as the grid. A visit passes when any hour from start..end (inclusive;
-    // wrapping midnight) sits in [timeStart, timeEnd]. hourFilter, when set,
-    // must also fall in that span.
+    // wrapping midnight) sits in [timeStart, timeEnd] via hourInRange
+    // (also wrapping when start > end). hourFilter, when set, must also
+    // fall in that visit span.
     function visitPassesTimeFilter(visit, timeStart, timeEnd, hourFilter) {
       const startHr = visit && visit.start && visit.start.meta
         ? visit.start.meta.hour : null;
@@ -3791,7 +3803,7 @@
         for (let h = startHr; h <= 23; h++) hours.push(h);
         for (let h = 0; h <= endHr; h++) hours.push(h);
       }
-      if (!hours.some(h => h >= ts && h <= te)) return false;
+      if (!hours.some(h => hourInRange(h, ts, te))) return false;
       if (hourFilter != null && hourFilter !== undefined) {
         if (!hours.includes(hourFilter)) return false;
       }

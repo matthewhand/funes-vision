@@ -5,8 +5,11 @@ const fs = require('fs');
 const assert = require('assert');
 
 const html = fs.readFileSync(__dirname + '/../index.html', 'utf8');
+const mh = html.match(/pure:hourInRange ===\n([\s\S]*?)\n\s*\/\/ === \/pure:hourInRange/);
 const m = html.match(/pure:visitPassesTimeFilter ===\n([\s\S]*?)\n\s*\/\/ === \/pure:visitPassesTimeFilter/);
+assert(mh, 'hourInRange sentinel block not found in index.html');
 assert(m, 'visitPassesTimeFilter sentinel block not found in index.html');
+eval(mh[1]); // defines hourInRange
 eval(m[1]); // defines visitPassesTimeFilter
 
 const visit = (startHour, endHour) => ({
@@ -53,6 +56,17 @@ assert.strictEqual(visitPassesTimeFilter(visit(23, 1), 0, 2, null), true);
 assert.strictEqual(visitPassesTimeFilter(visit(23, 1), 6, 11, null), false);
 assert.strictEqual(visitPassesTimeFilter(visit(23, 1), 0, 23, 0), true);
 assert.strictEqual(visitPassesTimeFilter(visit(23, 1), 0, 23, 12), false);
+
+// Wrapping Night [21, 5]: 2am and 10pm match, noon does not.
+assert.strictEqual(visitPassesTimeFilter(visit(2), 21, 5, null), true);
+assert.strictEqual(visitPassesTimeFilter(visit(12), 21, 5, null), false);
+assert.strictEqual(visitPassesTimeFilter(visit(22), 21, 5, null), true);
+assert.strictEqual(visitPassesTimeFilter(visit(21), 21, 5, null), true);
+assert.strictEqual(visitPassesTimeFilter(visit(5), 21, 5, null), true);
+assert.strictEqual(visitPassesTimeFilter(visit(0), 21, 5, null), true);
+assert.strictEqual(visitPassesTimeFilter(visit(6), 21, 5, null), false);
+assert.strictEqual(visitPassesTimeFilter(visit(20), 21, 5, null), false);
+assert.strictEqual(visitPassesTimeFilter(visit(23, 1), 21, 5, null), true);
 
 // Missing / unparseable hours (grid also rejects hour -1).
 assert.strictEqual(visitPassesTimeFilter(null, 0, 23, null), false);
