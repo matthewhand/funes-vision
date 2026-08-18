@@ -762,7 +762,8 @@ class TestE2bSchema(unittest.TestCase):
         fp = {"person": True, "car": True, "fast_pass": "partial"}
         llm = {"postal_delivery": False, "postal_how": "none",
                "porch_access": True, "animal_detected": True,
-               "animal_type": "dog", "_yolo": ["person", "car"]}
+               "animal_type": "dog", "_yolo": ["person", "car"],
+               "person_at_car": True}
         rec = analyze_images.merge_llm_into_fastpass(
             fp, llm, model="gemma4:e2b", duration_s=1.2, schema=analyze_images.FRONT_SCHEMA)
         self.assertTrue(rec["person"])
@@ -773,6 +774,18 @@ class TestE2bSchema(unittest.TestCase):
         self.assertEqual(rec["_llm_ms"], 1200)
         self.assertNotIn("fast_pass", rec)
         self.assertEqual(rec["_yolo"], ["person", "car"])
+        self.assertNotIn("person_at_car", rec)
+        self.assertFalse(rec["dog_walked"])
+        self.assertFalse(rec["car_access"])
+        self.assertFalse(rec["enters_car"])
+        self.assertFalse(rec["exits_car"])
+        self.assertFalse(rec["opens_box"])
+        self.assertEqual(rec["car_outfit"], "")
+        self.assertEqual(rec["car_color"], "")
+        self.assertEqual(rec["car_make"], "")
+        self.assertEqual(rec["_llm"]["car_outfit"], "")
+        self.assertFalse(rec["_llm"]["dog_walked"])
+        self.assertEqual(rec["postal_how"], "none")
 
     def test_merge_skip_low_mem(self):
         fp = {"person": True, "dog": True}
@@ -813,6 +826,195 @@ class TestE2bSchema(unittest.TestCase):
         self.assertNotIn("JSON", captured["messages"][0]["content"])
         self.assertEqual(res["porch_access"], True)
         self.assertEqual(res["postal_how"], "none")
+
+    def test_schema_for_kind_accepts_path(self):
+        sfk = analyze_images.schema_for_kind
+        self.assertIs(sfk("/mnt/models/Webcam21/10.0.0.21_x.jpg"), analyze_images.FRONT_SCHEMA)
+        self.assertIs(sfk("/mnt/models/Webcam22/10.0.0.22_x.jpg"), analyze_images.BACK_SCHEMA)
+
+    def test_entry_caption_matches_ha_facts(self):
+        cap = analyze_images.entry_caption
+        self.assertEqual(cap(None), "")
+        self.assertEqual(cap({}), "")
+        self.assertEqual(cap({"description": "A person at the gate", "porch_access": True}),
+                         "A person at the gate")
+        self.assertEqual(cap({"description": "   ", "porch_access": True}),
+                         "Someone at the porch")
+        self.assertEqual(cap({"postal_delivery": True, "postal_how": "on foot"}),
+                         "Postal delivery on foot")
+        self.assertEqual(cap({"postal_delivery": True, "postal_how": "van"}),
+                         "Postal delivery by van")
+        self.assertEqual(cap({"postal_delivery": True, "postal_how": "none"}),
+                         "Postal delivery")
+        self.assertEqual(cap({"porch_access": True}), "Someone at the porch")
+        self.assertEqual(cap({"dog_walked": True}), "Person walking a dog")
+        self.assertEqual(cap({"animal_detected": True, "animal_type": "dog"}),
+                         "Dog in the yard")
+        self.assertEqual(cap({"animal_detected": True, "animal_type": "none"}),
+                         "Animal in the yard")
+        self.assertEqual(cap({"clothes_drying": True}), "Clothes on the line")
+        self.assertEqual(cap({"car_access": True}), "Car in the driveway")
+        self.assertEqual(cap({
+            "postal_delivery": True, "postal_how": "on foot",
+            "porch_access": True, "clothes_drying": True,
+        }), "Postal delivery on foot. Someone at the porch")
+        self.assertEqual(cap({
+            "dog_walked": True, "animal_detected": True, "animal_type": "dog",
+        }), "Person walking a dog")
+
+    def test_analyze_openrouter_payload_uses_schema(self):
+        ai = analyze_images
+        ai.encode_image = lambda p: "x"
+        captured = {}
+
+        class OK:
+            status_code = 200
+            def json(self):
+                return {"choices": [{"message": {"content": '{"porch_access": true}'}}]}
+
+        def fake_post(url, headers=None, data=None, timeout=None):
+            captured["url"] = url
+            captured["payload"] = json.loads(data)
+            return OK()
+
+        orig = ai.requests.post
+        ai.requests.post = fake_post
+        try:
+            res = ai.analyze_image_openrouter(
+                "/mnt/models/Webcam21/10.0.0.21_x.jpg", "sk-test")
+        finally:
+            ai.requests.post = orig
+        payload = captured["payload"]
+        rf = payload["response_format"]
+        self.assertEqual(rf["type"], "json_schema")
+        self.assertEqual(rf["json_schema"]["schema"], ai.FRONT_SCHEMA)
+        self.assertTrue(rf["json_schema"]["strict"])
+        self.assertEqual(payload["max_tokens"], 220)
+        self.assertEqual(payload["temperature"], 0)
+        self.assertEqual(payload["messages"][0]["content"][0]["text"],
+                         "Look at this image and answer the questions.")
+        self.assertNotIn("postal_delivery", payload["messages"][0]["content"][0]["text"])
+        self.assertEqual(res, {"porch_access": True})
+
+        captured.clear()
+        ai.requests.post = fake_post
+        try:
+            ai.analyze_image_openrouter(
+                "/mnt/models/Webcam22/10.0.0.22_x.jpg", "sk-test")
+        finally:
+            ai.requests.post = orig
+        self.assertEqual(captured["payload"]["response_format"]["json_schema"]["schema"],
+                         ai.BACK_SCHEMA)
+        self.assertEqual(captured["payload"]["max_tokens"], 160)
+
+    def test_notify_uses_detector_labels_and_caption(self):
+        """objects notify must get YOLO labels, not HA true keys."""
+        ai = analyze_images
+        captured = {}
+
+        def fake_local(path):
+            return {
+                "postal_delivery": False, "postal_how": "none",
+                "porch_access": True, "animal_detected": False,
+                "animal_type": "none",
+            }
+
+        def fake_notify(name, labels, caption, path):
+            captured["name"] = name
+            captured["labels"] = labels
+            captured["caption"] = caption
+            captured["path"] = path
+
+        with tempfile.TemporaryDirectory() as d:
+            orig_st, orig_log = ai.INFERENCE_STATUS, ai.INFERENCE_LOG
+            orig_local, orig_cloud = ai.analyze_image_local, ai.analyze_image_openrouter
+            orig_notify = intg.notify_image
+            ai.INFERENCE_STATUS = os.path.join(d, "st.json")
+            ai.INFERENCE_LOG = os.path.join(d, "log.json")
+            ai.analyze_image_local = fake_local
+            ai.analyze_image_openrouter = lambda *a, **k: None
+            intg.notify_image = fake_notify
+            ai.RATE_LIMITED = False
+            try:
+                res = ai.run_deep_pass(
+                    "/mnt/models/Webcam21/10.0.0.21_x.jpg", "x.jpg",
+                    True, None, "priority", fp_labels=["person", "dog"])
+            finally:
+                ai.INFERENCE_STATUS = orig_st
+                ai.INFERENCE_LOG = orig_log
+                ai.analyze_image_local = orig_local
+                ai.analyze_image_openrouter = orig_cloud
+                intg.notify_image = orig_notify
+        self.assertEqual(res["porch_access"], True)
+        self.assertEqual(captured["labels"], ["person", "dog"])
+        self.assertEqual(captured["caption"], "Someone at the porch")
+        self.assertNotIn("porch_access", captured["labels"])
+
+    def test_notify_skips_backfill_and_prefers_description(self):
+        ai = analyze_images
+        calls = []
+
+        def fake_local(path):
+            return {"description": "A person at the gate", "porch_access": True}
+
+        def fake_notify(name, labels, caption, path):
+            calls.append((labels, caption))
+
+        with tempfile.TemporaryDirectory() as d:
+            orig_st, orig_log = ai.INFERENCE_STATUS, ai.INFERENCE_LOG
+            orig_local = ai.analyze_image_local
+            orig_notify = intg.notify_image
+            ai.INFERENCE_STATUS = os.path.join(d, "st.json")
+            ai.INFERENCE_LOG = os.path.join(d, "log.json")
+            ai.analyze_image_local = fake_local
+            intg.notify_image = fake_notify
+            ai.RATE_LIMITED = False
+            try:
+                ai.run_deep_pass("x.jpg", "x.jpg", True, None, "backfill",
+                                 fp_labels=["person"])
+                self.assertEqual(calls, [])
+                ai.run_deep_pass("x.jpg", "x.jpg", True, None, "priority",
+                                 fp_labels=["person"])
+            finally:
+                ai.INFERENCE_STATUS = orig_st
+                ai.INFERENCE_LOG = orig_log
+                ai.analyze_image_local = orig_local
+                intg.notify_image = orig_notify
+        self.assertEqual(calls, [(["person"], "A person at the gate")])
+
+    def test_notify_ha_false_still_sends_detector_labels(self):
+        """A person/dog YOLO hit with every HA flag false must still notify."""
+        ai = analyze_images
+        captured = {}
+
+        def fake_local(path):
+            return {
+                "postal_delivery": False, "porch_access": False,
+                "dog_walked": False, "animal_detected": False,
+            }
+
+        def fake_notify(name, labels, caption, path):
+            captured["labels"] = labels
+            captured["caption"] = caption
+
+        with tempfile.TemporaryDirectory() as d:
+            orig_st, orig_log = ai.INFERENCE_STATUS, ai.INFERENCE_LOG
+            orig_local, orig_notify = ai.analyze_image_local, intg.notify_image
+            ai.INFERENCE_STATUS = os.path.join(d, "st.json")
+            ai.INFERENCE_LOG = os.path.join(d, "log.json")
+            ai.analyze_image_local = fake_local
+            intg.notify_image = fake_notify
+            ai.RATE_LIMITED = False
+            try:
+                ai.run_deep_pass("x.jpg", "x.jpg", True, None, "priority",
+                                 fp_labels=["person"])
+            finally:
+                ai.INFERENCE_STATUS = orig_st
+                ai.INFERENCE_LOG = orig_log
+                ai.analyze_image_local = orig_local
+                intg.notify_image = orig_notify
+        self.assertEqual(captured["labels"], ["person"])
+        self.assertEqual(captured["caption"], "")
 
 
 if __name__ == "__main__":

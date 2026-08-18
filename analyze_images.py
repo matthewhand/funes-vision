@@ -255,7 +255,83 @@ def camera_kind(path):
 
 
 def schema_for_kind(kind):
+    """FRONT_SCHEMA or BACK_SCHEMA for a kind ('front'/'back') or image path."""
+    if kind not in ("front", "back"):
+        kind = camera_kind(kind)
     return BACK_SCHEMA if kind == "back" else FRONT_SCHEMA
+
+
+def schema_flag_default(schema, key):
+    """Default for a missing HA schema field: False, 'none', or ''."""
+    prop = (schema.get("properties") or {}).get(key) or {}
+    if prop.get("type") == "boolean":
+        return False
+    enum = prop.get("enum") or []
+    if "none" in enum:
+        return "none"
+    return ""
+
+
+def _caption_inactive(v):
+    if v is None:
+        return True
+    s = str(v).strip().lower()
+    return (not s) or s in ("none", "false", "unknown")
+
+
+def entry_caption(a):
+    """One-line caption. Prefer description; else at most two HA facts.
+
+    Mirrors index.html entryCaption so notify and the gallery say the same thing.
+    """
+    if not isinstance(a, dict):
+        return ""
+    desc = a.get("description")
+    if isinstance(desc, str) and desc.strip():
+        return desc.strip()
+    facts = []
+
+    def push(s):
+        if s and len(facts) < 2:
+            facts.append(s)
+
+    if a.get("postal_delivery") is True:
+        how = a.get("postal_how")
+        how = how.strip() if isinstance(how, str) else ""
+        if _caption_inactive(how):
+            push("Postal delivery")
+        elif how.lower().startswith(("on ", "by ")):
+            push("Postal delivery " + how.lower())
+        else:
+            push("Postal delivery by " + how.lower())
+    if a.get("weapon_detected") is True:
+        push("Weapon detected")
+    if a.get("dog_walked") is True:
+        push("Person walking a dog")
+    if a.get("porch_access") is True:
+        push("Someone at the porch")
+    if a.get("animal_detected") is True and a.get("dog_walked") is not True:
+        t = a.get("animal_type")
+        t = t.strip() if isinstance(t, str) else ""
+        if _caption_inactive(t):
+            push("Animal in the yard")
+        else:
+            push(t[:1].upper() + t[1:].lower() + " in the yard")
+    if a.get("clothes_drying") is True:
+        push("Clothes on the line")
+    if a.get("car_access") is True:
+        push("Car in the driveway")
+    if a.get("opens_box") is True:
+        push("Someone opening a package")
+    if a.get("enters_car") is True:
+        push("Someone getting into a car")
+    if a.get("exits_car") is True:
+        push("Someone getting out of a car")
+    if a.get("approaching_house") is True:
+        push("Someone approaching the house")
+    if a.get("leaving_house") is True:
+        push("Someone leaving the house")
+    return ". ".join(facts)
 
 
 def get_llm_schema():
@@ -445,8 +521,11 @@ BACK_SCHEMA = {
 }
 
 def analyze_image_openrouter(image_path, api_key):
+    """Cloud fallback: same front/back HA JSON schema as analyze_image_local."""
+    kind = camera_kind(image_path)
+    schema = schema_for_kind(kind)
     base64_image = encode_image(image_path)
-    headers = { "Authorization": f"Bearer {api_key}", "Content-Type": "application/json" }
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
 
     payload = {
         "model": MODEL_CLOUD,
@@ -454,26 +533,35 @@ def analyze_image_openrouter(image_path, api_key):
             {
                 "role": "user",
                 "content": [
-                    {
-                        "type": "text",
-                        "text": DETECT_PROMPT
-                    },
+                    {"type": "text", "text": DETECT_PROMPT},
                     {
                         "type": "image_url",
-                        "image_url": { "url": f"data:image/jpeg;base64,{base64_image}" }
-                    }
-                ]
+                        "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"},
+                    },
+                ],
             }
         ],
-        "response_format": { "type": "json_object" }
+        "max_tokens": max_tokens_for_kind(kind),
+        "temperature": 0,
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": {
+                "name": f"{kind}_ha_flags",
+                "strict": True,
+                "schema": schema,
+            },
+        },
     }
-    
+
     try:
-        response = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, data=json.dumps(payload), timeout=60)
-        if response.status_code != 200: return None
-        content = response.json()['choices'][0]['message']['content'].strip()
+        response = requests.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers=headers, data=json.dumps(payload), timeout=60)
+        if response.status_code != 200:
+            return None
+        content = response.json()["choices"][0]["message"]["content"].strip()
         return json.loads(content)
-    except:
+    except Exception:
         return None
 
 # --- Inference audit trail (read by api_server for the UI) ---
@@ -609,7 +697,9 @@ def merge_llm_into_fastpass(fp_results, llm_result, skip_reason=None, model=None
     """Keep YOLO/detector flags; attach structured LLM flags or a skip reason.
 
     Schema keys are merged onto the existing record. Detector person/dog/car
-    (and other YOLO labels) are never overwritten by the LLM.
+    (and other YOLO labels) are never overwritten by the LLM. When ``schema``
+    is set, only its properties are copied and missing required fields are
+    filled with schema_flag_default (False / 'none' / '').
     """
     rec = detector_labels(fp_results)
     if skip_reason or not isinstance(llm_result, dict):
@@ -621,14 +711,25 @@ def merge_llm_into_fastpass(fp_results, llm_result, skip_reason=None, model=None
             rec["_llm_ms"] = int(duration_s * 1000)
         return rec
     flags = {}
+    allowed = set((schema or {}).get("properties") or {}) if schema else None
     for k, v in llm_result.items():
         if k in LLM_META_KEYS or str(k).startswith("_"):
+            continue
+        if allowed is not None and k not in allowed:
             continue
         if k in YOLO_PRESENCE_KEYS:
             flags[k] = v  # keep under _llm only; do not overwrite YOLO
             continue
         rec[k] = v
         flags[k] = v
+    if schema:
+        for k in schema.get("required") or []:
+            if k in YOLO_PRESENCE_KEYS:
+                continue
+            if k not in rec:
+                rec[k] = schema_flag_default(schema, k)
+            if k not in flags:
+                flags[k] = rec[k]
     rec["_llm"] = flags
     if model:
         rec["_llm_model"] = model
@@ -673,17 +774,19 @@ def run_deep_pass(image_path, img_name, can_run_chain, api_key, trigger, fp_labe
             fp = fast_pass_dispatch(image_path) or {}
             fp_labels = sorted(k for k, v in fp.items() if v is True)
         result["_yolo"] = fp_labels
-    labels = sorted(k for k, v in (result or {}).items() if v is True)
+    labels = list(fp_labels or [])
     LAST_DURATION_S = time.time() - started
     log_inference(img_name, used, started, LAST_DURATION_S,
                   labels, result is not None, trigger)
     # Per-image notify (objects/all modes) — ONLY for freshly-queued frames,
     # never the idle backfill of the historical archive (would be a flood).
+    # Labels are detector True keys (person/dog/car/…), not HA flag names.
+    # Caption prefers a model description; else synthesized HA facts.
     # Guarded: a notifier failure must never break the sweep.
     if isinstance(result, dict) and trigger == "priority":
         try:
             from integrations import notify_image
-            notify_image(img_name, labels, result.get("description", ""), image_path)
+            notify_image(img_name, list(fp_labels or []), entry_caption(result), image_path)
         except Exception as e:
             print(f"notify_image failed: {e}")
     return result
@@ -1390,7 +1493,8 @@ def main(retention_only=False):
                         if result:
                             analysis_data[img] = merge_llm_into_fastpass(
                                 fp_results, result, model=LAST_MODEL_USED,
-                                duration_s=LAST_DURATION_S)
+                                duration_s=LAST_DURATION_S,
+                                schema=schema_for_kind(image_path))
                         else:
                             analysis_data[img] = merge_llm_into_fastpass(
                                 fp_results, None, skip_reason="llm_failed",
@@ -1495,7 +1599,8 @@ def main(retention_only=False):
                     prior = detector_labels(analysis_data.get(img) or {})
                     analysis_data[img] = merge_llm_into_fastpass(
                         prior, result, model=LAST_MODEL_USED,
-                        duration_s=LAST_DURATION_S)
+                        duration_s=LAST_DURATION_S,
+                        schema=schema_for_kind(os.path.join(image_dir, img)))
                     new_analysis = True
             if workers > 1:
                 ex.shutdown(wait=True)
