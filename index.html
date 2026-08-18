@@ -1745,7 +1745,7 @@
       #sidebar-toggle { flex: 0 0 auto; }
       /* basis:0 (not auto) so the cluster doesn't claim its full content width and
          get bumped to its own row — it sits beside Panels and grows into the rest
-         of the row, wrapping its "Showing N logs" count below the tabs. */
+         of the row, wrapping its "Showing N snapshots" count below the tabs. */
       .toolbar-bar > .tab-cluster { flex: 1 1 0; min-width: 0; flex-wrap: wrap; }
       .time-slider-wrapper { min-width: 0; width: 100%; }
     }
@@ -1912,7 +1912,7 @@
             <button class="tab-btn" data-filter="objects" role="tab" aria-selected="false" title="Frames with a detected object">Objects</button>
             <button class="tab-btn" data-filter="all" role="tab" aria-selected="false" title="Every captured snapshot">All</button>
           </div>
-          <span class="stats-info" id="stats-label">Loading image logs...</span>
+          <span class="stats-info" id="stats-label">Loading snapshots…</span>
         </div>
 
         <!-- Right-aligned actions cluster: Filters + Settings/Integrations/AI -->
@@ -2119,7 +2119,7 @@
 
         <!-- Scroll Sentinel -->
         <div id="scroll-sentinel" class="scroll-sentinel">
-          <span id="sentinel-text">Loading more logs...</span>
+          <span id="sentinel-text"></span>
         </div>
       </div>
     </div>
@@ -3064,6 +3064,15 @@
     }
     // === /pure:visitsSummary ===
 
+    // === pure:gridStatsLabel ===
+    function gridStatsLabel(shown, total) {
+      const s = (typeof shown === 'number' && isFinite(shown)) ? shown : 0;
+      const t = (typeof total === 'number' && isFinite(total)) ? total : 0;
+      const noun = t === 1 ? 'snapshot' : 'snapshots';
+      return `Showing ${s} of ${t} ${noun}`;
+    }
+    // === /pure:gridStatsLabel ===
+
     // === pure:visitDateLabel ===
     // Visit-row date: a single date, or "start – end" when the visit crosses
     // midnight (so it isn't mislabeled to just the start date).
@@ -3581,7 +3590,7 @@
       document.getElementById('image-grid').innerHTML = '';
       
       // Update statistics
-      document.getElementById('stats-label').textContent = `Showing ${state.filteredImages.length} of ${state.allImages.length} logs`;
+      document.getElementById('stats-label').textContent = gridStatsLabel(state.filteredImages.length, state.allImages.length);
 
       if (state.filteredImages.length === 0) {
         const filtersActive = !!(state.searchQuery || state.objectFilters.size ||
@@ -4459,7 +4468,7 @@
         return;
       }
 
-      document.getElementById('sentinel-text').textContent = 'Loading more logs...';
+      document.getElementById('sentinel-text').textContent = 'Loading more snapshots…';
 
       for (let i = start; i < end; i++) {
         const card = createImageCard(state.filteredImages[i], i);
