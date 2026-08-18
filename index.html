@@ -2238,11 +2238,22 @@
         subtitle: isDog ? 'Monitoring backyard and dog area' : 'Monitoring front gate area',
         ip: isDog ? '10.0.0.22' : '10.0.0.21',
         switchLabel: isDog ? 'Switch to Webcam Feed' : 'Switch to Dogcam Feed',
-        switchUrl: isDog 
-          ? (host.includes('dogcam') ? 'https://webcam.example.duckdns.org' : '/Webcam21/') 
-          : (host.includes('webcam') ? 'https://dogcam.example.duckdns.org' : '/Webcam22/')
+        switchUrl: peerFeedUrl(isDog, host, window.location.protocol),
       };
     };
+
+    // === pure:peerFeedUrl ===
+    // Derive the other camera's URL from the current host. Public dual-vhost
+    // deploys swap the webcam/dogcam label in the hostname. LAN path deploys
+    // use /Webcam21/ and /Webcam22/. Never hardcode a personal DuckDNS name.
+    function peerFeedUrl(isDog, host, protocol) {
+      const h = String(host || '');
+      const proto = protocol || 'https:';
+      if (h.includes('dogcam')) return proto + '//' + h.replace('dogcam', 'webcam') + '/';
+      if (h.includes('webcam')) return proto + '//' + h.replace('webcam', 'dogcam') + '/';
+      return isDog ? '/Webcam21/' : '/Webcam22/';
+    }
+    // === /pure:peerFeedUrl ===
 
     // Display timezone for rendering capture/inference times. The API resolves
     // the source of truth (WEBCAM_TZ env > settings.json `timezone` > default);
@@ -4713,6 +4724,13 @@
     }
 
     function startSlideshow() {
+      const reduceMotion = prefersReducedMotion(
+        typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
+      );
+      if (reduceMotion) {
+        navigateLightbox(1);
+        return;
+      }
       state.isSlideshowPlaying = true;
       const playIcon = document.getElementById('play-icon');
       playIcon.setAttribute('data-lucide', 'pause');
