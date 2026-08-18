@@ -581,10 +581,6 @@ class TestApplyRetention(unittest.TestCase):
         self.assertNotIn("orphan_new.jpg", deleted)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class TestE2bSchema(unittest.TestCase):
     def test_camera_kind(self):
         ck = analyze_images.camera_kind
@@ -669,3 +665,7 @@ class TestE2bSchema(unittest.TestCase):
         self.assertNotIn("JSON", captured["messages"][0]["content"])
         self.assertEqual(res["porch_access"], True)
         self.assertEqual(res["postal_how"], "none")
+
+
+if __name__ == "__main__":
+    unittest.main()

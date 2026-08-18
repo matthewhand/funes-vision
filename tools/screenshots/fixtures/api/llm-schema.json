@@ -1,0 +1,21 @@
+{
+  "prompt": "Look at this image and answer the questions.",
+  "note": "Fixture schema for screenshots — not live Ollama output.",
+  "schemas": {
+    "front_door": {
+      "type": "object",
+      "properties": {
+        "postal_delivery": {"type": "boolean", "description": "Parcel or postie?"},
+        "porch_access": {"type": "boolean", "description": "Someone at the porch?"},
+        "animal_detected": {"type": "boolean", "description": "Any animal?"}
+      }
+    },
+    "dog_cam": {
+      "type": "object",
+      "properties": {
+        "animal_detected": {"type": "boolean", "description": "Any animal?"},
+        "clothes_drying": {"type": "boolean", "description": "Laundry on the line?"}
+      }
+    }
+  }
+}

@@ -22,6 +22,8 @@ assert.strictEqual(matchesSearch('06:45', F), true);     // formattedTime
 assert.strictEqual(matchesSearch('motion', F), true);    // eventType
 assert.strictEqual(matchesSearch('motdec', F), true);    // filename
 assert.strictEqual(matchesSearch('zebra', F), false);    // no field matches
+assert.strictEqual(matchesSearch('dog', { labels: ['person', 'dog'] }), true);
+assert.strictEqual(matchesSearch('cat', { labels: ['person'] }), false);
 // Missing/partial fields are safe.
 assert.strictEqual(matchesSearch('x', {}), false);
 assert.strictEqual(matchesSearch('x', { filename: 'x.jpg' }), true);

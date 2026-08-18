@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import time
 import urllib.request
 from http.server import SimpleHTTPRequestHandler
 from socketserver import ThreadingMixIn, TCPServer
@@ -93,9 +94,11 @@ class H(SimpleHTTPRequestHandler):
             self.send_header("Cache-Control", "no-cache")
             self.send_header("X-Accel-Buffering", "no")
             self.end_headers()
-            self.wfile.write(b"event: ping\ndata: {}\n\n")
             try:
-                self.wfile.flush()
+                for _ in range(4):
+                    self.wfile.write(b"event: ping\ndata: {}\n\n")
+                    self.wfile.flush()
+                    time.sleep(0.4)
             except Exception:
                 pass
             return

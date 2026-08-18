@@ -1905,7 +1905,7 @@
         <!-- Tabs + the count of what they're showing, kept together -->
         <div class="tab-cluster" style="display: flex; align-items: center; gap: var(--space-3);">
           <div class="tab-group" id="filter-tabs" role="group" aria-label="Gallery view">
-            <button type="button" class="tab-btn active" data-filter="events" aria-pressed="true" title="Object visits grouped over time, each with an AI caption">Timeline</button>
+            <button type="button" class="tab-btn active" data-filter="events" aria-pressed="true" title="Object visits grouped over time">Timeline</button>
             <button type="button" class="tab-btn" data-filter="objects" aria-pressed="false" title="Frames with a detected object">Objects</button>
             <button type="button" class="tab-btn" data-filter="all" aria-pressed="false" title="Every captured snapshot">All</button>
           </div>
@@ -2013,7 +2013,7 @@
                   <span id="slack-status" style="font-size:0.68rem; color:var(--text-secondary);">checking&hellip;</span>
                 </div>
                 <div style="font-size:0.68rem; color:var(--text-secondary); margin-bottom:8px; line-height:1.5;">
-                  Posts the frame animation + AI summary, with a link back here, whenever the timeline captures a sequence.
+                  Optional. In <b>context</b> mode it posts a visit only after a multi-image summary (off by default). Switch to <b>objects</b> to ping on person/dog detections.
                 </div>
                 <label style="display:block; font-size:0.72rem; margin-bottom:6px;">Bot token (xoxb-)
                   <input type="password" id="slack-bot-token" autocomplete="off" placeholder="leave blank to keep current" style="width:100%; margin-top:2px; padding:5px; background:var(--bg-tertiary); color:var(--text-primary); border:1px solid var(--border-color); border-radius:4px; font-size:0.75rem;">
@@ -3598,7 +3598,8 @@
         // 6. Text Search query
         if (!matchesSearch(state.searchQuery, {
               filename, formattedDate: meta.formattedDate, formattedTime: meta.formattedTime,
-              eventType: meta.eventType, caption: entryCaption(analysis) })) return false;
+              eventType: meta.eventType, caption: entryCaption(analysis),
+              labels: [...effectiveLabels(analysis)] })) return false;
 
         return true;
       });
@@ -3638,10 +3639,10 @@
         let title = kind.title;
         let actions = '';
         if (state.activeFilter === 'objects' && filtersActive) {
-          msg = 'No images with AI detections match the current filters.';
+          msg = 'No images with a detected object match the current filters.';
           title = 'No matches';
         } else if (state.activeFilter === 'objects' && !filtersActive) {
-          msg = 'No frames with AI detections yet. New detections will show here as they are analyzed.';
+          msg = 'No frames with a detected object yet. New detections will show here as they are analyzed.';
           title = 'No detections yet';
         }
         if (state.blacklist.length > 0 && state.activeFilter === 'objects') {
@@ -3728,13 +3729,17 @@
     // === pure:matchesSearch ===
     // The single search predicate (case-insensitive) shared by the grid AND the
     // activity charts so they never disagree. Empty query matches everything.
-    // `fields` = {filename, formattedDate, formattedTime, eventType, caption}.
+    // `fields` = {filename, formattedDate, formattedTime, eventType, caption, labels}.
     function matchesSearch(query, fields) {
       if (!query) return true;
       const q = String(query).toLowerCase();
       fields = fields || {};
-      return ['filename', 'formattedDate', 'formattedTime', 'eventType', 'caption']
-        .some(k => String(fields[k] || '').toLowerCase().includes(q));
+      if (['filename', 'formattedDate', 'formattedTime', 'eventType', 'caption']
+        .some(k => String(fields[k] || '').toLowerCase().includes(q))) return true;
+      const labels = fields.labels;
+      if (Array.isArray(labels) && labels.some(l => String(l).toLowerCase().includes(q))) return true;
+      if (typeof labels === 'string' && labels.toLowerCase().includes(q)) return true;
+      return false;
     }
     // === /pure:matchesSearch ===
 
@@ -4649,6 +4654,7 @@
       resetZoom();
       
       img.src = filename;
+      img.alt = lightboxTitle(meta) || 'Fullscreen view';
       title.textContent = lightboxTitle(meta);
 
       // Preload the neighbouring full-res frames so swipe/arrow nav is instant
@@ -4827,6 +4833,7 @@
       badge.classList.toggle('poll', copy.tone === 'poll');
       badge.classList.toggle('stale', copy.tone === 'stale');
       badge.setAttribute('aria-checked', state.isLive ? 'true' : 'false');
+      badge.setAttribute('aria-label', copy.text);
       badge.title = copy.tone === 'off'
         ? 'Live updates paused'
         : (copy.tone === 'live' ? 'Live updates via event stream' : copy.text);
@@ -5007,6 +5014,11 @@
           state.timeStart = 0;
           state.timeEnd = 23;
           state.activeHourChartFilter = null;
+          state.searchQuery = '';
+          state.objectFilters = new Set();
+          const si = document.getElementById('search-input');
+          if (si) si.value = '';
+          if (window.syncSearchClear) window.syncSearchClear();
           const ss = document.getElementById('time-start'), se = document.getElementById('time-end');
           if (ss) ss.value = 0; if (se) se.value = 23;
           if (typeof updateSliderLabel === 'function') updateSliderLabel();
@@ -5550,7 +5562,7 @@
             const labels = r.labels.length ? escapeHtml(r.labels.join(', ')) : (r.ok ? 'clear' : '<span style="color:#ef4444;">failed</span>');
             return `<div style="padding:2px 0;border-bottom:1px solid var(--border-color);">
               ${t} &middot; <b>${labels}</b> &middot; ${fmtDur(r.duration_s)} &middot; ${escapeHtml(r.trigger)}<br>
-              <a href="${encodeURI(r.image || '')}" target="_blank" rel="noopener" style="color:var(--text-secondary);font-size:0.7rem;text-decoration:none;">${escapeHtml(String(r.image || '').slice(-40))}</a>
+              <a href="${encodeURI(r.image || '')}" target="_blank" rel="noopener" style="color:var(--text-secondary);font-size:0.7rem;text-decoration:none;">${escapeHtml(lightboxTitle(parseFilename(r.image || '')) || String(r.image || '').slice(-40))}</a>
             </div>`;
           }).join('') || '<div style="color:var(--text-secondary);">No inferences logged yet.</div>';
 

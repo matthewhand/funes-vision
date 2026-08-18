@@ -137,7 +137,7 @@ to polling if SSE is unsupported or the connection drops.
 **Bridge.** The API polls `analysis.json` / `bursts.json` mtimes every ~3 s and
 diffs them — it is *not* a true pipeline→API push, so latency is ~3 s. The first
 pass seeds state **silently** (no backlog blast); only subsequent changes emit.
-A `: ping` comment is sent each cycle as a heartbeat.
+A named `event: ping` heartbeat is sent each cycle.
 
 **Events** (`event:` name + JSON `data:`):
 
@@ -152,6 +152,12 @@ A `: ping` comment is sent each cycle as a heartbeat.
 ### Not yet implemented
 
 `analysis.llm` live token streaming ("AI is looking at this…" with the caption
-typing in) requires a streaming Ollama call and a true pipeline→API push; see
-[ROADMAP.md](ROADMAP.md). The SPA also still does a (coalesced) full
-`loadData()` refetch per event rather than an incremental DOM patch.
+typing in) requires a streaming per-image Ollama call and a true pipeline→API
+push; see [ROADMAP.md](ROADMAP.md). `image.new` / `detection.preliminary` /
+`new-detection` patch in-memory state. Only `new-burst` still does a
+`loadData()` refetch.
+
+### `GET /api/llm-schema`
+Read-only prompt + front/back JSON schemas the pipeline sends to the vision
+model. Used by the ℹ panel.
+- **200** → `{prompt, schemas: {front_door, dog_cam}, ...}`

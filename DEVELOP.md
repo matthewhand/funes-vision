@@ -141,7 +141,7 @@ demand via `--retention-only` / the cron watchdog) under the global flock.
 These knobs are **not** in the UI/`POST /api/settings` allow-list — edit
 `settings.json` on disk (or extend `MUTABLE_SETTINGS` if you want them
 API-writable). Code fallbacks if the keys are missing: `max_age_days=30`,
-`max_dir_gb=4.0`.
+`max_dir_gb=5.0`.
 
 #### Three passes (`apply_retention`)
 
@@ -635,15 +635,16 @@ The README/user-guide images in `docs/guide/img/` must come from a **synthetic
 fixture gallery**, never from live Webcam21/Webcam22 footage. (`docs/img/`
 is gitignored — old live-camera captures; do not commit it.)
 
-- Point `SCREENSHOT_ROOT` at the fixture tree. **`SCREENSHOT_ROOT` must not
-  be `/mnt/models/Webcam21` or `/mnt/models/Webcam22`.**
-- Set `SCREENSHOT_PLACEHOLDER=1` so the proxy cannot fall through to real
-  JPEGs if a path is wrong.
+- Point `SCREENSHOT_ROOT` at the fixture tree (the default). **`SCREENSHOT_ROOT`
+  must not be `/mnt/models/Webcam21` or `/mnt/models/Webcam22`.** The proxy
+  exits 2 if it is.
+- `/api` is **stubbed** from `tools/screenshots/fixtures/api/` by default
+  (`SCREENSHOT_API=stub`). Do not use `SCREENSHOT_API=live` for published
+  shots. There is no `SCREENSHOT_PLACEHOLDER` flag.
 - Playwright lives in a scratch dir, not the repo. Tooling:
-  [`tools/screenshots/`](tools/screenshots/README.md). `proxy.py` reverse-proxies
-  `/api`→:8190 under one local origin (bypassing nginx basic-auth and CORS);
-  `shots.js` drives Chromium. The script freezes animations, kills JS timers,
-  and pre-loads lazy images so `page.screenshot()` doesn't hang.
+  [`tools/screenshots/`](tools/screenshots/README.md). `shots.js` drives
+  Chromium. The script freezes animations, kills JS timers, and pre-loads
+  lazy images so `page.screenshot()` doesn't hang.
 
 Playwright-as-CI is still deferred ([ROADMAP.md](ROADMAP.md)); this harness is
 only for fixture-first stills.

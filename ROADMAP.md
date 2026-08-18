@@ -64,8 +64,8 @@ just can't hear it yet.
 ### Acceptance criteria
 
 - [x] A persistent stream endpoint on the host API; a client subscribes once.
-      *(Done for `new-detection` / `new-burst`; still only 2 of the 3 event
-      types, and the SPA keeps polling for everything else.)*
+      *(Ships `image.new`, `detection.preliminary`, `new-detection`,
+      `new-burst`, and `ping`. `analysis.llm` tokens are still missing.)*
 - [x] New images and preliminary detections appear in the open gallery within
       ~1 s of the pipeline acting, with **no full-file refetch**. SSE events now
       patch in-memory state (`mergeNewImage` for `image.new`, `detectionEntry`

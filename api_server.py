@@ -144,7 +144,10 @@ def find_image(filename):
 # idle loop), so a recent mtime means the pipeline is alive even when cameras
 # are quiet. Cameras only capture on motion, so "stale" is generous.
 LASTRUN_MARKER = "/tmp/webcam_analysis.lastrun"
-CAMERA_STALE_S = 6 * 3600
+try:
+    CAMERA_STALE_S = float(json.load(open(SETTINGS_FILE)).get("camera_offline_hours", 24)) * 3600
+except (OSError, ValueError, TypeError):
+    CAMERA_STALE_S = 24 * 3600
 SWEEP_STALE_S = 3600  # no sweep in 1h (= analysis lock timeout) -> stalled.
                       # A full both-camera catch-up sweep legitimately takes
                       # ~45 min, so a shorter window false-degrades /api/health.
@@ -292,7 +295,7 @@ def pipeline_status():
         status["trigger"]["last_sweep_age_s"] = round(time.time() - os.path.getmtime(LASTRUN_MARKER))
     except OSError:
         status["trigger"]["last_sweep_age_s"] = None
-    status["cameras"] = _camera_stats(settings.get("max_dir_gb", 4.0))
+    status["cameras"] = _camera_stats(settings.get("max_dir_gb", 5.0))
     status["filesystem"] = _fs_stats()
     status["timezone"] = resolve_timezone(os.getenv("WEBCAM_TZ"), settings.get("timezone"))
     status["metrics"] = _inference_metrics()
