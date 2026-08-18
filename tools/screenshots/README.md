@@ -40,4 +40,6 @@ cannot mutate the real box.
   and CSS animations (including `::before`/`::after`) are disabled.
 - Headless: use `documentElement.clientWidth` for viewport math; never
   `pkill headless_shell` right before launch (ETXTBSY).
-- Curated outputs for the user guide live in `docs/img/`.
+- Curated outputs for the user guide live in `docs/guide/img/`
+  (`timeline.png`, `objects.png`, `all-grid.png`, `lightbox.png`, …).
+  `docs/img/` is gitignored (old live-camera captures — never commit).

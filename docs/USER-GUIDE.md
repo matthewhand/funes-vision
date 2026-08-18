@@ -17,7 +17,8 @@ fictional CCTV stills, not your cameras.
 
 On a phone, use **Add to Home Screen**. There is no service worker, so you
 will not get a stale offline copy. **Switch camera** from the header if you
-opened the other feed.
+opened the other feed. The subtitle is the camera nickname plus a short
+timezone (`AEST` here) — not a LAN address.
 
 ![Mobile timeline of dog and person visits](guide/img/mobile-timeline.png)
 
@@ -63,6 +64,10 @@ on analysis:
 
 ![All-snapshots grid including empty frames](guide/img/all-grid.png)
 
+On a phone the same tab is a single-column stack:
+
+![Mobile All-snapshots grid](guide/img/mobile-grid.png)
+
 ## Play a visit
 
 Tap a Timeline card (or its play button):
@@ -85,9 +90,11 @@ pin, and delete. Delete is permanent.
 
 ## Live updates
 
-The header **Auto-refresh** switch is supposed to pause live updates.
-The **AI** button opens pipeline status: queue, cameras, last sweep, and
-the vision-model audit trail.
+The header badge is **Live** (SSE connected), **Polling** (asking the
+server on an interval), or **Off**. Flip **Auto-refresh** off to pause
+live updates — the page stops the event stream and the polls. The **AI**
+button opens pipeline status: queue, cameras, last sweep, and the
+vision-model audit trail.
 
 ![AI status panel](guide/img/status.png)
 

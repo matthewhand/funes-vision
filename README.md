@@ -150,20 +150,25 @@ Use **Switch feed** in the page to jump between the two.
 
 These images are from a **synthetic fixture gallery**, never real camera
 footage. Do not point the screenshot harness at `/mnt/models/Webcam21` or
-`Webcam22`. See [DEVELOP.md](DEVELOP.md#screenshots).
+`Webcam22`. Published stills live in [`docs/guide/img/`](docs/guide/img/)
+(see [DEVELOP.md](DEVELOP.md#screenshots) and
+[tools/screenshots/README.md](tools/screenshots/README.md)).
 
-**Objects tab** — the gallery with the date timeline, motion-activity chart,
-object filter chips, and cards carrying colour-coded detection badges:
+**Timeline** (default) — one card per visit, not a pile of near-identical JPEGs:
 
-![Objects tab with detection badges and sidebar](docs/img/gallery-objects.png)
+![Timeline with a dog visit and a person visit](docs/guide/img/timeline.png)
 
-**Gallery grid** — the core browsing view (medium density):
+**Objects tab** — frames the detector marked, with colour badges and scene flags:
 
-![Gallery grid view](docs/img/gallery-grid.png)
+![Objects tab with detection badges and sidebar](docs/guide/img/objects.png)
 
-**Lightbox** — full-screen review with metadata, frame stepping, and controls:
+**All snapshots** — every motion still, including empty / CLEAR frames:
 
-![Full-screen lightbox viewer](docs/img/lightbox.png)
+![All-snapshots grid including empty frames](docs/guide/img/all-grid.png)
+
+**Lightbox** — full-screen review with date/time in the heading (no LAN IP):
+
+![Full-screen lightbox viewer](docs/guide/img/lightbox.png)
 
 ## Using the gallery
 

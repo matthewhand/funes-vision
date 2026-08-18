@@ -630,8 +630,9 @@ that can't be reduced to a pure helper is proven via the deployed app.
 
 ## Screenshots
 
-The README/user-guide images in `docs/img/` must come from a **synthetic
-fixture gallery**, never from live Webcam21/Webcam22 footage.
+The README/user-guide images in `docs/guide/img/` must come from a **synthetic
+fixture gallery**, never from live Webcam21/Webcam22 footage. (`docs/img/`
+is gitignored — old live-camera captures; do not commit it.)
 
 - Point `SCREENSHOT_ROOT` at the fixture tree. **`SCREENSHOT_ROOT` must not
   be `/mnt/models/Webcam21` or `/mnt/models/Webcam22`.**
