@@ -38,4 +38,31 @@ assert.deepStrictEqual(obj({ kitty: true, _yolo: ['cat'] }, { kitty: 'cat' }), {
 assert.strictEqual(computeLabelStates(null).size, 0);
 assert.strictEqual(computeLabelStates(undefined).size, 0);
 
+// HA/e2b flags must not impersonate object identity (chips / visit types).
+const HA_BOOLS = [
+  'postal_delivery', 'porch_access', 'dog_walked', 'car_access',
+  'enters_car', 'exits_car', 'opens_box', 'animal_detected',
+  'approaching_house', 'leaving_house', 'weapon_detected', 'clothes_drying'
+];
+const haOnly = Object.fromEntries(HA_BOOLS.map(k => [k, true]));
+haOnly.postal_how = 'on foot';
+haOnly.animal_type = 'dog';
+haOnly.car_outfit = 'red jacket';
+haOnly.car_color = 'orange';
+haOnly.car_make = 'toyota';
+assert.deepStrictEqual(obj(haOnly), {});
+
+// Mixed record: YOLO person stays; HA flags do not become labels.
+assert.deepStrictEqual(obj({
+  person: true, porch_access: true, postal_delivery: true,
+  animal_detected: true, clothes_drying: true, _yolo: ['person']
+}), { person: 'verified' });
+
+// Aliasing an HA flag must not smuggle it in as a person chip.
+assert.deepStrictEqual(
+  obj({ porch_access: true, person: true, _yolo: ['person'] }, { porch_access: 'person' }),
+  { person: 'verified' }
+);
+assert.deepStrictEqual(obj({ porch_access: true }, { porch_access: 'person' }), {});
+
 console.log('computeLabelStates: all assertions passed');

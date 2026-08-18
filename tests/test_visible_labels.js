@@ -43,4 +43,15 @@ assert.deepStrictEqual(vis(disputed, { precisionMode: true, showUnconfirmed: tru
 assert.deepStrictEqual(vis(disputed, { precisionMode: false, showUnconfirmed: false }), ['person']);
 assert.deepStrictEqual(vis(verified, { precisionMode: false, showUnconfirmed: false }), ['person']);
 
+// HA flags never become filter/visit labels, even with show-unconfirmed on.
+const haPolluted = {
+  person: true, porch_access: true, postal_delivery: true,
+  animal_detected: true, _yolo: ['person']
+};
+assert.deepStrictEqual(vis(haPolluted, { precisionMode: true, showUnconfirmed: false }), ['person']);
+assert.deepStrictEqual(vis(haPolluted, { precisionMode: true, showUnconfirmed: true }), ['person']);
+assert.deepStrictEqual(vis({
+  porch_access: true, postal_delivery: true, clothes_drying: true
+}, { precisionMode: false, showUnconfirmed: true }), []);
+
 console.log('visibleLabels: all assertions passed');

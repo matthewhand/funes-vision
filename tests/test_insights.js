@@ -12,6 +12,8 @@ function block(name) {
 eval(block('bucketByHour'));
 eval(block('labelCounts'));
 eval(block('busiestHour'));
+eval(block('labelStates'));   // computeLabelStates — HA flags must not count
+eval(block('visibleLabels'));
 
 // --- bucketByHour ---
 let b = bucketByHour([0, 0, 13, 13, 13, 23]);
@@ -44,5 +46,12 @@ assert.strictEqual(busiestHour(bucketByHour([13, 13, 1])), 13);
 assert.strictEqual(busiestHour(new Array(24).fill(0)), -1); // all zero
 assert.strictEqual(busiestHour([]), -1);
 assert.strictEqual(busiestHour(null), -1);
+
+// Insights "most seen" is fed visibleLabels(); HA flags must not appear.
+const mixedHA = { person: true, porch_access: true, postal_delivery: true, _yolo: ['person'] };
+assert.deepStrictEqual(
+  labelCounts([visibleLabels(mixedHA, {}, { precisionMode: true, showUnconfirmed: false })]),
+  [{ label: 'person', count: 1 }]
+);
 
 console.log('insights: all assertions passed');

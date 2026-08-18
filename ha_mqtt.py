@@ -52,7 +52,7 @@ def load_mqtt_cfg():
         host = os.environ.get("MQTT_HOST") or cfg.get("host")
         hosts = [host] if host else list(DEFAULT_HOSTS)
     return {
-        "enabled": bool(cfg.get("enabled", True)),
+        "enabled": bool(cfg.get("enabled", False)),
         "hosts": [h for h in hosts if h],
         "port": int(os.environ.get("MQTT_PORT") or cfg.get("port") or DEFAULT_PORT),
         "user": os.environ.get("MQTT_USER") or cfg.get("user") or "",
@@ -232,7 +232,7 @@ def _mqtt_connect_publish(host, port, topic, payload, user="", password="",
 def publish_json(topic, obj, cfg=None):
     """Publish one JSON object. Tries each configured host. Never raises."""
     cfg = cfg or load_mqtt_cfg()
-    if not cfg.get("enabled", True):
+    if not cfg.get("enabled", False):
         return False, "mqtt disabled"
     payload = json.dumps(obj, separators=(",", ":"), ensure_ascii=False)
     last = "no hosts"

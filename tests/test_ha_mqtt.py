@@ -1,4 +1,5 @@
 """Pure tests for HA MQTT vision payload (no broker)."""
+import json
 import os
 import sys
 import unittest
@@ -161,6 +162,53 @@ class TestLatest(unittest.TestCase):
         latest = ha_mqtt.latest_records(data)
         self.assertEqual(latest["front"][0], "10.0.0.21_01_20260814100051444_MOTDEC.jpg")
         self.assertIsNone(latest["back"])
+
+
+class TestLoadMqttCfg(unittest.TestCase):
+    def test_missing_file_defaults_disabled(self):
+        with mock.patch.object(ha_mqtt, "CONFIG_FILE", "/no/such/integrations.json"):
+            cfg = ha_mqtt.load_mqtt_cfg()
+        self.assertFalse(cfg["enabled"])
+
+    def test_missing_mqtt_block_defaults_disabled(self):
+        import tempfile
+        fd, path = tempfile.mkstemp(suffix=".json")
+        os.close(fd)
+        try:
+            with open(path, "w") as f:
+                json.dump({"slack": {"enabled": True}}, f)
+            with mock.patch.object(ha_mqtt, "CONFIG_FILE", path):
+                cfg = ha_mqtt.load_mqtt_cfg()
+            self.assertFalse(cfg["enabled"])
+        finally:
+            os.unlink(path)
+
+    def test_empty_mqtt_block_defaults_disabled(self):
+        import tempfile
+        fd, path = tempfile.mkstemp(suffix=".json")
+        os.close(fd)
+        try:
+            with open(path, "w") as f:
+                json.dump({"mqtt": {}}, f)
+            with mock.patch.object(ha_mqtt, "CONFIG_FILE", path):
+                cfg = ha_mqtt.load_mqtt_cfg()
+            self.assertFalse(cfg["enabled"])
+        finally:
+            os.unlink(path)
+
+    def test_explicit_enabled_true(self):
+        import tempfile
+        fd, path = tempfile.mkstemp(suffix=".json")
+        os.close(fd)
+        try:
+            with open(path, "w") as f:
+                json.dump({"mqtt": {"enabled": True, "host": "127.0.0.1"}}, f)
+            with mock.patch.object(ha_mqtt, "CONFIG_FILE", path):
+                cfg = ha_mqtt.load_mqtt_cfg()
+            self.assertTrue(cfg["enabled"])
+            self.assertEqual(cfg["hosts"], ["127.0.0.1"])
+        finally:
+            os.unlink(path)
 
 
 if __name__ == "__main__":

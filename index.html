@@ -1948,7 +1948,7 @@
                 <span>Merge labels (&rarr;person, &rarr;dog)</span>
                 <div class="blacklist-status"></div>
               </div>
-              <div class="blacklist-item" id="unconfirmed-toggle" title="Also show DISPUTED detections (one model saw it, the other ruled it out). Preliminary (awaiting Gemma) hits are always shown with a '?' badge.">
+              <div class="blacklist-item" id="unconfirmed-toggle" title="Also show DISPUTED detections (one model saw it, the other ruled it out). Preliminary (awaiting the vision model) hits are always shown with a '?' badge.">
                 <span>Show unconfirmed detections</span>
                 <div class="blacklist-status"></div>
               </div>
@@ -1959,12 +1959,12 @@
                 <option value="yolo">YOLO (recommended)</option>
                 <option value="haar">Haar cascades (legacy)</option>
               </select>
-              <div class="blacklist-item" id="deep-passes-toggle" title="Master switch for ALL Gemma analysis (priority + backfill + burst summaries). Off = detector-only, frees CPU/RAM." style="margin-top: 8px;">
-                <span>Gemma deep passes</span>
+              <div class="blacklist-item" id="deep-passes-toggle" title="Master switch for ALL vision-model analysis (priority + backfill + burst summaries). Off = detector-only, frees CPU/RAM." style="margin-top: 8px;">
+                <span>AI deep passes</span>
                 <div class="blacklist-status"></div>
               </div>
-              <div class="blacklist-item" id="backfill-toggle" title="When idle, run Gemma over ALL images (newest first), not just detector hits" style="margin-top: 8px;">
-                <span>Gemma backfill when idle</span>
+              <div class="blacklist-item" id="backfill-toggle" title="When idle, run the vision model over ALL images (newest first), not just detector hits" style="margin-top: 8px;">
+                <span>AI backfill when idle</span>
                 <div class="blacklist-status"></div>
               </div>
               <div class="blacklist-item" id="burst-summaries-toggle" title="LLM caption of a multi-frame visit (last 3 images). Off by default — single-frame analysis is unchanged." style="margin-top: 8px;">
@@ -2703,14 +2703,24 @@
     // detector could actually have seen the object.
     function computeLabelStates(analysis, aliases) {
       const YOLO_CAPABLE = new Set(['person', 'car', 'bird', 'cat', 'dog']);
+      // HA/e2b scene flags are not object identity. They render via getHAFlags
+      // badges, never as person/dog/car chips or Timeline visit types.
+      const HA_FLAG_KEYS = new Set([
+        'postal_delivery', 'postal_how', 'dog_walked', 'car_access',
+        'enters_car', 'exits_car', 'car_outfit', 'car_color', 'car_make',
+        'opens_box', 'porch_access', 'animal_detected', 'animal_type',
+        'approaching_house', 'leaving_house', 'weapon_detected', 'clothes_drying'
+      ]);
       const canon = (key) => (aliases && aliases[key]) || key;
       const states = new Map();
       if (!analysis) return states;
       const hasVerdict = !('fast_pass' in analysis); // Gemma has ruled
-      const yoloSaw = new Set((analysis._yolo || []).map(canon));
+      const yoloSaw = new Set((analysis._yolo || []).map(canon).filter(l => !HA_FLAG_KEYS.has(l)));
       Object.entries(analysis).forEach(([key, val]) => {
         if (val !== true || key === 'fast_pass') return;
+        if (HA_FLAG_KEYS.has(key)) return;
         const label = canon(key);
+        if (HA_FLAG_KEYS.has(label)) return;
         if (!hasVerdict) {
           states.set(label, 'preliminary');
         } else if (YOLO_CAPABLE.has(label) && !yoloSaw.has(label)) {
@@ -2745,7 +2755,7 @@
     // === pure:getHAFlags ===
     // Extract Home Assistant vision flags from e2b deep-pass analysis records.
     // Returns array of {label, value, isString} for flags that are set.
-    // HA boolean flags (true) and string fields (non-empty) are included.
+    // Booleans only when true; strings skip empty / "none" / "false".
     function getHAFlags(analysis) {
       if (!analysis) return [];
       
@@ -2765,9 +2775,12 @@
         if (value === true) {
           flags.push({ label: key, value: true, isString: false });
         }
-        // String fields: only include if non-empty
-        else if (typeof value === 'string' && value.trim()) {
-          flags.push({ label: key, value: value, isString: true });
+        // String fields: skip empty / "none" / "false" (schema sentinel values)
+        else if (typeof value === 'string') {
+          const trimmed = value.trim();
+          const low = trimmed.toLowerCase();
+          if (!trimmed || low === 'none' || low === 'false') continue;
+          flags.push({ label: key, value: trimmed, isString: true });
         }
       }
       
@@ -3567,8 +3580,43 @@
     }
     // === /pure:relativeTime ===
 
-    // Caption for an analysis entry (Gemma's free-text description, if any)
-    const entryCaption = (a) => (a && typeof a.description === 'string') ? a.description.trim() : '';
+    // === pure:entryCaption ===
+    // One-line visit caption. Prefer a non-empty analysis.description; otherwise
+    // synthesize at most two facts from HA flags (never "none"/empty/false).
+    function entryCaption(a) {
+      if (!a || typeof a !== 'object') return '';
+      if (typeof a.description === 'string' && a.description.trim()) return a.description.trim();
+      const inactive = (v) => {
+        if (v == null) return true;
+        const s = String(v).trim().toLowerCase();
+        return !s || s === 'none' || s === 'false' || s === 'unknown';
+      };
+      const facts = [];
+      const push = (s) => { if (s && facts.length < 2) facts.push(s); };
+      if (a.postal_delivery === true) {
+        const how = (typeof a.postal_how === 'string') ? a.postal_how.trim() : '';
+        if (inactive(how)) push('Postal delivery');
+        else if (/^(on|by)\s/i.test(how)) push('Postal delivery ' + how.toLowerCase());
+        else push('Postal delivery by ' + how.toLowerCase());
+      }
+      if (a.weapon_detected === true) push('Weapon detected');
+      if (a.dog_walked === true) push('Person walking a dog');
+      if (a.porch_access === true) push('Someone at the porch');
+      if (a.animal_detected === true && a.dog_walked !== true) {
+        const t = (typeof a.animal_type === 'string') ? a.animal_type.trim() : '';
+        if (inactive(t)) push('Animal in the yard');
+        else push(t.charAt(0).toUpperCase() + t.slice(1).toLowerCase() + ' in the yard');
+      }
+      if (a.clothes_drying === true) push('Clothes on the line');
+      if (a.car_access === true) push('Car in the driveway');
+      if (a.opens_box === true) push('Someone opening a package');
+      if (a.enters_car === true) push('Someone getting into a car');
+      if (a.exits_car === true) push('Someone getting out of a car');
+      if (a.approaching_house === true) push('Someone approaching the house');
+      if (a.leaving_house === true) push('Someone leaving the house');
+      return facts.join('. ');
+    }
+    // === /pure:entryCaption ===
 
     // === pure:matchesSearch ===
     // The single search predicate (case-insensitive) shared by the grid AND the
@@ -4138,7 +4186,7 @@
         await apiPost('/api/settings', { deep_passes_enabled: !deepPassesOn });
         deepPassesOn = !deepPassesOn;
         renderDeepPassesToggle();
-        showToast(deepPassesOn ? 'Gemma deep passes ON' : 'Gemma deep passes OFF - detector-only (saves CPU/RAM)');
+        showToast(deepPassesOn ? 'AI deep passes ON' : 'AI deep passes OFF - detector-only (saves CPU/RAM)');
       } catch (err) {
         showToast('Failed to update - is the API service running?');
       }
@@ -4165,7 +4213,7 @@
         await apiPost('/api/settings', { deep_backfill: !backfillOn });
         backfillOn = !backfillOn;
         renderBackfillToggle();
-        showToast(backfillOn ? 'Idle backfill ON - Gemma will verify all images' : 'Idle backfill OFF');
+        showToast(backfillOn ? 'Idle backfill ON - the vision model will verify all images' : 'Idle backfill OFF');
       } catch (err) {
         showToast('Failed to update - is the API service running?');
       }
@@ -4176,7 +4224,7 @@
         burstSummariesOn = !burstSummariesOn;
         renderBurstSummariesToggle();
         showToast(burstSummariesOn
-          ? 'Multi-image summaries ON - Gemma will caption visits'
+          ? 'Multi-image summaries ON - the vision model will caption visits'
           : 'Multi-image summaries OFF');
       } catch (err) {
         showToast('Failed to update - is the API service running?');
