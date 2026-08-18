@@ -30,6 +30,10 @@ INDEX_OVERRIDE = os.environ.get("SCREENSHOT_INDEX") or os.path.join(REPO, "index
 STATIC_DIR = os.environ.get("SCREENSHOT_STATIC") or REPO
 PORT = int(os.environ.get("SCREENSHOT_PORT", "8899"))
 IMG_EXT = (".jpg", ".jpeg", ".gif", ".png", ".webp")
+# SPA treats a dead EventSource as Stale after ~15s. Immediate first ping,
+# then keep the stub stream open. Cap so a forgotten curl cannot last forever.
+SSE_STUB_INTERVAL = 2.0
+SSE_STUB_MAX_SEC = 120.0
 
 
 def _is_forbidden(path):
@@ -93,12 +97,20 @@ class H(SimpleHTTPRequestHandler):
             self.send_header("Content-Type", "text/event-stream")
             self.send_header("Cache-Control", "no-cache")
             self.send_header("X-Accel-Buffering", "no")
+            self.send_header("Connection", "close")
             self.end_headers()
+            self.close_connection = True
+            deadline = time.monotonic() + SSE_STUB_MAX_SEC
             try:
-                for _ in range(4):
+                while True:
                     self.wfile.write(b"event: ping\ndata: {}\n\n")
                     self.wfile.flush()
-                    time.sleep(0.4)
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        break
+                    time.sleep(min(SSE_STUB_INTERVAL, remaining))
+            except (BrokenPipeError, ConnectionResetError):
+                pass
             except Exception:
                 pass
             return

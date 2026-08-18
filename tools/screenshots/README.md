@@ -34,6 +34,12 @@ cannot mutate the real box.
 | `SCREENSHOT_PORT` | `8899` | Local origin |
 | `SHOTS_URL` / `SHOTS_OUT` | `:8899` / `/tmp/webcam_shots` | Playwright |
 
+Published guide shots **must** use `SCREENSHOT_API=stub` (already the
+default). The stub holds `GET /api/events` open and emits `event: ping`
+every ~2s (capped at 120s) so Live/status captures stay Live.
+`SCREENSHOT_API=live` still 404s `/api/events` and is not used for
+published shots.
+
 ## Gotchas
 
 - `page.screenshot()` on heavy views is slow, not hung. Timers are frozen
