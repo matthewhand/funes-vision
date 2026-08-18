@@ -140,8 +140,13 @@
       background: var(--bg-secondary); border: 1px solid var(--border-color);
       border-radius: var(--radius-2); box-shadow: var(--elevation-3);
       padding: var(--space-3); z-index: 100; display: none;
+      max-height: calc(100vh - 180px);
+      overflow-y: auto;
+      overscroll-behavior: contain;
     }
     .menu.active { display: block; }
+    /* Filters opens under its left-aligned trigger (not the default right:0). */
+    #filters-dropdown { left: 0; right: auto; min-width: 280px; max-width: min(360px, calc(100vw - 24px)); }
     .menu-section-title {
       font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
       color: var(--text-secondary); margin-bottom: var(--space-2);
@@ -831,7 +836,8 @@
       flex-wrap: wrap;
     }
 
-    .badge-ai {
+    .badge-ai,
+    .badge-ha {
       display: inline-flex;
       align-items: center;
       gap: 4px;
@@ -841,6 +847,8 @@
       font-weight: 600;
       box-shadow: 0 1px 3px rgba(0,0,0,0.2);
     }
+    /* HA scene flags: same chip chrome, quieter so they are not object-filter peers. */
+    .badge-ha { font-weight: 500; }
 
     /* Verified-detection tags: a calm tinted recipe (tinted bg + light-hue text
        + subtle border) consistent with the disputed/potential tags below,
@@ -928,7 +936,8 @@
        (clipping every label) and off the bottom. Re-anchor as a centred, viewport-
        fitted panel so it always fits both axes and scrolls inside. */
     @media (max-width: 768px) {
-      .blacklist-dropdown {
+      .blacklist-dropdown,
+      #filters-dropdown {
         position: fixed;
         left: 50%;
         right: auto;
@@ -1843,9 +1852,9 @@
           </button>
 
           <div id="live-toggle" class="live-badge" role="switch" tabindex="0" aria-checked="true"
-               aria-label="Toggle real-time auto-polling" title="Toggle real-time auto-polling">
+               aria-label="Live, toggle live updates" title="Toggle real-time auto-polling">
             <div class="live-dot" aria-hidden="true"></div>
-            <span id="live-text">Auto-refresh: ON</span>
+            <span id="live-text">Live</span>
           </div>
         </div>
       </div>
@@ -1925,7 +1934,7 @@
               <span id="filter-active-banner-text"></span>
               <button type="button" id="filter-active-clear" class="chip__x" title="Clear all filters" aria-label="Clear all filters">✕</button>
             </span>
-            <div class="menu" id="filters-dropdown" style="left: 0; right: auto; min-width: 280px; max-width: min(360px, calc(100vw - 24px));">
+            <div class="menu" id="filters-dropdown">
               <div class="menu-section-title">Filter by object</div>
               <div id="object-filter-panel" style="display: none; flex-direction: column; gap: 4px; align-items: flex-start;">
                 <button type="button" id="sticky-toggle" class="filter-meta-btn" title="When on, toggle several object filters at once (match any). When off, one at a time."></button>
@@ -1968,11 +1977,11 @@
                 <option value="haar">Haar cascades (legacy)</option>
               </select>
               <div class="blacklist-item" id="deep-passes-toggle" title="Master switch for ALL vision-model analysis (priority + backfill + burst summaries). Off = detector-only, frees CPU/RAM." style="margin-top: 8px;">
-                <span>AI deep passes</span>
+                <span>Vision deep passes</span>
                 <div class="blacklist-status"></div>
               </div>
-              <div class="blacklist-item" id="backfill-toggle" title="When idle, run the vision model over ALL images (newest first), not just detector hits" style="margin-top: 8px;">
-                <span>AI backfill when idle</span>
+              <div class="blacklist-item hidden-label" id="backfill-toggle" title="When idle, verify leftover empties and car-only skips (near detections first)." style="margin-top: 8px;">
+                <span>Idle backfill</span>
                 <div class="blacklist-status"></div>
               </div>
               <div class="blacklist-item" id="burst-summaries-toggle" title="LLM caption of a multi-frame visit (last 3 images). Off by default — single-frame analysis is unchanged." style="margin-top: 8px;">
@@ -2254,6 +2263,20 @@
       return isDog ? '/Webcam21/' : '/Webcam22/';
     }
     // === /pure:peerFeedUrl ===
+
+    // === pure:cameraDisplayName ===
+    // Status/HA nickname from a watch-dir basename or filename. Webcam21/front
+    // → Front, Webcam22/back/dog → Back. Never print a LAN IP.
+    function cameraDisplayName(name) {
+      const raw = String(name == null ? '' : name).trim();
+      if (!raw) return 'Camera';
+      const base = raw.split(/[/\\]/).filter(Boolean).pop() || raw;
+      if (/webcam21|10\.0\.0\.21|\bfront\b/i.test(base)) return 'Front';
+      if (/webcam22|10\.0\.0\.22|\bback\b|\bdog\b|dogcam/i.test(base)) return 'Back';
+      if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(base)) return 'Camera';
+      return base;
+    }
+    // === /pure:cameraDisplayName ===
 
     // Display timezone for rendering capture/inference times. The API resolves
     // the source of truth (WEBCAM_TZ env > settings.json `timezone` > default);
@@ -2620,7 +2643,7 @@
         item.className = `sidebar-item ${state.activeDateFilter === dateStr ? 'active' : ''}`;
         const rel = dayLabel(dateStr, todayStr);
         const label = rel ? `${rel} · ${dateCounts[dateStr].label}` : dateCounts[dateStr].label;
-        item.innerHTML = `<span>${label}</span><span class="count-badge">${dateCounts[dateStr].count}</span>`;
+        item.innerHTML = `<span>${escapeHtml(label)}</span><span class="count-badge">${dateCounts[dateStr].count}</span>`;
         bindActivatable(item, () => {
           state.activeDateFilter = dateStr;
           document.querySelectorAll('.sidebar-item').forEach(el => el.classList.remove('active'));
@@ -2649,7 +2672,7 @@
         return Array.from(labels).some(l => !state.blacklist.includes(l));
       };
 
-      // Same predicate as the grid (filename + date/time/type/caption), so the
+      // Same predicate as the grid (filename + date/time/type/caption/labels), so the
       // charts always agree with "Showing N of M".
       const searchOk = (filename) => matchesSearch(state.searchQuery, searchFields(filename));
 
@@ -3433,12 +3456,12 @@
           .map(({ label, count }) => [label, count])
       );
 
-      // "All AI" clears every active filter
+      // "All objects" clears every active object filter
       const allBtn = document.createElement('button');
       allBtn.className = `chip ${state.objectFilters.size === 0 ? 'chip--active' : ''}`;
       allBtn.dataset.obj = '__all__';
       allBtn.setAttribute('aria-pressed', String(state.objectFilters.size === 0));
-      allBtn.textContent = 'All AI';
+      allBtn.textContent = 'All objects';
       allBtn.onclick = () => {
         state.objectFilters.clear();
         renderObjectFilters();
@@ -3776,11 +3799,15 @@
     }
     // === /pure:visitPassesTimeFilter ===
 
-    // Build the searchable fields for one filename (parsed meta + Gemma caption).
+    // Shared search fields for the grid + activity charts. Include labels so
+    // typing "person" hides both cards and chart bars (matchesSearch already
+    // accepts labels — locked in tests/test_matches_search.js).
     const searchFields = (filename) => {
       const meta = parseFilename(filename);
+      const analysis = state.analysis[filename];
       return { filename, formattedDate: meta.formattedDate, formattedTime: meta.formattedTime,
-               eventType: meta.eventType, caption: entryCaption(state.analysis[filename]) };
+               eventType: meta.eventType, caption: entryCaption(analysis),
+               labels: [...effectiveLabels(analysis)] };
     };
 
     // === pure:smoothFlicker ===
@@ -3969,8 +3996,8 @@
       visits.slice(0, VISIT_CAP).forEach(v => {
         const icon = v.label === 'person' ? 'user' : v.label === 'dog' ? 'dog' : v.label === 'cat' ? 'cat' : v.label === 'bird' ? 'bird' : 'eye';
         const timeRange = v.count > 1
-          ? `${v.start.meta.formattedTime} – ${v.end.meta.formattedTime}`
-          : v.start.meta.formattedTime;
+          ? `${escapeHtml(v.start.meta.formattedTime)} – ${escapeHtml(v.end.meta.formattedTime)}`
+          : escapeHtml(v.start.meta.formattedTime);
         const dur = v.ongoing ? 'ongoing' : visitDuration(v);
         const endObj = (v.end.meta && v.end.meta.dateObj) ? v.end.meta.dateObj : null;
         const ago = endObj ? relativeTime(endObj.getTime() / 1000, Date.now() / 1000) : '';
@@ -4232,7 +4259,7 @@
             const displayLabel = label.replace(/_/g, ' ');
             const displayValue = isString ? `: ${value}` : '';
             detectionsHtml += `
-              <span class="badge badge-ai ${cls}" role="img" aria-label="${escapeHtml('HA ' + displayLabel + displayValue)}">
+              <span class="badge badge-ha ${cls}" role="img" aria-label="${escapeHtml('HA ' + displayLabel + displayValue)}">
                 <i data-lucide="${icon}" aria-hidden="true"></i>
                 <span style="text-transform: capitalize;" aria-hidden="true">${escapeHtml(displayLabel)}${escapeHtml(displayValue)}</span>
               </span>`;
@@ -4261,7 +4288,7 @@
         </div>
         <div class="card-overlay">
           <div class="meta-info">
-            <span class="time-stamp">${meta.formattedTime}</span>
+            <span class="time-stamp">${escapeHtml(meta.formattedTime || '')}</span>
             <span class="date-stamp">${escapeHtml(meta.formattedDate || '')}</span>
             <div class="detection-badges">${detectionsHtml}</div>
             ${captionHtml}
@@ -4274,7 +4301,7 @@
             <button type="button" class="action-icon-btn del-btn" title="Delete image" aria-label="Delete image">
               <i data-lucide="trash-2"></i>
             </button>
-            <a href="${filename}" download class="action-icon-btn" title="Download" aria-label="Download image">
+            <a href="${encodeURI(filename)}" download class="action-icon-btn" title="Download" aria-label="Download image">
               <i data-lucide="download"></i>
             </a>
           </div>
@@ -4351,7 +4378,7 @@
     const deepPassesToggle = document.getElementById('deep-passes-toggle');
     const burstSummariesToggle = document.getElementById('burst-summaries-toggle');
     const sweepIntervalInput = document.getElementById('sweep-interval-input');
-    let backfillOn = true;
+    let backfillOn = false;
     let deepPassesOn = true;
     let burstSummariesOn = false;
     const renderBackfillToggle = () => backfillToggle.classList.toggle('hidden-label', !backfillOn);
@@ -4394,7 +4421,7 @@
         await apiPost('/api/settings', { deep_passes_enabled: !deepPassesOn });
         deepPassesOn = !deepPassesOn;
         renderDeepPassesToggle();
-        showToast(deepPassesOn ? 'AI deep passes ON' : 'AI deep passes OFF - detector-only (saves CPU/RAM)');
+        showToast(deepPassesOn ? 'Vision deep passes ON' : 'Vision deep passes OFF - detector-only (saves CPU/RAM)');
       } catch (err) {
         showToast('Failed to update - is the API service running?');
       }
@@ -4421,7 +4448,9 @@
         await apiPost('/api/settings', { deep_backfill: !backfillOn });
         backfillOn = !backfillOn;
         renderBackfillToggle();
-        showToast(backfillOn ? 'Idle backfill ON - the vision model will verify all images' : 'Idle backfill OFF');
+        showToast(backfillOn
+          ? 'Idle backfill ON. When idle, verify leftover empties and car-only skips (near detections first).'
+          : 'Idle backfill OFF');
       } catch (err) {
         showToast('Failed to update - is the API service running?');
       }
@@ -4664,7 +4693,11 @@
       resetZoom();
       
       img.src = filename;
-      img.alt = lightboxTitle(meta) || 'Fullscreen view';
+      const analysis = state.analysis[filename];
+      const lbLabels = analysis
+        ? [...effectiveLabels(analysis)].filter(l => !state.blacklist.includes(l)).sort()
+        : [];
+      img.alt = cardAriaLabel(meta, lbLabels) || lightboxTitle(meta);
       title.textContent = lightboxTitle(meta);
 
       // Preload the neighbouring full-res frames so swipe/arrow nav is instant
@@ -4673,8 +4706,7 @@
         const f = state.filteredImages[((i % N) + N) % N];
         if (f && f !== filename) { const pre = new Image(); pre.src = f; }
       });
-      
-      const analysis = state.analysis[filename];
+
       const burst = burstContaining(filename, state.bursts);
       
       let aiText = '';
@@ -4684,17 +4716,17 @@
             .map(l => l.charAt(0).toUpperCase() + l.slice(1));
 
           if (found.length > 0) {
-              aiText = ` | AI DETECTED: ${found.join(', ')}`;
+              aiText = ` | Detected: ${found.join(', ')}`;
           } else if (analysis.fast_pass === 'negative') {
-              aiText = ` | AI: No candidates`;
+              aiText = ` | No candidates`;
           } else {
-              aiText = ` | AI: Scanned (Clear)`;
+              aiText = ` | Scanned (Clear)`;
           }
       }
 
       const caption = entryCaption(analysis);
       const captionHtml = caption
-        ? `<div class="burst-summary" style="font-style:italic;"><strong>AI:</strong> &ldquo;${escapeHtml(caption)}&rdquo;</div>` : '';
+        ? `<div class="burst-summary" style="font-style:italic;">&ldquo;${escapeHtml(caption)}&rdquo;</div>` : '';
 
       let burstHtml = '';
       if (burst) {
@@ -4843,7 +4875,7 @@
       badge.classList.toggle('poll', copy.tone === 'poll');
       badge.classList.toggle('stale', copy.tone === 'stale');
       badge.setAttribute('aria-checked', state.isLive ? 'true' : 'false');
-      badge.setAttribute('aria-label', copy.text);
+      badge.setAttribute('aria-label', copy.text + ', toggle live updates');
       badge.title = copy.tone === 'off'
         ? 'Live updates paused'
         : (copy.tone === 'live' ? 'Live updates via event stream' : copy.text);
@@ -4921,6 +4953,7 @@
       return { text: 'Polling', tone: 'poll' };
     }
     // === /pure:liveBadgeCopy ===
+    paintLiveBadge();
 
     function startEventStream() {
       if (!window.EventSource) return;
@@ -5135,6 +5168,7 @@
         const ss = document.getElementById('time-start'), se = document.getElementById('time-end');
         if (ss) ss.value = state.timeStart; if (se) se.value = state.timeEnd;
         if (typeof updateSliderLabel === 'function') updateSliderLabel();
+        if (window.syncTimePills) window.syncTimePills();
         document.querySelectorAll('#filter-tabs .tab-btn').forEach(btn => {
           const on = btn.dataset.filter === state.activeFilter;
           btn.classList.toggle('active', on);
@@ -5400,8 +5434,14 @@
             }
           }
         } catch (e) {
-          statusEl.textContent = e.message === 'timeout' ? 'API not reachable (timed out)' : 'API offline';
-          statusEl.style.color = '#ef4444';
+          const msg = String((e && e.message) || '');
+          if (msg.includes('409')) {
+            statusEl.textContent = 'integrations.json unreadable — save refused';
+            statusEl.style.color = '#ef4444';
+          } else {
+            statusEl.textContent = e.message === 'timeout' ? 'API not reachable (timed out)' : 'API offline';
+            statusEl.style.color = '#ef4444';
+          }
         }
       }
 
@@ -5592,7 +5632,7 @@
             <div><b>Live updates:</b> ${(() => { const st = streamStatusText(state.streamConnected, state.lastPingTs, Date.now() / 1000); return `${ok(st.ok)} ${st.label}`; })()}</div>
             <div><b>Idle sweep:</b> every ${s.trigger.idle_sweep_seconds}s</div>
             <div><b>Fast detector:</b> ${escapeHtml(String(s.settings.fast_pass_engine || 'yolo').toUpperCase())}</div>
-            <div><b>LLM:</b> ${escapeHtml(s.llm.model || '?')} ${ok(s.llm.reachable)} ${s.llm.allow_cloud ? '(+cloud)' : '(local only)'}</div>
+            <div><b>LLM:</b> ${escapeHtml(s.llm.model || '?')} ${ok(s.llm.reachable)}${s.llm.allow_cloud ? ' (+cloud)' : ''}</div>
             <div><b>Idle backfill:</b> ${s.settings.deep_backfill ? 'on' : 'off'}</div>
             <div><b>Multi-image summaries:</b> ${s.settings.burst_summaries_enabled ? 'on' : 'off'}</div>
             <div><b>Quiet labels:</b> ${(s.settings.gate_ignore_labels || []).map(l => escapeHtml(l)).join(', ') || 'none'}</div>
@@ -5616,11 +5656,11 @@
               const dot = c.stale ? '<span style="color:#ef4444;">&#9679;</span>' : '<span style="color:#10b981;">&#9679;</span>';
               const age = c.last_frame_age_s == null ? 'no frames' : fmtDur(c.last_frame_age_s) + ' ago';
               const pct = c.budget_pct == null ? '' : ` <span style="color:${c.budget_pct > 85 ? '#ef4444' : 'inherit'};">(${c.budget_pct}%)</span>`;
-              return `<div>${dot} <b>${escapeHtml(c.name)}</b>: last frame ${age} &middot; ${formatGb(c.bytes, 'B')}${pct} &middot; ${formatCount(c.images)} imgs</div>`;
+              return `<div>${dot} <b>${escapeHtml(cameraDisplayName(c.name))}</b>: last frame ${age} &middot; ${formatGb(c.bytes, 'B')}${pct} &middot; ${formatCount(c.images)} imgs</div>`;
             }).join('')}
             ${s.retention ? `<div style="color:var(--text-secondary);">Last cleanup: removed ${s.retention.count} img${s.retention.count !== 1 ? 's' : ''} (${(s.retention.bytes_freed / 1e6).toFixed(0)} MB) ${fmtDur(Math.max(0, Math.round(Date.now() / 1000 - s.retention.ts)))} ago</div>` : ''}
             ${s.filesystem ? `<div style="color:${s.filesystem.free_gb < 1 ? '#ef4444' : 'var(--text-secondary)'};">Host disk: ${formatGb(s.filesystem.free_gb, 'GB')} free of ${formatGb(s.filesystem.total_gb, 'GB')} (${s.filesystem.used_pct}% used)</div>` : ''}
-            <div style="margin-top:8px;font-weight:700;text-transform:uppercase;font-size:0.7rem;color:var(--text-secondary);border-bottom:1px solid var(--border-color);padding-bottom:3px;">Insights</div>
+            <div style="margin-top:8px;font-weight:700;text-transform:uppercase;font-size:0.7rem;color:var(--text-secondary);border-bottom:1px solid var(--border-color);padding-bottom:3px;">This view</div>
             <div title="computed from the frames loaded in this view, not the full on-disk set">${insTotal.toLocaleString()} loaded frames${insPeak >= 0 ? ` &middot; busiest ${String(insPeak).padStart(2, '0')}:00` : ''}</div>
             <div style="margin:3px 0;line-height:0;">${insSpark}</div>
             ${sparklineHasData(insBuckets) ? '' : '<div style="color:var(--text-secondary);font-size:0.75rem;">no activity yet</div>'}
@@ -5628,14 +5668,14 @@
             <div style="margin-top:8px;font-weight:700;text-transform:uppercase;font-size:0.7rem;color:var(--text-secondary);border-bottom:1px solid var(--border-color);padding-bottom:3px;">Inference (last ${(s.metrics && s.metrics.window_min) || 60}m)</div>
             ${s.metrics && s.metrics.count ? `
               <div>${s.metrics.count} runs &middot; ${Math.round(s.metrics.success_rate * 100)}% ok${s.metrics.failures ? ` <span style="color:#ef4444;">(${s.metrics.failures} fail)</span>` : ''}</div>
-              <div>${s.metrics.local} local / ${s.metrics.cloud} cloud &middot; avg ${fmtDur(s.metrics.avg_s)} &middot; p95 ${fmtDur(s.metrics.p95_s)}</div>`
+              <div>${s.metrics.local} local${s.llm.allow_cloud ? ` / ${s.metrics.cloud} cloud` : ''} &middot; avg ${fmtDur(s.metrics.avg_s)} &middot; p95 ${fmtDur(s.metrics.p95_s)}</div>`
               : '<div style="color:var(--text-secondary);">no inferences in window</div>'}
             <div style="margin-top:8px;font-weight:700;text-transform:uppercase;font-size:0.7rem;color:var(--text-secondary);border-bottom:1px solid var(--border-color);padding-bottom:3px;">E2B Deep-Pass (HA Flags)</div>
             ${(() => {
               // Show latest HA flags per camera from analysis.json
               const cameras = [
-                { name: 'Front', ip: '10.0.0.21', schema: 'front_door' },
-                { name: 'Back', ip: '10.0.0.22', schema: 'dog_cam' }
+                { name: 'Front', schema: 'front_door' },
+                { name: 'Back', schema: 'dog_cam' }
               ];
               
               const haSchemas = {
@@ -5651,7 +5691,7 @@
                 
                 for (const [filename, record] of Object.entries(state.analysis)) {
                   if (!record._llm && !record._llm_skip) continue;
-                  if (cam.ip && filename.indexOf(cam.ip) === -1) continue;
+                  if (cameraDisplayName(filename) !== cam.name) continue;
                   const meta = parseFilename(filename);
                   const ts = (meta.dateObj && meta.dateObj.getTime()) || record._llm_ms || 0;
                   const hasSchemaFlags = schemaFlags.some(f => f in record);

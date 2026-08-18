@@ -48,6 +48,11 @@ assert.ok(!/state\.blacklist/.test(resetFn[1]),
 
 assert.ok(/syncTimePills/.test(resetFn[1]),
   'resetAllFilters must call syncTimePills so Morning/Night pills unpress');
+
+const applyFn = html.match(/function applySavedSearch\(f\) \{([\s\S]*?)\n      \}/);
+assert(applyFn, 'applySavedSearch not found');
+assert.ok(/syncTimePills/.test(applyFn[1]),
+  'applySavedSearch must call syncTimePills so Morning/Night pills unpress');
 assert.ok(/renderDateSidebar\(\)/.test(resetFn[1]),
   'resetAllFilters must re-render the date sidebar so Yesterday unhighlights');
 

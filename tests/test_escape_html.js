@@ -38,5 +38,13 @@ assert.ok(/title="\$\{escapeHtml\(labelStr\)\}"/.test(html),
   'hour-chart title must be escaped');
 assert.ok(/\$\{escapeHtml\(lightboxFooterMeta\(meta, aiText\)\)\}/.test(html),
   'lightbox footer (includes detected labels) must be escaped');
+assert.ok(/<span>\$\{escapeHtml\(label\)\}<\/span>/.test(html),
+  'date-rail labels must be escaped');
+assert.ok(/time-stamp">\$\{escapeHtml\(meta\.formattedTime/.test(html),
+  'card formattedTime must be escaped');
+assert.ok(/href="\$\{encodeURI\(filename\)\}"/.test(html),
+  'card download href must encodeURI the filename');
+assert.ok(/escapeHtml\(v\.start\.meta\.formattedTime\)/.test(html),
+  'timeline timeRange must escape formattedTime');
 
 console.log('escapeHtml: all assertions passed');

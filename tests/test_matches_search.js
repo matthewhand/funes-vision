@@ -24,6 +24,10 @@ assert.strictEqual(matchesSearch('motdec', F), true);    // filename
 assert.strictEqual(matchesSearch('zebra', F), false);    // no field matches
 assert.strictEqual(matchesSearch('dog', { labels: ['person', 'dog'] }), true);
 assert.strictEqual(matchesSearch('cat', { labels: ['person'] }), false);
+// searchFields (charts + grid) must pass labels from state.analysis — a YOLO-only
+// "person" with an empty caption used to hide cards and leave the chart bars.
+assert.ok(/labels:\s*\[\.\.\.effectiveLabels\(analysis\)\]/.test(html),
+  'searchFields must include labels so activity charts match the grid');
 // Missing/partial fields are safe.
 assert.strictEqual(matchesSearch('x', {}), false);
 assert.strictEqual(matchesSearch('x', { filename: 'x.jpg' }), true);

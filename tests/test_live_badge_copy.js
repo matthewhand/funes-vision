@@ -16,4 +16,14 @@ assert.match(liveBadgeCopy(true, false).text, /Poll/i);
 assert.strictEqual(liveBadgeCopy(true, true, 1000, 1040).tone, 'stale');
 assert.match(liveBadgeCopy(true, true, 1000, 1040).text, /Stale/i);
 
+// First paint: isLive defaults true, so markup must already say Live (not
+// "Auto-refresh: ON") and name the control as a toggle.
+const liveText = html.match(/id="live-text">([^<]*)/);
+assert(liveText, '#live-text missing');
+assert.strictEqual(liveText[1], 'Live', 'first-paint live text must match isLive default');
+assert.ok(/aria-label="Live, toggle live updates"/.test(html),
+  'first-paint aria-label must be Live, toggle live updates');
+assert.ok(/setAttribute\('aria-label',\s*copy\.text \+ ', toggle live updates'\)/.test(html),
+  'paintLiveBadge must keep "toggle live updates" on the accessible name');
+
 console.log('liveBadgeCopy: all assertions passed');
