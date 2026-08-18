@@ -2400,6 +2400,25 @@
     }
     // === /pure:lightboxTitle ===
 
+    // === pure:deleteConfirmText ===
+    // Confirm delete with date/time + optional label. Never interpolate the
+    // raw FTP filename (it embeds the camera LAN IP).
+    function deleteConfirmText(meta, label) {
+      let when = '';
+      if (meta) {
+        const d = meta.formattedDate, t = meta.formattedTime;
+        const haveDate = d && d !== 'Unknown Date';
+        const haveTime = t && t !== 'Unknown Time';
+        if (haveDate && haveTime) when = `${d} · ${t}`;
+        else if (haveDate) when = d;
+        else if (haveTime) when = t;
+      }
+      const who = (label && String(label).trim()) ? `${String(label).trim()} ` : '';
+      const where = when ? ` from ${when}` : '';
+      return `Delete ${who}snapshot${where}?\nThis removes the file from the server permanently.`;
+    }
+    // === /pure:deleteConfirmText ===
+
     // === pure:timelineEmptyState ===
     // Message + whether to offer a "Clear all filters" escape for the Timeline
     // (visits) empty view. When a filter/search is narrowing it, say exactly that
@@ -4409,7 +4428,12 @@
     renderDeepPassesToggle();
 
     async function deleteImage(filename) {
-      if (!confirm(`Delete ${filename}?\nThis removes the file from the server permanently.`)) return;
+      const meta = parseFilename(filename);
+      const analysis = state.analysis[filename];
+      const label = analysis
+        ? ([...effectiveLabels(analysis)].find(l => !state.blacklist.includes(l)) || '')
+        : '';
+      if (!confirm(deleteConfirmText(meta, label))) return;
       try {
         await apiPost('/api/delete', { filename });
         state.allImages = state.allImages.filter(f => f !== filename);
