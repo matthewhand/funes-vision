@@ -56,6 +56,11 @@ Update one or more mutable settings (validated; others ignored).
 **Redacted** integration config — presence of tokens, never their values.
 - **200** → `{"slack": {"enabled", "has_bot_token", "has_app_token",
   "channel_id", "public_base_url", "notify_mode", "last_delivery"}}`
+  Missing file or empty file → the same shape with Slack unset (`has_bot_token`
+  false).
+- **409** → `{"ok": false, "detail": "integrations.json is unreadable",
+  "unreadable": true}` if the file is present, non-empty, and unparseable.
+  No Slack defaults are invented (the UI must not show “not configured”).
 
 ### `POST /api/integrations`
 Merge Slack settings into `integrations.json` (gitignored, mode 600). Blank
