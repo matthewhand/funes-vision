@@ -453,7 +453,7 @@ move → verify) lives in [ROADMAP.md](ROADMAP.md).
 | `idle_sweep_seconds` | 60 | idle re-scan cadence (UI-settable, 15–3600) |
 | `timezone` | Australia/Sydney | display TZ; `WEBCAM_TZ` env overrides (see [Paths & XDG](#paths--xdg)) |
 | `max_age_days` | 30 | retention: age limit for **analyzed no-detection** images (not UI-mutable; edit file) |
-| `max_dir_gb` | 5.0 | retention: per-camera image-byte budget in GiB (code fallback 4.0 if the key is missing; not UI-mutable) |
+| `max_dir_gb` | 5.0 | retention: per-camera image-byte budget in GiB (code fallback 5.0 if the key is missing; not UI-mutable) |
 | `min_mem_for_local_gb` | 6.0 | min free RAM to attempt a **local** model; a `:cloud` model ignores this (see `runnable_chain`) |
 | `allow_cloud` | false | permit OpenRouter fallback (separate from an Ollama `:cloud` primary) |
 | `ollama_url` | http://localhost:11434 | local LLM endpoint |
