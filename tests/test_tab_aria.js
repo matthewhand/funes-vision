@@ -25,4 +25,9 @@ for (const t of tabs) {
 }
 assert.strictEqual(selected, 1, 'exactly one tab should start aria-selected="true"');
 
+const objects = tabs.find(t => /data-filter="objects"/.test(t));
+assert(objects, 'objects tab missing');
+assert.ok(!/AI-verified/i.test(objects), 'Objects tooltip must not claim AI-verified');
+assert.ok(/detected object/i.test(objects), 'Objects tooltip should say frames with a detected object');
+
 console.log('tab-aria: tablist + 3 tabs (role/aria-selected/title), one selected');

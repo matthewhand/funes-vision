@@ -1898,7 +1898,7 @@
         <div class="tab-cluster" style="display: flex; align-items: center; gap: var(--space-3);">
           <div class="tab-group" id="filter-tabs" role="tablist" aria-label="Gallery view">
             <button class="tab-btn active" data-filter="events" role="tab" aria-selected="true" title="Object visits grouped over time, each with an AI caption">Timeline</button>
-            <button class="tab-btn" data-filter="objects" role="tab" aria-selected="false" title="Only frames with an AI-verified detection">Objects</button>
+            <button class="tab-btn" data-filter="objects" role="tab" aria-selected="false" title="Frames with a detected object">Objects</button>
             <button class="tab-btn" data-filter="all" role="tab" aria-selected="false" title="Every captured snapshot">All</button>
           </div>
           <span class="stats-info" id="stats-label">Loading image logs...</span>
@@ -1930,7 +1930,7 @@
           </div>
           
           <div class="blacklist-menu">
-            <button class="btn" id="btn-manage-blacklist" aria-label="Settings" title="Detection settings: hidden labels, merging, detector, backfill, intervals">
+            <button class="btn" id="btn-manage-blacklist" aria-label="Settings" aria-haspopup="true" aria-expanded="false" title="Detection settings: hidden labels, merging, detector, backfill, intervals">
               <i data-lucide="settings-2"></i>
               <span>Settings</span>
             </button>
@@ -1986,7 +1986,7 @@
           </div>
 
           <div class="blacklist-menu">
-            <button class="btn" id="btn-integrations" aria-label="Integrations" title="Outbound integrations (Slack, ...)">
+            <button class="btn" id="btn-integrations" aria-label="Integrations" aria-haspopup="true" aria-expanded="false" title="Outbound integrations (Slack, ...)">
               <i data-lucide="share-2"></i>
               <span>Integrations</span>
             </button>
@@ -2043,7 +2043,7 @@
           </div>
 
           <div class="blacklist-menu">
-            <button class="btn" id="btn-system-status" title="Pipeline status">
+            <button class="btn" id="btn-system-status" aria-haspopup="true" aria-expanded="false" title="Pipeline status">
               <span id="ai-live-dot" class="status-dot"></span>
               <span id="ai-live-label">AI</span>
             </button>
@@ -3162,20 +3162,21 @@
 
     // --- Saved searches (named filter snapshots, localStorage-backed) ---
     // === pure:clearedFilters ===
-    // The canonical "no filters" state (objectFilters as []). Keys mirror
-    // filterSnapshot so a reset clears every dimension it can capture.
+    // The canonical "no filters" state (objectFilters as []). Omits the view
+    // tab so reset cannot switch Timeline → All. Other keys match filterSnapshot.
     function clearedFilters() {
-      return { searchQuery: '', activeFilter: 'all', objectFilters: [],
+      // View tab (state.activeFilter) is not a filter — leave it alone.
+      return { searchQuery: '', objectFilters: [],
                activeDateFilter: 'all', timeStart: 0, timeEnd: 23, activeHourChartFilter: null };
     }
     // === /pure:clearedFilters ===
 
     // Apply the cleared-filter state + sync DOM controls, then re-render. The
     // canonical "escape" so "Show all / Clear all filters" never dead-ends.
+    // Does not switch Timeline / Objects / All.
     function resetAllFilters() {
       const f = clearedFilters();
       state.searchQuery = f.searchQuery;
-      state.activeFilter = f.activeFilter;
       state.objectFilters.clear();
       state.activeDateFilter = f.activeDateFilter;
       state.timeStart = f.timeStart; state.timeEnd = f.timeEnd;
@@ -3185,11 +3186,6 @@
       const ss = document.getElementById('time-start'), se = document.getElementById('time-end');
       if (ss) ss.value = 0; if (se) se.value = 23;
       if (typeof updateSliderLabel === 'function') updateSliderLabel();
-      document.querySelectorAll('#filter-tabs .tab-btn').forEach(btn => {
-        const on = btn.dataset.filter === 'all';
-        btn.classList.toggle('active', on);
-        btn.setAttribute('aria-selected', on ? 'true' : 'false');
-      });
       renderObjectFilters();
       renderDateSidebar();
       applyFiltersAndSearch();
@@ -3631,6 +3627,34 @@
     }
     // === /pure:matchesSearch ===
 
+    // === pure:visitPassesTimeFilter ===
+    // Timeline visit vs the same time-of-day slider + hour-chart predicates
+    // as the grid. A visit passes when any hour from start..end (inclusive;
+    // wrapping midnight) sits in [timeStart, timeEnd]. hourFilter, when set,
+    // must also fall in that span.
+    function visitPassesTimeFilter(visit, timeStart, timeEnd, hourFilter) {
+      const startHr = visit && visit.start && visit.start.meta
+        ? visit.start.meta.hour : null;
+      if (!Number.isInteger(startHr) || startHr < 0 || startHr > 23) return false;
+      let endHr = visit.end && visit.end.meta ? visit.end.meta.hour : startHr;
+      if (!Number.isInteger(endHr) || endHr < 0 || endHr > 23) endHr = startHr;
+      const ts = Number.isInteger(timeStart) ? timeStart : 0;
+      const te = Number.isInteger(timeEnd) ? timeEnd : 23;
+      const hours = [];
+      if (startHr <= endHr) {
+        for (let h = startHr; h <= endHr; h++) hours.push(h);
+      } else {
+        for (let h = startHr; h <= 23; h++) hours.push(h);
+        for (let h = 0; h <= endHr; h++) hours.push(h);
+      }
+      if (!hours.some(h => h >= ts && h <= te)) return false;
+      if (hourFilter != null && hourFilter !== undefined) {
+        if (!hours.includes(hourFilter)) return false;
+      }
+      return true;
+    }
+    // === /pure:visitPassesTimeFilter ===
+
     // Build the searchable fields for one filename (parsed meta + Gemma caption).
     const searchFields = (filename) => {
       const meta = parseFilename(filename);
@@ -3736,9 +3760,21 @@
       let visits = computeVisits();
       if (objectFilterActive()) visits = visits.filter(v => state.objectFilters.has(v.label));
       if (state.activeDateFilter !== 'all') visits = visits.filter(v => v.start.meta.dateStr === state.activeDateFilter);
+      visits = visits.filter(v => visitPassesTimeFilter(
+        v, state.timeStart, state.timeEnd, state.activeHourChartFilter));
       if (state.searchQuery) {
-        const q = state.searchQuery.toLowerCase();
-        visits = visits.filter(v => v.label.includes(q) || v.caption.toLowerCase().includes(q));
+        const q = state.searchQuery;
+        visits = visits.filter(v => {
+          if (String(v.label || '').toLowerCase().includes(String(q).toLowerCase())) return true;
+          const fieldOf = (item) => ({
+            filename: item && item.f,
+            formattedDate: item && item.meta && item.meta.formattedDate,
+            formattedTime: item && item.meta && item.meta.formattedTime,
+            eventType: item && item.meta && item.meta.eventType,
+            caption: v.caption,
+          });
+          return matchesSearch(q, fieldOf(v.start)) || matchesSearch(q, fieldOf(v.end));
+        });
       }
 
       const VISIT_CAP = 300;
@@ -4588,9 +4624,14 @@
       }, 50);
     }
 
-    // Polling triggers
-    function toggleLiveMode() {
-      state.isLive = !state.isLive;
+    // Polling triggers. EventSource is kept on liveEventSource so Live OFF
+    // can close the stream (not just the interval poll).
+    let liveEventSource = null;
+    let liveImageRefreshTimer = null;
+    let livePendingNew = [];
+
+    function toggleLiveMode(on) {
+      state.isLive = (typeof on === 'boolean') ? on : !state.isLive;
       const badge = document.getElementById('live-toggle');
       const text = document.getElementById('live-text');
       
@@ -4598,18 +4639,22 @@
         badge.classList.remove('paused');
         text.textContent = 'Auto-refresh: ON';
         badge.setAttribute('aria-checked', 'true');
+        startEventStream();
         startPolling();
       } else {
         badge.classList.add('paused');
         text.textContent = 'Auto-refresh: OFF';
         badge.setAttribute('aria-checked', 'false');
+        stopEventStream();
         stopPolling();
       }
     }
 
     function startPolling() {
+      if (!state.isLive) return;
       if (state.pollingInterval) clearInterval(state.pollingInterval);
       state.pollingInterval = setInterval(() => {
+        if (!state.isLive) { stopPolling(); return; }
         loadData(true);
       }, 6000);
     }
@@ -4619,6 +4664,19 @@
         clearInterval(state.pollingInterval);
         state.pollingInterval = null;
       }
+    }
+
+    function stopEventStream() {
+      if (liveEventSource) {
+        try { liveEventSource.close(); } catch (_) {}
+        liveEventSource = null;
+      }
+      if (liveImageRefreshTimer) {
+        clearTimeout(liveImageRefreshTimer);
+        liveImageRefreshTimer = null;
+      }
+      livePendingNew = [];
+      state.streamConnected = false;
     }
 
     // Real-time push: subscribe to the API's SSE stream for new detections /
@@ -4643,24 +4701,35 @@
 
     function startEventStream() {
       if (!window.EventSource) return;
+      if (!state.isLive) return;
+      stopEventStream();
       let es;
       try { es = new EventSource(`${API_BASE}/api/events`); }
       catch (e) { return; }
+      liveEventSource = es;
 
       es.addEventListener('open', () => {
+        if (!state.isLive) return;
         // SSE live -> slow the poll to a backstop (SSE handles immediacy)
         state.streamConnected = true;
         state.lastPingTs = Date.now() / 1000;
         if (state.pollingInterval) clearInterval(state.pollingInterval);
-        state.pollingInterval = setInterval(() => loadData(true), 30000);
+        state.pollingInterval = setInterval(() => {
+          if (!state.isLive) { stopPolling(); return; }
+          loadData(true);
+        }, 30000);
       });
       // Heartbeat: a healthy stream pings every ~3s; track it to spot a silent
       // stall (the status panel flips "live" -> "stale" when pings stop).
-      es.addEventListener('ping', () => { state.lastPingTs = Date.now() / 1000; });
+      es.addEventListener('ping', () => {
+        if (!state.isLive) return;
+        state.lastPingTs = Date.now() / 1000;
+      });
       // Detection events patch in-memory state and re-render from it — NO
       // full-file refetch (analysis.json reload is demoted to the 30s reconcile
       // poll + the onerror fallback). preliminary => fast_pass:'partial'.
       const onDetection = (preliminary) => (e) => {
+        if (!state.isLive) return;
         let d = {}; try { d = JSON.parse(e.data); } catch (_) {}
         if (!d.file) return;
         const what = (d.labels && d.labels.length) ? d.labels.join(', ') : 'activity';
@@ -4676,25 +4745,27 @@
       // New frames (even with no detection): merge into the list and re-render
       // from state, coalescing a capture burst into one render. No refetch, no
       // activity-pill bump (that counter is for detections).
-      let pendingNew = [];
-      let imgRefreshTimer = null;
       es.addEventListener('image.new', (e) => {
+        if (!state.isLive) return;
         let d = {}; try { d = JSON.parse(e.data); } catch (_) {}
-        if (d.file) pendingNew.push(d.file);
-        if (imgRefreshTimer) return;
-        imgRefreshTimer = setTimeout(() => {
-          imgRefreshTimer = null;
+        if (d.file) livePendingNew.push(d.file);
+        if (liveImageRefreshTimer) return;
+        liveImageRefreshTimer = setTimeout(() => {
+          liveImageRefreshTimer = null;
+          if (!state.isLive) { livePendingNew = []; return; }
           const before = state.allImages.length;
-          pendingNew.forEach(f => { state.allImages = mergeNewImage(state.allImages, f); });
-          pendingNew = [];
+          livePendingNew.forEach(f => { state.allImages = mergeNewImage(state.allImages, f); });
+          livePendingNew = [];
           if (state.allImages.length !== before) applyFiltersAndSearch();
         }, 1500);
       });
       es.addEventListener('new-burst', () => {
+        if (!state.isLive) return;
         bumpActivity('sequence');
         loadData(true);
       });
       es.onerror = () => {
+        if (!state.isLive) return;
         // Auto-reconnects; meanwhile make sure the responsive poll is running
         state.streamConnected = false;
         if (!state.pollingInterval) startPolling();
@@ -4970,7 +5041,8 @@
       const blacklistDropdown = document.getElementById('blacklist-dropdown');
       btnManageBlacklist.addEventListener('click', (e) => {
         e.stopPropagation();
-        blacklistDropdown.classList.toggle('active');
+        const open = blacklistDropdown.classList.toggle('active');
+        btnManageBlacklist.setAttribute('aria-expanded', open ? 'true' : 'false');
       });
 
       document.addEventListener('click', (e) => {
@@ -4980,6 +5052,7 @@
         if (document.contains(e.target) &&
             !blacklistDropdown.contains(e.target) && e.target !== btnManageBlacklist) {
           blacklistDropdown.classList.remove('active');
+          btnManageBlacklist.setAttribute('aria-expanded', 'false');
         }
       });
 
@@ -5098,13 +5171,15 @@
 
       btnIntegrations.addEventListener('click', (e) => {
         e.stopPropagation();
-        integrationsDropdown.classList.toggle('active');
-        if (integrationsDropdown.classList.contains('active')) loadIntegrations();
+        const open = integrationsDropdown.classList.toggle('active');
+        btnIntegrations.setAttribute('aria-expanded', open ? 'true' : 'false');
+        if (open) loadIntegrations();
       });
       document.addEventListener('click', (e) => {
         if (document.contains(e.target) &&
             !integrationsDropdown.contains(e.target) && !btnIntegrations.contains(e.target)) {
           integrationsDropdown.classList.remove('active');
+          btnIntegrations.setAttribute('aria-expanded', 'false');
         }
       });
 
@@ -5443,9 +5518,10 @@ html += `<div style="margin-top:6px;padding:4px 6px;background:var(--accent-10);
 
       btnSystemStatus.addEventListener('click', (e) => {
         e.stopPropagation();
-        systemDropdown.classList.toggle('active');
+        const open = systemDropdown.classList.toggle('active');
+        btnSystemStatus.setAttribute('aria-expanded', open ? 'true' : 'false');
         clearInterval(systemRefreshTimer);
-        if (systemDropdown.classList.contains('active')) {
+        if (open) {
           document.getElementById('system-status-content').textContent = 'Loading...';
           renderSystemPanel();
           systemRefreshTimer = setInterval(renderSystemPanel, 5000);
@@ -5455,6 +5531,7 @@ html += `<div style="margin-top:6px;padding:4px 6px;background:var(--accent-10);
         if (document.contains(e.target) &&
             !systemDropdown.contains(e.target) && e.target !== btnSystemStatus) {
           systemDropdown.classList.remove('active');
+          btnSystemStatus.setAttribute('aria-expanded', 'false');
           clearInterval(systemRefreshTimer);
         }
       });
