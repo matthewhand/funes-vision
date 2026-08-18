@@ -51,6 +51,13 @@ assert.ok(!/409[\s\S]{0,200}not configured/.test(loadInt[1]),
 assert.ok(/\.blacklist-dropdown,\s*#filters-dropdown/.test(html),
   '#filters-dropdown must share the mobile blacklist-dropdown sheet rules');
 
+// First paint matches the front camera (JS overwrites on Dogcam).
+assert.ok(/>Webcam Live Feed</.test(html), 'title first-paints Webcam Live Feed');
+assert.ok(/Monitoring front gate area/.test(html), 'subtitle first-paints front gate');
+assert.ok(/Switch to Dogcam Feed/.test(html), 'switch first-paints Dogcam target');
+assert.ok(/person\/dog\/cat\/bird/.test(html), 'Slack objects copy includes cat/bird');
+assert.ok(!/every new analyzed frame/.test(html), 'Slack all must not claim every analyzed frame');
+
 // In-gallery Help opens the local walkthrough (not a CDN, not camera JPEGs).
 assert.ok(/id="btn-help"/.test(html) && /href="USER-GUIDE.html"/.test(html),
   'Help must link to USER-GUIDE.html');

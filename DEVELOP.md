@@ -593,14 +593,14 @@ Slack settings UI. `GET /api/integrations` redacts Slack only.
 
 `notify_mode` (per integration) controls *what* triggers a post:
 - `context` (default, quietest) — only burst/sequence summaries
-  (`notify_burst`), the contextual narrative + frame animation.
-- `objects` — every freshly-analyzed frame **with a detection**
-  (`notify_image`).
-- `all` — every freshly-analyzed frame, detections and clears alike.
+  (`notify_burst`). With `burst_summaries_enabled` off this path is silent.
+- `objects` — each **new urgent** detector hit (`person`/`dog`/`cat`/`bird`,
+  via `maybe_notify_urgent_frame` → `notify_image`). The vision merge does
+  not have to succeed. Parked-car `no_trigger` and idle backfill do not post.
+- `all` — same call site as `objects` today (empties and parked cars do
+  **not** post). The select label in the UI says so.
 
-Per-image modes fire only on **priority** deep passes (newly-arrived
-detector hits), never the idle backfill of the archive — that would flood
-the channel. Volume is therefore bounded by `max_deep_passes` per sweep.
+Per-image modes never fire on idle backfill.
 
 ### Slack
 Posts the burst's frame animation + AI summary with a deep link back to

@@ -84,7 +84,7 @@ aspirational.
   ntfy exists as a config-file provider (no settings UI). Secrets isolated and
   never web-synced. Slack `notify_mode: context` only fires on burst summaries
   — with summaries off, that path is silent. `objects` mode pings on each new
-  person/dog detector hit (the vision pass does not have to finish).
+  person/dog/cat/bird detector hit (the vision pass does not have to finish).
 - **Configurable display timezone** — `WEBCAM_TZ` env > `settings.json` >
   `Australia/Sydney`; filename timestamps parsed **DST-aware**.
 - **Installable PWA** — a web app manifest makes the gallery "Add to Home
@@ -134,8 +134,9 @@ opened). These are **not** the import-time fallbacks in `analyze_images.py`.
 | `max_deep_passes` | 30 |
 
 Slack is enabled with `notify_mode: context`; with burst summaries off, those
-sequence posts do not fire. Switch Slack to `objects` to ping on person/dog
-detector hits. HA MQTT is enabled and publishes off-box. Camera liveness is
+sequence posts do not fire. Switch Slack to `objects` to ping on
+person/dog/cat/bird hits (not parked cars). HA MQTT is enabled and
+publishes off-box. Camera liveness is
 on `/api/health` (`cameras[].stale`) — do not take an offline claim from
 this README.
 

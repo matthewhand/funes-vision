@@ -1826,16 +1826,16 @@
             <i data-lucide="camera"></i>
           </div>
           <div class="logo-text">
-            <h1 id="camera-title">Camera Feed</h1>
-            <p id="camera-subtitle">Loading camera status...</p>
+            <h1 id="camera-title">Webcam Live Feed</h1>
+            <p id="camera-subtitle">Monitoring front gate area</p>
           </div>
         </div>
 
         <div class="controls-wrapper">
           <!-- Switch endpoint button -->
-          <button id="btn-switch-feed" class="btn btn-switch" title="Switch Feeds">
+          <button id="btn-switch-feed" class="btn btn-switch" title="Switch to the other camera">
             <i data-lucide="arrow-left-right"></i>
-            <span id="switch-feed-label">Switch Feed</span>
+            <span id="switch-feed-label">Switch to Dogcam Feed</span>
           </button>
 
           <div class="search-box">
@@ -2012,7 +2012,7 @@
                 Integrations
               </div>
               <div style="font-size: 0.72rem; color: var(--text-secondary); margin-bottom: 10px; line-height: 1.5;">
-                Post timeline activity to external services. More integrations are welcome &mdash; submit a PR (see DEVELOP.md).
+                Post timeline activity to external services. MQTT and ntfy are config-file only (no panel here).
               </div>
 
               <!-- Slack integration card -->
@@ -2022,7 +2022,7 @@
                   <span id="slack-status" style="font-size:0.68rem; color:var(--text-secondary);">checking&hellip;</span>
                 </div>
                 <div style="font-size:0.68rem; color:var(--text-secondary); margin-bottom:8px; line-height:1.5;">
-                  Optional. In <b>context</b> mode it posts a visit only after a multi-image summary (off by default). Switch to <b>objects</b> to ping on person/dog detections.
+                  Optional. <b>context</b> posts a visit only after a multi-image summary (off by default — silent). <b>objects</b> pings each new person/dog/cat/bird hit. <b>all</b> uses that same urgent path today (empties and parked cars do not post).
                 </div>
                 <label style="display:block; font-size:0.72rem; margin-bottom:6px;">Bot token (xoxb-)
                   <input type="password" id="slack-bot-token" autocomplete="off" placeholder="leave blank to keep current" style="width:100%; margin-top:2px; padding:5px; background:var(--bg-tertiary); color:var(--text-primary); border:1px solid var(--border-color); border-radius:4px; font-size:0.75rem;">
@@ -2039,8 +2039,8 @@
                 <label style="display:block; font-size:0.72rem; margin-bottom:6px;">Notify on
                   <select id="slack-notify-mode" style="width:100%; margin-top:2px; padding:5px; background:var(--bg-tertiary); color:var(--text-primary); border:1px solid var(--border-color); border-radius:4px; font-size:0.75rem;">
                     <option value="context">Context — sequences only (quietest)</option>
-                    <option value="objects">Object detections — each new frame with a hit</option>
-                    <option value="all">All images — every new analyzed frame</option>
+                    <option value="objects">Object detections — each new person/dog/cat/bird hit</option>
+                    <option value="all">All — same urgent hits as objects (not empties or parked cars)</option>
                   </select>
                 </label>
                 <div style="font-size:0.64rem; color:var(--text-secondary); margin-bottom:6px; line-height:1.4;">

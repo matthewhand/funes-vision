@@ -56,7 +56,7 @@ fresh clone behaves the same if `settings.json` is missing.
 | Empty-frame age | **30 days** |
 | Camera offline | **24 hours** without a new still |
 | Timezone | `Australia/Sydney` (subtitle shows `AEST` / `AEDT`) |
-| Slack | **on**, `notify_mode: context` — silent while summaries are off. Switch to **objects** to ping person/dog |
+| Slack | **on**, `notify_mode: context` — silent while summaries are off. Switch to **objects** to ping person/dog/cat/bird |
 | HA MQTT | **on** this box (explicit broker in `integrations.json`). Flags only, not JPEGs |
 
 ---
@@ -130,7 +130,8 @@ The default tab is **Timeline**.
 | **All** | Every motion still, including empty / **CLEAR** frames |
 
 The count next to the tabs is honest about the current tab
-(*“2 visits detected”* vs *“Showing 7 of 10 snapshots”*).
+(*“2 visits detected”* vs *“Showing 7 of 10 snapshots”*). Timeline
+caps the list at 300 visits (*“showing first 300 of N visits”*).
 
 Grid density buttons (small / medium / large / list) appear on
 **Objects** and **All** only. Timeline ignores them, so they hide there.
@@ -199,7 +200,7 @@ Placeholder: *Search time, labels, or caption…*
 
 Matches, case-insensitive, against:
 
-- human date / time (`Jun 18`, `10:14`)
+- human date / time (`18 Jun 2026`, `10:14`)
 - detector labels (`person`, `dog`, `car`)
 - event type / filename tokens
 - caption text (fixture sentences **or** synthesized HA facts)
@@ -262,8 +263,9 @@ Captions on your live cameras:
   line”*).
 - Detector-only cards often have **no** caption.
 
-Pin (📌) protects that file from retention forever. Delete asks
-`Delete person snapshot from 18 June 2026 · 10:14:18 am?` — date and
+The pin **button** (not an emoji) protects that file from retention
+forever. Delete asks
+`Delete person snapshot from 18 Jun 2026 · 10:14:18 am?` — date and
 label, never the FTP filename.
 
 ---
@@ -276,14 +278,19 @@ Tap a Timeline card or its play button.
 
 You get:
 
-- Play / pause the flipbook
+- Play / pause (it autoplays unless the OS asks for reduced motion;
+  the button then reads **Pause**)
+- A scrub slider
 - Tap the image to step frame-by-frame
 - Arrows, Space, Esc
 - **Full res**
-- **Download GIF** of the visit (needs the write API)
+- **Download GIF** — only when the visit has **more than one** frame
+  (needs the write API)
 - **Copy link** to this moment (deep link; this browser must have the
   same catalogs loaded)
-- Pin the key frame
+- **Close**
+
+There is **no pin** in the visit player. Pin from the Objects/All card.
 
 The flipbook stays on **the same camera** and will not pull in a still
 from more than five minutes earlier as “lead-in.” A dog visit will not
@@ -340,24 +347,30 @@ with an elapsed time while a frame is in the vision model.
 
 You should see, in order:
 
-- **Inference** — idle, or the file currently in the model
-- **New-image trigger** — `inotify` should be on (instant). Red if not
-- **Live updates** — live / polling / stale, same idea as the header
-- **Idle sweep** — 60 s on this box
-- **Fast detector** — YOLO
-- **LLM** — `gemma4:e2b`, reachable, **local only** (no “+cloud” unless
-  you turn cloud on)
+- **Inference:** idle — or **Analyzing now:** with the human date/time of
+  the frame (not the FTP name), model, trigger, and elapsed time
+- **New-image trigger:** inotify ✓ (instant). Red *not running!* if the
+  watcher is down
+- **Live updates:** `live (SSE connected)` / `polling (stream offline)` /
+  `stale (no signal)` — longer wording than the header badge
+- **Idle sweep:** every 60s on this box
+- **Fast detector:** YOLO
+- **LLM:** `gemma4:e2b` plus a reachability tick. `(+cloud)` only if
+  `allow_cloud` is on — there is no “local only” label
 - **Idle backfill** / **Multi-image summaries** — both **off** here
-- **Quiet labels** — `car`
-- **Queue** — new / priority / backfill / verified. Verified means a
-  **non-empty** `_llm` dict (real flags), not “missing `fast_pass`” and
-  not `{}`. Backfill is counted even though the switch is off, so the
-  number stays honest
-- **Cameras** — **Front** and **Back** (header says Webcam / Dogcam), last
-  frame age, budget %
-- **This view** — stats over *loaded* frames (busiest hour, most-seen
-  objects), plus the HA schema viewer. Not a product called Insights
-- **Audit trail** — recent vision calls, titled with date/time
+- **Quiet labels:** car
+- **Queue:** `N new · N priority · N backfill · N verified (N on disk)`.
+  Verified means a **non-empty** `_llm` dict
+- **Deep analysis:** a percent bar over verified vs pending
+- **Last sweep:** age, or red *stalled?* if older than 30 minutes
+- **Cameras:** **Front** and **Back** (header says Webcam / Dogcam)
+- Last cleanup / host disk, when the API has those numbers
+- **This view:** stats over *loaded* frames (busiest hour, sparkline,
+  most-seen). Not a product called Insights
+- **Inference (last 60m):** run counts; cloud counts hidden unless cloud
+  is on
+- **E2B Deep-Pass (HA Flags):** latest front/back flag snapshot
+- **Audit trail:** recent vision calls, titled with date/time
 
 ---
 
@@ -392,8 +405,8 @@ only (no panel).
 | Notify on | When it posts |
 |-----------|----------------|
 | **Context — sequences only** | Only after a multi-image summary. Summaries are **off**, so this mode is **silent**. That is intentional |
-| **Object detections** | Each **new** person/dog (urgent detector) frame. The vision model does **not** have to finish. Not parked cars. Not idle backfill |
-| **All images** | Every newly analyzed frame (still not historical backfill) |
+| **Object detections** | Each **new** person/dog/cat/bird hit. The vision model does **not** have to finish. Not parked cars. Not idle backfill |
+| **All** | Same urgent path as objects today. Empties and parked cars do **not** post |
 
 Tokens stay on the box (`integrations.json`, mode `600`, never copied
 to the web root). Leave a token field blank to keep the stored secret.
@@ -404,9 +417,10 @@ blocks are not wiped. **Send test** talks to Slack for real.
 
 ### Home Assistant MQTT
 
-Optional. **Off unless you enable it**, and it needs an **explicit
-broker host** (no `10.0.0.111` default). It publishes retained **flags**,
-not JPEGs, and only after a successful `_llm` merge.
+Product default is **off** until you set `enabled` and an **explicit
+broker host** (no `10.0.0.111` default). **This box has it on.** It
+publishes retained **flags**, not JPEGs, and only after a successful
+non-empty `_llm` merge.
 
 ### ntfy
 
@@ -455,7 +469,7 @@ This guide’s screenshots are generated fiction. They are not your house.
 | Images vanished | 5 GB budget or 30-day empty-frame rule. Pins survive |
 | Pin / delete / settings / GIF do nothing | Write API (`webcam-api` on `:8190`) is down |
 | “AI is looking…” never finishes | Ollama not loaded, or free RAM below ~6 GB |
-| Slack never pings | Mode is **context** and summaries are off. Switch to **objects** |
+| Slack never pings | Mode is **context** and summaries are off. Switch to **objects** (person/dog/cat/bird, not car) |
 | Slack save says unreadable | `integrations.json` is corrupt. Do not keep hitting Save |
 | Live is Polling / Stale | SSE dropped. Refresh, or the API is down |
 | Night slider looks broken | Use the **Night** pill. Do not drag the thumbs to wrap |

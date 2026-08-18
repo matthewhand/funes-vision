@@ -120,7 +120,7 @@
     <tr><td>Empty-frame age</td><td><strong>30 days</strong></td></tr>
     <tr><td>Camera offline</td><td><strong>24 hours</strong> without a new still</td></tr>
     <tr><td>Timezone</td><td><code>Australia/Sydney</code></td></tr>
-    <tr><td>Slack</td><td><b>on</b>, mode <code>context</code> — silent while summaries are off</td></tr>
+    <tr><td>Slack</td><td><b>on</b>, mode <code>context</code> — silent while summaries are off. <b>objects</b> = person/dog/cat/bird</td></tr>
     <tr><td>HA MQTT</td><td><b>on</b> this box (explicit host). Flags only</td></tr>
   </table>
 
@@ -131,7 +131,7 @@
     <tr><td>Back (yard / dogcam)</td><td><code>http://&lt;host&gt;:8280</code></td></tr>
   </table>
   <p>Each camera is its own site. They do not share one URL or one filter state. On a phone, Add to Home Screen — there is no service worker, so you will not get a stale offline copy.</p>
-  <p>The subtitle is the nickname plus a short timezone (<code>AEST</code> here), not a LAN address. <strong>Switch Feed</strong> jumps to the other camera. On a phone, <strong>Panels</strong> hides or shows the date list, charts, and saved searches.</p>
+  <p>Title is <strong>Webcam Live Feed</strong> or <strong>Dogcam Live Feed</strong>. Subtitle is <em>Monitoring front gate area · AEST</em> or <em>Monitoring backyard and dog area · AEST</em> — not a LAN address. First paint on :8180 is already those front-camera strings. <strong>Switch to Dogcam Feed</strong> jumps cameras. On a phone, <strong>Panels</strong> hides or shows the date list, charts, and saved searches.</p>
   <figure>
     <img src="guide/img/mobile-timeline.png" alt="Mobile timeline of dog and person visits">
     <figcaption>Phone: Timeline is the default. Fixture captions are sample sentences — see the yellow note above.</figcaption>
@@ -213,7 +213,7 @@
     <img src="guide/img/visit-player.png" alt="Visit player with play, GIF download, and copy-link">
     <figcaption>Play, step, Download GIF, Copy link. The flipbook stays on the same camera.</figcaption>
   </figure>
-  <p>It will not pull in a still from the other camera or from more than five minutes earlier as “lead-in.”</p>
+  <p>Autoplays unless reduced-motion is on. Download GIF only appears for multi-frame visits. There is no pin in the player — pin from an Objects/All card. The flipbook stays on the same camera and will not pull a still from more than five minutes earlier as lead-in.</p>
 
   <h2 id="lightbox">8. Lightbox</h2>
   <figure>
@@ -238,7 +238,7 @@
     <img src="guide/img/status.png" alt="Pipeline status panel">
     <figcaption>Pipeline status. Cameras are Front / Back. Cloud counts hide unless cloud is on. “This view” is loaded-frame stats, not a product called Insights.</figcaption>
   </figure>
-  <p>Queue numbers: new / priority / backfill / verified. Verified means a real <code>_llm</code> dict. Backfill is counted even though the switch is off, so the number stays honest. The button pulses amber while a frame is in the model.</p>
+  <p>Queue: <code>N new · N priority · N backfill · N verified (N on disk)</code>. Verified means a <strong>non-empty</strong> <code>_llm</code> dict. Also on this panel: Deep analysis %, Last sweep, last cleanup / host disk, Inference (last 60m), and E2B Deep-Pass (HA Flags). Live updates here reads <code>live (SSE connected)</code>, not just “Live”. The LLM line has no “local only” label. The button pulses amber while a frame is in the model.</p>
 
   <h2 id="settings">11. Settings</h2>
   <figure>
@@ -261,10 +261,10 @@
   <table>
     <tr><th>Slack notify on</th><th>When it posts</th></tr>
     <tr><td>Context — sequences only</td><td>Only after a multi-image summary. Summaries are off, so this mode is <strong>silent</strong></td></tr>
-    <tr><td>Object detections</td><td>Each new person/dog detector frame. Vision does not have to finish. Not parked cars. Not backfill</td></tr>
-    <tr><td>All images</td><td>Every newly analyzed frame (still not historical backfill)</td></tr>
+    <tr><td>Object detections</td><td>Each new person/dog/cat/bird hit. Vision does not have to finish. Not parked cars. Not backfill</td></tr>
+    <tr><td>All</td><td>Same urgent path as objects today. Empties and parked cars do not post</td></tr>
   </table>
-  <p>A corrupt secrets file is refused on Save (409): <em>integrations.json unreadable — save refused</em>. MQTT/ntfy are not wiped. Home Assistant MQTT needs an explicit broker host and publishes flags, not JPEGs, and only after a successful <code>_llm</code> merge. ntfy needs an explicit <code>server_url</code> — there is no public ntfy.sh default.</p>
+  <p>A corrupt secrets file is refused on Save (409): <em>integrations.json unreadable — save refused</em>. MQTT/ntfy are not wiped. Product-default MQTT is off until you set <code>enabled</code> and an explicit host; <strong>this box has it on</strong>. It publishes flags, not JPEGs, and only after a successful non-empty <code>_llm</code> merge. ntfy needs an explicit <code>server_url</code> — there is no public ntfy.sh default.</p>
 
   <h2 id="auto">13. What the box does without you</h2>
   <ul>
