@@ -153,7 +153,7 @@ class H(SimpleHTTPRequestHandler):
             return self._send_file(INDEX_OVERRIDE, "text/html; charset=utf-8")
         # Static chrome from the repo if the fixture tree does not have it.
         rel = path.lstrip("/")
-        if rel in ("manifest.json", "icon.svg", "favicon.ico"):
+        if rel in ("manifest.json", "icon.svg", "favicon.ico", "lucide.min.js"):
             candidate = os.path.join(ROOT, rel)
             if not os.path.isfile(candidate):
                 candidate = os.path.join(STATIC_DIR, rel)
@@ -162,6 +162,7 @@ class H(SimpleHTTPRequestHandler):
                     "manifest.json": "application/manifest+json",
                     "icon.svg": "image/svg+xml",
                     "favicon.ico": "image/x-icon",
+                    "lucide.min.js": "application/javascript",
                 }[rel]
                 return self._send_file(candidate, ctype)
         return super().do_GET()

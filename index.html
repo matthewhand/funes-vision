@@ -10,12 +10,8 @@
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icon.svg">
 
-  <!-- Google Fonts: Inter & Outfit -->
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <!-- Lucide Icons CDN -->
-  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Icons: pinned local Lucide UMD (create-index.sh copies it into each web root). -->
+  <script src="lucide.min.js"></script>
   
   <style>
     :root {
@@ -79,7 +75,7 @@
     }
 
     body {
-      font-family: 'Inter', sans-serif;
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
       background-color: var(--bg-primary);
       color: var(--text-primary);
       overflow-x: hidden;
@@ -87,7 +83,8 @@
     }
 
     h1, h2, h3, h4 {
-      font-family: 'Outfit', sans-serif;
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      letter-spacing: -0.02em;
     }
 
     /* === component primitives (declutter program) =========================

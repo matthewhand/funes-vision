@@ -47,6 +47,7 @@ run_analysis() {
         [ -f "$BASE_DIR/manifest.json" ] && cp "$BASE_DIR/manifest.json" "$IMAGE_DIR/manifest.json" 2>/dev/null || true
         [ -f "$BASE_DIR/icon.svg" ] && cp "$BASE_DIR/icon.svg" "$IMAGE_DIR/icon.svg" 2>/dev/null || true
         [ -f "$BASE_DIR/favicon.ico" ] && cp "$BASE_DIR/favicon.ico" "$IMAGE_DIR/favicon.ico" 2>/dev/null || true
+        [ -f "$BASE_DIR/lucide.min.js" ] && cp "$BASE_DIR/lucide.min.js" "$IMAGE_DIR/lucide.min.js" 2>/dev/null || true
         [ -f "$BASE_DIR/analysis.json" ] && cp "$BASE_DIR/analysis.json" "$IMAGE_DIR/analysis.json" 2>/dev/null || true
         [ -f "$BASE_DIR/bursts.json" ] && cp "$BASE_DIR/bursts.json" "$IMAGE_DIR/bursts.json" 2>/dev/null || true
         [ -f "$BASE_DIR/pins.json" ] && cp "$BASE_DIR/pins.json" "$IMAGE_DIR/pins.json" 2>/dev/null || true

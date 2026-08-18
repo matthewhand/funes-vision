@@ -43,7 +43,8 @@ Watcher + orchestrator, one instance per camera (`webcam-pipeline@.service`).
 - Regenerates `images.json` (newest-first file listing).
 - Sources `~/.litellm/.env` for `OPENROUTER_API_KEY` (cloud fallback only).
 - Runs `analyze_images.py`, then syncs `index.html`, the PWA assets
-  (`manifest.json`, `icon.svg`), and JSON artifacts into the camera web root.
+  (`manifest.json`, `icon.svg`, `favicon.ico`, pinned `lucide.min.js`),
+  and JSON artifacts into the camera web root.
 - Triggers: startup, every new image (inotify, 5s debounce), and a 60s
   idle loop ("catch-up sweep").
 - **Global lock** `/tmp/webcam_analysis.lock` (flock, 1h timeout): the
@@ -659,9 +660,9 @@ recommended, polling fallback), and an Ollama endpoint (`ollama_url`).
 
 ```bash
 # UI changes take effect immediately:
-cp index.html /mnt/models/Webcam21/index.html
-cp index.html /mnt/models/Webcam22/index.html
-# (create-index.sh also re-syncs it every sweep)
+cp index.html lucide.min.js /mnt/models/Webcam21/
+cp index.html lucide.min.js /mnt/models/Webcam22/
+# (create-index.sh also re-syncs them every sweep)
 
 # Pipeline changes: nothing to do - each sweep runs the script fresh.
 # API changes: sudo systemctl restart webcam-api
