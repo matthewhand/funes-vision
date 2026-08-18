@@ -614,6 +614,7 @@
       border-radius: var(--radius-pill); background: var(--accent); color: #fff;
       font-size: 0.7rem; font-weight: 700; line-height: 1;
     }
+    .filters-count[hidden] { display: none !important; }
     .active-filters-summary {
       font-size: var(--fs-chip); color: var(--accent-fg);
       max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -1823,7 +1824,7 @@
 
           <div class="search-box">
             <i data-lucide="search"></i>
-            <input type="text" id="search-input" class="search-input" placeholder="Search time, labels, or caption…">
+            <input type="text" id="search-input" class="search-input" placeholder="Search time, labels, or caption…" aria-label="Search gallery">
             <button id="search-clear" class="search-clear" type="button" aria-label="Clear search" hidden>
               <i data-lucide="x"></i>
             </button>
@@ -2072,8 +2073,8 @@
               <button class="time-pill" data-pill="night">Night</button>
             </div>
             <div class="dual-range-container">
-              <input type="range" id="time-start" min="0" max="23" value="0" class="time-slider">
-              <input type="range" id="time-end" min="0" max="23" value="23" class="time-slider">
+              <input type="range" id="time-start" min="0" max="23" value="0" class="time-slider" aria-label="Range start hour">
+              <input type="range" id="time-end" min="0" max="23" value="23" class="time-slider" aria-label="Range end hour">
             </div>
           </div>
 
@@ -2132,7 +2133,7 @@
         <button class="lightbox-btn" id="lightbox-download" aria-label="Download Snapshot" title="Download Snapshot">
           <i data-lucide="download"></i>
         </button>
-        <button class="lightbox-btn" id="lightbox-share" title="Copy shareable link">
+        <button class="lightbox-btn" id="lightbox-share" aria-label="Copy shareable link" title="Copy shareable link">
           <i data-lucide="link"></i>
         </button>
         <button class="lightbox-btn btn-close" id="lightbox-close" aria-label="Close (Esc)" title="Close (Esc)">
@@ -3680,6 +3681,30 @@
     // Group each object's presence into VISITS: a contiguous run where the
     // label is present becomes one visit (start, end, duration, frames,
     // caption). Single-frame flickers are smoothed out.
+    // === pure:visitPlayFrames ===
+    // Flipbook frames for a visit: the visit itself plus up to `maxContext`
+    // earlier stills from the SAME camera within `maxGapSec`. Never borrow a
+    // different camera or an hours-earlier scene as "lead-in".
+    function visitPlayFrames(items, start, end, maxContext, maxGapSec) {
+      maxContext = maxContext == null ? 2 : maxContext;
+      maxGapSec = maxGapSec == null ? 300 : maxGapSec;
+      if (!items || start < 0 || end < start || start >= items.length) return [];
+      const endIdx = Math.min(end, items.length - 1);
+      const ip = items[start].meta && items[start].meta.ip;
+      const t0 = items[start].meta && items[start].meta.dateObj;
+      let from = start;
+      for (let i = start - 1; i >= 0 && (start - from) < maxContext; i--) {
+        const m = items[i] && items[i].meta;
+        if (!m) break;
+        if (ip && m.ip && m.ip !== ip) break;
+        if (t0 && m.dateObj && (t0 - m.dateObj) > maxGapSec * 1000) break;
+        from = i;
+      }
+      const to = Math.min(items.length, endIdx + 1);
+      return items.slice(from, Math.min(to, from + 60)).map(x => x.f);
+    }
+    // === /pure:visitPlayFrames ===
+
     function computeVisits() {
       const items = state.allImages
         .map(f => ({ f, meta: parseFilename(f), a: state.analysis[f] }))
@@ -3700,10 +3725,7 @@
           const start = i;
           while (i < present.length && present[i]) i++;
           const end = i - 1; // inclusive last present frame
-          // Frames: 2 context before, through the end of the visit (cap 60)
-          const from = Math.max(0, start - 2);
-          const to = Math.min(present.length, end + 1);
-          const frames = items.slice(from, Math.min(to, from + 60)).map(x => x.f);
+          const frames = visitPlayFrames(items, start, end);
           // First Gemma caption seen during the visit
           let caption = '';
           for (let k = start; k <= end && !caption; k++) caption = entryCaption(items[k].a);
@@ -3846,7 +3868,7 @@
       const overlay = document.createElement('div');
       overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:2000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:16px;';
       overlay.innerHTML = `
-        <img id="evp-img" style="max-width:95vw;max-height:75vh;border-radius:8px;background:#111;">
+        <img id="evp-img" alt="" style="max-width:95vw;max-height:75vh;border-radius:8px;background:#111;">
         <div id="evp-label" style="color:white;font-size:0.85rem;text-align:center;"></div>
         <input type="range" id="evp-scrub" min="0" value="0" aria-label="Scrub through frames" style="width:min(95vw,520px);accent-color:var(--accent);cursor:pointer;">
         <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;">
@@ -3880,8 +3902,10 @@
         };
         imgEl.src = `thumbs/${frames[idx]}`;
         const meta = parseFilename(frames[idx]);
+        const frameLabel = `${ev.label || 'Visit'} ${ev.type || ''} frame ${idx + 1} of ${frames.length}`.replace(/\s+/g, ' ').trim();
+        imgEl.alt = frameLabel + (meta ? `, ${meta.formattedDate} ${meta.formattedTime}` : '');
         labelEl.innerHTML = `<span style="text-transform:capitalize;">${escapeHtml(ev.label)}</span> ${escapeHtml(ev.type)} &middot; frame ${idx + 1}/${frames.length}` +
-          (meta ? `<br>${meta.formattedDate} ${meta.formattedTime}` : '');
+          (meta ? `<br>${escapeHtml(meta.formattedDate)} ${escapeHtml(meta.formattedTime)}` : '');
         fullEl.href = frames[idx];
         if (Number(scrubEl.value) !== idx) scrubEl.value = idx;
       };
@@ -4061,9 +4085,9 @@
             const displayLabel = label.replace(/_/g, ' ');
             const displayValue = isString ? `: ${value}` : '';
             detectionsHtml += `
-              <span class="badge badge-ai ${cls}" role="img" aria-label="HA ${displayLabel}${displayValue}">
+              <span class="badge badge-ai ${cls}" role="img" aria-label="${escapeHtml('HA ' + displayLabel + displayValue)}">
                 <i data-lucide="${icon}" aria-hidden="true"></i>
-                <span style="text-transform: capitalize;" aria-hidden="true">${escapeHtml(displayLabel)}${displayValue}</span>
+                <span style="text-transform: capitalize;" aria-hidden="true">${escapeHtml(displayLabel)}${escapeHtml(displayValue)}</span>
               </span>`;
           });
         }
@@ -4097,13 +4121,13 @@
             <span class="row-ago">${escapeHtml(ago)}</span>
           </div>
           <div class="card-actions" onclick="event.stopPropagation()">
-            <button class="action-icon-btn pin-btn ${state.pins.has(filename) ? 'pinned' : ''}" title="Pin (never auto-delete)">
+            <button type="button" class="action-icon-btn pin-btn ${state.pins.has(filename) ? 'pinned' : ''}" title="Pin (never auto-delete)" aria-label="Pin (never auto-delete)">
               <i data-lucide="pin"></i>
             </button>
-            <button class="action-icon-btn del-btn" title="Delete image">
+            <button type="button" class="action-icon-btn del-btn" title="Delete image" aria-label="Delete image">
               <i data-lucide="trash-2"></i>
             </button>
-            <a href="${filename}" download class="action-icon-btn" title="Download">
+            <a href="${filename}" download class="action-icon-btn" title="Download" aria-label="Download image">
               <i data-lucide="download"></i>
             </a>
           </div>
@@ -4116,6 +4140,7 @@
       card.addEventListener('click', () => openLightbox(index));
       // Enter/Space activate the card like a button (Space would otherwise scroll).
       card.addEventListener('keydown', (e) => {
+        if (e.target.closest('.card-actions')) return;
         if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
           e.preventDefault();
           openLightbox(index);
@@ -4318,7 +4343,11 @@
 
     function updateSliderLabel() {
       const label = document.getElementById('time-range-display');
-      if (label) label.textContent = `${formatHour(state.timeStart)} - ${formatHour(state.timeEnd)}`;
+      if (label) {
+        label.textContent = timeRangeIsDefault(state.timeStart, state.timeEnd)
+          ? 'All day'
+          : `${formatHour(state.timeStart)} - ${formatHour(state.timeEnd)}`;
+      }
       const wrapper = document.querySelector('.time-slider-wrapper');
       if (wrapper) {
         const isDefault = timeRangeIsDefault(state.timeStart, state.timeEnd);
@@ -4502,12 +4531,12 @@
 
       const caption = entryCaption(analysis);
       const captionHtml = caption
-        ? `<div class="burst-summary" style="font-style:italic;"><strong>AI:</strong> &ldquo;${caption}&rdquo;</div>` : '';
+        ? `<div class="burst-summary" style="font-style:italic;"><strong>AI:</strong> &ldquo;${escapeHtml(caption)}&rdquo;</div>` : '';
 
       let burstHtml = '';
       if (burst) {
         burstHtml = `<div class="burst-summary">
-          <strong>Sequence Activity:</strong> ${burst.summary}
+          <strong>Sequence Activity:</strong> ${escapeHtml(burst.summary || '')}
         </div>`;
       }
 
