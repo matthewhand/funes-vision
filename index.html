@@ -658,7 +658,7 @@
     @media (prefers-reduced-motion: reduce) {
       .image-card:hover, .card:hover { transform: none; }
     }
-    /* Lightbox / player control bars: wrap on narrow viewports; drop redundant zoom */
+    /* Lightbox / player control bars: wrap on narrow viewports */
     .lightbox-controls {
       display: flex; flex-wrap: wrap; gap: var(--space-1); justify-content: flex-end;
       max-width: 100%;
@@ -666,7 +666,6 @@
     @media (max-width: 768px) {
       .lightbox-header { flex-wrap: wrap; gap: var(--space-2); }
       .lightbox-controls { width: 100%; justify-content: center; }
-      #lightbox-zoom-in, #lightbox-zoom-out { display: none; }
     }
     /* Right-aligned toolbar actions cluster (Filters + Settings/Integrations/AI).
        In .compact (set by JS when space is tight, via actionsOverflow), the
@@ -1557,7 +1556,7 @@
       object-fit: contain;
       display: block;
       user-select: none;
-      pointer-events: none;
+      touch-action: none;
       transition: transform 0.05s linear;
       transform-origin: center center;
     }
@@ -4394,6 +4393,12 @@
 
       state.renderedCount = end;
       lucide.createIcons();
+      const sent = document.getElementById('sentinel-text');
+      if (sent) {
+        sent.textContent = state.renderedCount >= state.filteredImages.length
+          ? 'All snapshots loaded'
+          : '';
+      }
 
       // Ensure the viewport is full - trigger again if sentinel is still visible
       if (state.renderedCount < state.filteredImages.length && isSentinelVisible()) {
@@ -5647,25 +5652,68 @@ html += `<div style="margin-top:6px;padding:4px 6px;background:var(--accent-10);
       document.getElementById('lightbox-zoom-in').addEventListener('click', () => zoomLightbox(1.2));
       document.getElementById('lightbox-zoom-out').addEventListener('click', () => zoomLightbox(1 / 1.2));
 
-      // Touch swipe to navigate (mobile). Only when NOT zoomed — otherwise a
-      // touch drag is a pan. Horizontal-dominant swipe past a threshold flips.
-      const lbImg = document.getElementById('lightbox-image');
-      let swipeX = 0, swipeY = 0;
-      lbImg.addEventListener('touchstart', (e) => {
-        if (state.zoomScale > 1 || e.touches.length !== 1) { swipeX = null; return; }
-        swipeX = e.touches[0].clientX; swipeY = e.touches[0].clientY;
+      // Touch: swipe to next/prev (1 finger, not zoomed), pinch to zoom,
+      // 1-finger pan when zoomed. Bound on the wrapper — the <img> used to
+      // have pointer-events:none so these never fired.
+      const zoomContainer = document.getElementById('image-zoom-container');
+      let swipeX = null, swipeY = 0, pinchStartDist = 0, pinchStartScale = 1;
+      const pinchDist = (touches) => Math.hypot(
+        touches[0].clientX - touches[1].clientX,
+        touches[0].clientY - touches[1].clientY);
+
+      zoomContainer.addEventListener('touchstart', (e) => {
+        if (e.touches.length === 2) {
+          pinchStartDist = pinchDist(e.touches);
+          pinchStartScale = state.zoomScale;
+          swipeX = null;
+          state.isPanning = false;
+          return;
+        }
+        if (e.touches.length === 1) {
+          if (state.zoomScale > 1) {
+            state.isPanning = true;
+            state.panStartX = e.touches[0].clientX - state.translateX;
+            state.panStartY = e.touches[0].clientY - state.translateY;
+            swipeX = null;
+          } else {
+            swipeX = e.touches[0].clientX;
+            swipeY = e.touches[0].clientY;
+          }
+        }
       }, { passive: true });
-      lbImg.addEventListener('touchend', (e) => {
-        if (swipeX == null) return;
+
+      zoomContainer.addEventListener('touchmove', (e) => {
+        if (e.touches.length === 2 && pinchStartDist > 0) {
+          e.preventDefault();
+          const next = pinchStartScale * (pinchDist(e.touches) / pinchStartDist);
+          state.zoomScale = Math.min(state.zoomMax, Math.max(state.zoomMin, next));
+          if (state.zoomScale === 1) { state.translateX = 0; state.translateY = 0; }
+          updateZoomTransform();
+          return;
+        }
+        if (state.isPanning && e.touches.length === 1) {
+          e.preventDefault();
+          state.translateX = e.touches[0].clientX - state.panStartX;
+          state.translateY = e.touches[0].clientY - state.panStartY;
+          updateZoomTransform();
+        }
+      }, { passive: false });
+
+      zoomContainer.addEventListener('touchend', (e) => {
+        if (e.touches.length > 0) return;
+        state.isPanning = false;
+        pinchStartDist = 0;
+        if (swipeX == null || !e.changedTouches[0]) return;
         const dx = e.changedTouches[0].clientX - swipeX;
         const dy = e.changedTouches[0].clientY - swipeY;
+        swipeX = null;
+        if (state.zoomScale > 1) return;
         if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.5) {
-          navigateLightbox(dx < 0 ? 1 : -1);  // swipe left -> next
+          navigateLightbox(dx < 0 ? 1 : -1);
         }
       }, { passive: true });
 
       // Lightbox Pan & Zoom Mouse Drag Event Handlers
-      const zoomContainer = document.getElementById('image-zoom-container');
       
       zoomContainer.addEventListener('mousedown', (e) => {
         if (state.zoomScale <= 1) return;
