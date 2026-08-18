@@ -361,6 +361,16 @@
       color: var(--text-secondary);
       border-color: var(--border-color);
     }
+    .live-badge.poll {
+      background: rgba(245, 158, 11, 0.08);
+      color: #f59e0b;
+      border-color: rgba(245, 158, 11, 0.25);
+    }
+    .live-badge.stale {
+      background: rgba(239, 68, 68, 0.08);
+      color: #ef4444;
+      border-color: rgba(239, 68, 68, 0.25);
+    }
 
     .live-dot {
       width: 7px;
@@ -1765,6 +1775,7 @@
       border: 1px solid var(--accent-25); border-radius: var(--radius-pill); background: var(--accent-10);
       font-size: var(--fs-chip); cursor: pointer; color: var(--text-primary); }
     .saved-chip:hover { background: var(--accent-15); }
+    .saved-chip .saved-apply { border: none; background: none; color: inherit; font: inherit; cursor: pointer; padding: 0; }
     .saved-chip .saved-del { border: none; background: none; color: var(--text-secondary); cursor: pointer;
       font-size: 0.85rem; line-height: 1; padding: 0 1px; }
     .saved-chip .saved-del:hover { color: var(--danger); }
@@ -4659,24 +4670,31 @@
     let liveImageRefreshTimer = null;
     let livePendingNew = [];
 
-    function toggleLiveMode(on) {
-      state.isLive = (typeof on === 'boolean') ? on : !state.isLive;
+    function paintLiveBadge() {
       const badge = document.getElementById('live-toggle');
       const text = document.getElementById('live-text');
-      
+      if (!badge || !text) return;
+      const copy = liveBadgeCopy(state.isLive, state.streamConnected, state.lastPingTs, Date.now() / 1000);
+      text.textContent = copy.text;
+      badge.classList.toggle('paused', copy.tone === 'off');
+      badge.classList.toggle('poll', copy.tone === 'poll');
+      badge.classList.toggle('stale', copy.tone === 'stale');
+      badge.setAttribute('aria-checked', state.isLive ? 'true' : 'false');
+      badge.title = copy.tone === 'off'
+        ? 'Live updates paused'
+        : (copy.tone === 'live' ? 'Live updates via event stream' : copy.text);
+    }
+
+    function toggleLiveMode(on) {
+      state.isLive = (typeof on === 'boolean') ? on : !state.isLive;
       if (state.isLive) {
-        badge.classList.remove('paused');
-        text.textContent = 'Auto-refresh: ON';
-        badge.setAttribute('aria-checked', 'true');
         startEventStream();
         startPolling();
       } else {
-        badge.classList.add('paused');
-        text.textContent = 'Auto-refresh: OFF';
-        badge.setAttribute('aria-checked', 'false');
         stopEventStream();
         stopPolling();
       }
+      paintLiveBadge();
     }
 
     function startPolling() {
@@ -4728,6 +4746,18 @@
     }
     // === /pure:streamStatusText ===
 
+    // === pure:liveBadgeCopy ===
+    // Header Live switch: off / live / polling / stale. Pure so the badge
+    // cannot claim "ON" when the stream is dead.
+    function liveBadgeCopy(isLive, connected, lastPingTs, now) {
+      if (!isLive) return { text: 'Auto-refresh: OFF', tone: 'off' };
+      const st = streamStatusText(connected, lastPingTs, now);
+      if (st.ok) return { text: 'Live', tone: 'live' };
+      if (/stale/i.test(st.label)) return { text: 'Stale', tone: 'stale' };
+      return { text: 'Polling', tone: 'poll' };
+    }
+    // === /pure:liveBadgeCopy ===
+
     function startEventStream() {
       if (!window.EventSource) return;
       if (!state.isLive) return;
@@ -4742,6 +4772,7 @@
         // SSE live -> slow the poll to a backstop (SSE handles immediacy)
         state.streamConnected = true;
         state.lastPingTs = Date.now() / 1000;
+        paintLiveBadge();
         if (state.pollingInterval) clearInterval(state.pollingInterval);
         state.pollingInterval = setInterval(() => {
           if (!state.isLive) { stopPolling(); return; }
@@ -4753,6 +4784,7 @@
       es.addEventListener('ping', () => {
         if (!state.isLive) return;
         state.lastPingTs = Date.now() / 1000;
+        paintLiveBadge();
       });
       // Detection events patch in-memory state and re-render from it — NO
       // full-file refetch (analysis.json reload is demoted to the 30s reconcile
@@ -4797,6 +4829,7 @@
         if (!state.isLive) return;
         // Auto-reconnects; meanwhile make sure the responsive poll is running
         state.streamConnected = false;
+        paintLiveBadge();
         if (!state.pollingInterval) startPolling();
       };
     }
@@ -4822,6 +4855,15 @@
         pill.onclick = () => {
           state.newActivity = 0;
           document.title = BASE_TITLE;
+          // Drop narrowing so the newest visit is actually on screen.
+          state.activeDateFilter = 'all';
+          state.timeStart = 0;
+          state.timeEnd = 23;
+          state.activeHourChartFilter = null;
+          const ss = document.getElementById('time-start'), se = document.getElementById('time-end');
+          if (ss) ss.value = 0; if (se) se.value = 23;
+          if (typeof updateSliderLabel === 'function') updateSliderLabel();
+          applyFiltersAndSearch();
           window.scrollTo({ top: 0, behavior: 'smooth' });
           pill.remove();
         };
@@ -4861,7 +4903,7 @@
     document.addEventListener('DOMContentLoaded', () => {
       const profile = getFeedProfile();
       document.getElementById('camera-title').textContent = profile.title;
-      document.getElementById('camera-subtitle').textContent = `${profile.subtitle} (${profile.ip})`;
+      document.getElementById('camera-subtitle').textContent = profile.subtitle;
       document.title = `${profile.title} - CamLog`;
 
       // Set switch feed details
@@ -4875,6 +4917,7 @@
       loadData().then(maybeOpenDeepLink);
       startPolling();
       startEventStream();
+      paintLiveBadge();
 
       // Top control listeners
       document.getElementById('btn-refresh').addEventListener('click', () => loadData(false));
@@ -4949,15 +4992,20 @@
         list.forEach(s => {
           const chip = document.createElement('span');
           chip.className = 'saved-chip';
-          const label = document.createElement('span');
-          label.textContent = s.name;
-          label.title = 'Apply "' + s.name + '"';
-          label.onclick = () => applySavedSearch(s.filters);
+          const apply = document.createElement('button');
+          apply.type = 'button';
+          apply.className = 'saved-apply';
+          apply.textContent = s.name;
+          apply.title = 'Apply "' + s.name + '"';
+          apply.setAttribute('aria-label', 'Apply saved view ' + s.name);
+          apply.onclick = () => applySavedSearch(s.filters);
           const del = document.createElement('button');
+          del.type = 'button';
           del.className = 'saved-del'; del.textContent = '×';
           del.title = 'Delete "' + s.name + '"';
+          del.setAttribute('aria-label', 'Delete saved view ' + s.name);
           del.onclick = (e) => { e.stopPropagation(); persistSaved(removeSearch(loadSaved(), s.name)); renderSavedSearches(); };
-          chip.append(label, del);
+          chip.append(apply, del);
           el.appendChild(chip);
         });
       }
@@ -5509,6 +5557,7 @@ html += `<div style="margin-top:6px;padding:4px 6px;background:var(--accent-10);
       // Always-visible AI activity indicator on the toolbar button:
       // pulsing amber + elapsed time while inferring, green when idle
       async function updateAiLiveIndicator() {
+        if (typeof paintLiveBadge === 'function') paintLiveBadge();
         const dot = document.getElementById('ai-live-dot');
         const label = document.getElementById('ai-live-label');
         try {
