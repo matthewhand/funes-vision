@@ -568,15 +568,19 @@ class Handler(BaseHTTPRequestHandler):
 
     @staticmethod
     def _preliminary_detections(analysis):
-        """Files with detector-only labels (a fast_pass present) and at least
-        one true label — awaiting the LLM verdict. Disjoint from
-        _verified_detections by construction. With deep passes disabled these
-        are the only detections the stream has to surface. Car-only
-        no_trigger rows have no fast_pass and are not preliminary either."""
+        """Detector-only hits with ≥1 YOLO True key.
+
+        Includes rows with a ``fast_pass`` (awaiting LLM) and
+        ``_llm_skip == "no_trigger"`` with a detector label (the live
+        car-only shape has no fast_pass). Disjoint from
+        _verified_detections. Labels are YOLO_PRESENCE_KEYS only.
+        """
         from analyze_images import is_llm_verified
         out = {}
         for f, v in analysis.items():
-            if is_llm_verified(v) or "fast_pass" not in v:
+            if not isinstance(v, dict) or is_llm_verified(v):
+                continue
+            if "fast_pass" not in v and v.get("_llm_skip") != "no_trigger":
                 continue
             labels = Handler._detection_labels(v)
             if labels:

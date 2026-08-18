@@ -166,7 +166,7 @@ A named `event: ping` heartbeat is sent each cycle.
 | Event | Payload | Fires when |
 |-------|---------|-----------|
 | `image.new` | `{"file": "<name>"}` | A frame first appears in `analysis.json` (right after the fast pass) — the earliest new-frame signal the API has. |
-| `detection.preliminary` | `{"file": "<name>", "labels": ["car", ...]}` | A detector-only hit (`fast_pass` present, not `is_llm_verified`) with a true label, before/without an LLM verdict. Suppressed once promoted to verified. The only live detections while deep passes are off. Car-only `no_trigger` rows have no `fast_pass` and are not preliminary either. |
+| `detection.preliminary` | `{"file": "<name>", "labels": ["car", ...]}` | A detector-only hit (`fast_pass` present **or** `_llm_skip == "no_trigger"` with ≥1 YOLO True key) that is not `is_llm_verified`. Labels are `YOLO_PRESENCE_KEYS` only. Suppressed once promoted to verified. The only live detections while deep passes are off. Car-only `{car: true, _llm_skip: "no_trigger"}` is preliminary. |
 | `new-detection` | `{"file": "<name>", "labels": ["person", ...]}` | An image gains a successful LLM merge (`_llm` dict, no `_llm_skip`) with ≥1 true label. Absence of `fast_pass` is not a verdict. |
 | `ping` | `{}` | Heartbeat every ~3 s; lets the client detect a silently-stalled connection (also keeps proxies unbuffered). |
 | `new-burst` | `{"id": "<burst-id>", "summary": "<text>"}` | A new burst/visit is written to `bursts.json`. |

@@ -363,6 +363,12 @@ def detector_labels(fp_results):
             if k not in LLM_META_KEYS and k not in LLM_ALL_FLAG_KEYS}
 
 
+def detector_true_labels(fp_results):
+    """Sorted YOLO/detector keys that are True. Never HA flag names."""
+    rec = fp_results or {}
+    return sorted(k for k in YOLO_PRESENCE_KEYS if rec.get(k) is True)
+
+
 def is_llm_verified(rec):
     """True only after a successful merge_llm_into_fastpass.
 
@@ -781,18 +787,37 @@ def run_deep_pass(image_path, img_name, can_run_chain, api_key, trigger, fp_labe
     LAST_DURATION_S = time.time() - started
     log_inference(img_name, used, started, LAST_DURATION_S,
                   labels, result is not None, trigger)
-    # Per-image notify (objects/all modes) — ONLY for freshly-queued frames,
-    # never the idle backfill of the historical archive (would be a flood).
-    # Labels are detector True keys (person/dog/car/…), not HA flag names.
-    # Caption prefers a model description; else synthesized HA facts.
-    # Guarded: a notifier failure must never break the sweep.
-    if isinstance(result, dict) and trigger == "priority":
-        try:
-            from integrations import notify_image
-            notify_image(img_name, list(fp_labels or []), entry_caption(result), image_path)
-        except Exception as e:
-            print(f"notify_image failed: {e}")
+    # Per-image Slack/ntfy lives in maybe_notify_urgent_frame at the persist
+    # site so detector-only writes (budget / ollama down / deep off) ping too.
+    # Do not notify here: a successful priority pass would double-fire.
     return result
+
+
+def maybe_notify_urgent_frame(img, rec, image_path, *, trigger, prev=None):
+    """Notify after persisting an urgent detector hit.
+
+    Fires on trigger=="priority" when the image is new or detector True
+    keys changed. Skips car-only no_trigger, idle backfill, and unchanged
+    skip-partials. Caption is entry_caption after a successful merge;
+    objects mode does not need one. A notifier failure never breaks the sweep.
+    """
+    if trigger != "priority":
+        return False
+    if not isinstance(rec, dict) or not llm_should_trigger(rec):
+        return False
+    labels = detector_true_labels(rec)
+    if not labels:
+        return False
+    if isinstance(prev, dict) and detector_true_labels(prev) == labels:
+        return False
+    caption = entry_caption(rec) if is_llm_verified(rec) else ""
+    try:
+        from integrations import notify_image
+        notify_image(img, labels, caption, image_path)
+    except Exception as e:
+        print(f"notify_image failed: {e}")
+    return True
+
 
 def ollama_available():
     """True if a local Ollama server is reachable. Generous timeout:
@@ -1490,6 +1515,7 @@ def main(retention_only=False):
                 if needs_deep and urgent:
                     print(f"Deep Pass Required for {img}: {fp_results}")
                     result = None
+                    prev = analysis_data.get(img)
                     # Only attempt (and spend budget) when an engine is
                     # actually available; otherwise leave the partial in
                     # place for a later sweep instead of logging a
@@ -1523,6 +1549,9 @@ def main(retention_only=False):
                         analysis_data[img] = merge_llm_into_fastpass(
                             fp_results, None, skip_reason=skip)
                     new_analysis = True
+                    maybe_notify_urgent_frame(
+                        img, analysis_data[img], image_path,
+                        trigger="priority", prev=prev)
                     try:
                         import ha_mqtt
                         rec = analysis_data[img]

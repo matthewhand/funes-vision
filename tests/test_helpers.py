@@ -618,7 +618,17 @@ class TestDetectionExtract(unittest.TestCase):
         h = api_server.Handler
         self.assertEqual(h._preliminary_detections(self.ANALYSIS),
                          {"a.jpg": ["car"], "e.jpg": ["car", "person"],
-                          "i.jpg": ["person"]})
+                          "h.jpg": ["car"], "i.jpg": ["person"]})
+
+    def test_no_trigger_car_is_preliminary_not_verified(self):
+        rec = {"car": True, "_llm_skip": "no_trigger"}
+        self.assertEqual(
+            api_server.Handler._preliminary_detections({"x.jpg": rec}),
+            {"x.jpg": ["car"]})
+        self.assertEqual(
+            api_server.Handler._verified_detections({"x.jpg": rec}),
+            {})
+        self.assertFalse(analyze_images.is_llm_verified(rec))
 
     def test_verified_and_preliminary_are_disjoint(self):
         h = api_server.Handler
@@ -626,7 +636,7 @@ class TestDetectionExtract(unittest.TestCase):
         p = set(h._preliminary_detections(self.ANALYSIS))
         self.assertEqual(v & p, set())
         self.assertNotIn("h.jpg", v)
-        self.assertNotIn("h.jpg", p)
+        self.assertIn("h.jpg", p)
 
 
 class TestNewEntries(unittest.TestCase):
@@ -991,58 +1001,16 @@ class TestE2bSchema(unittest.TestCase):
                          ai.BACK_SCHEMA)
         self.assertEqual(captured["payload"]["max_tokens"], 160)
 
-    def test_notify_uses_detector_labels_and_caption(self):
-        """objects notify must get YOLO labels, not HA true keys."""
-        ai = analyze_images
-        captured = {}
-
-        def fake_local(path):
-            return {
-                "postal_delivery": False, "postal_how": "none",
-                "porch_access": True, "animal_detected": False,
-                "animal_type": "none",
-            }
-
-        def fake_notify(name, labels, caption, path):
-            captured["name"] = name
-            captured["labels"] = labels
-            captured["caption"] = caption
-            captured["path"] = path
-
-        with tempfile.TemporaryDirectory() as d:
-            orig_st, orig_log = ai.INFERENCE_STATUS, ai.INFERENCE_LOG
-            orig_local, orig_cloud = ai.analyze_image_local, ai.analyze_image_openrouter
-            orig_notify = intg.notify_image
-            ai.INFERENCE_STATUS = os.path.join(d, "st.json")
-            ai.INFERENCE_LOG = os.path.join(d, "log.json")
-            ai.analyze_image_local = fake_local
-            ai.analyze_image_openrouter = lambda *a, **k: None
-            intg.notify_image = fake_notify
-            ai.RATE_LIMITED = False
-            try:
-                res = ai.run_deep_pass(
-                    "/mnt/models/Webcam21/10.0.0.21_x.jpg", "x.jpg",
-                    True, None, "priority", fp_labels=["person", "dog"])
-            finally:
-                ai.INFERENCE_STATUS = orig_st
-                ai.INFERENCE_LOG = orig_log
-                ai.analyze_image_local = orig_local
-                ai.analyze_image_openrouter = orig_cloud
-                intg.notify_image = orig_notify
-        self.assertEqual(res["porch_access"], True)
-        self.assertEqual(captured["labels"], ["person", "dog"])
-        self.assertEqual(captured["caption"], "Someone at the porch")
-        self.assertNotIn("porch_access", captured["labels"])
-
-    def test_notify_skips_backfill_and_prefers_description(self):
+    def test_run_deep_pass_does_not_notify(self):
+        """Notify is only at the persist site so skip-partials can ping once."""
         ai = analyze_images
         calls = []
 
         def fake_local(path):
-            return {"description": "A person at the gate", "porch_access": True}
+            return {"porch_access": True}
 
-        def fake_notify(name, labels, caption, path):
-            calls.append((labels, caption))
+        def fake_notify(*a, **k):
+            calls.append((a, k))
 
         with tempfile.TemporaryDirectory() as d:
             orig_st, orig_log = ai.INFERENCE_STATUS, ai.INFERENCE_LOG
@@ -1054,51 +1022,16 @@ class TestE2bSchema(unittest.TestCase):
             intg.notify_image = fake_notify
             ai.RATE_LIMITED = False
             try:
+                ai.run_deep_pass("x.jpg", "x.jpg", True, None, "priority",
+                                 fp_labels=["person"])
                 ai.run_deep_pass("x.jpg", "x.jpg", True, None, "backfill",
                                  fp_labels=["person"])
-                self.assertEqual(calls, [])
-                ai.run_deep_pass("x.jpg", "x.jpg", True, None, "priority",
-                                 fp_labels=["person"])
             finally:
                 ai.INFERENCE_STATUS = orig_st
                 ai.INFERENCE_LOG = orig_log
                 ai.analyze_image_local = orig_local
                 intg.notify_image = orig_notify
-        self.assertEqual(calls, [(["person"], "A person at the gate")])
-
-    def test_notify_ha_false_still_sends_detector_labels(self):
-        """A person/dog YOLO hit with every HA flag false must still notify."""
-        ai = analyze_images
-        captured = {}
-
-        def fake_local(path):
-            return {
-                "postal_delivery": False, "porch_access": False,
-                "dog_walked": False, "animal_detected": False,
-            }
-
-        def fake_notify(name, labels, caption, path):
-            captured["labels"] = labels
-            captured["caption"] = caption
-
-        with tempfile.TemporaryDirectory() as d:
-            orig_st, orig_log = ai.INFERENCE_STATUS, ai.INFERENCE_LOG
-            orig_local, orig_notify = ai.analyze_image_local, intg.notify_image
-            ai.INFERENCE_STATUS = os.path.join(d, "st.json")
-            ai.INFERENCE_LOG = os.path.join(d, "log.json")
-            ai.analyze_image_local = fake_local
-            intg.notify_image = fake_notify
-            ai.RATE_LIMITED = False
-            try:
-                ai.run_deep_pass("x.jpg", "x.jpg", True, None, "priority",
-                                 fp_labels=["person"])
-            finally:
-                ai.INFERENCE_STATUS = orig_st
-                ai.INFERENCE_LOG = orig_log
-                ai.analyze_image_local = orig_local
-                intg.notify_image = orig_notify
-        self.assertEqual(captured["labels"], ["person"])
-        self.assertEqual(captured["caption"], "")
+        self.assertEqual(calls, [])
 
 
 class TestCameraOfflineHours(unittest.TestCase):
@@ -1195,6 +1128,89 @@ class TestNotifyImageMode(unittest.TestCase):
         }
         intg.notify_image("x.jpg", ["person"], "", "/tmp/x.jpg")
         self.assertEqual(self.posts, [])
+
+    def _objects(self):
+        intg.load_config = lambda: {
+            "slack": {"enabled": True, "notify_mode": "objects"},
+        }
+
+    def test_urgent_llm_disabled_skip_still_notifies(self):
+        self._objects()
+        rec = analyze_images.merge_llm_into_fastpass(
+            {"person": True}, None, skip_reason="llm_disabled")
+        analyze_images.maybe_notify_urgent_frame(
+            "x.jpg", rec, "/tmp/x.jpg", trigger="priority")
+        self.assertEqual(len(self.posts), 1)
+        self.assertEqual(self.posts[0]["labels"], ["person"])
+        self.assertEqual(self.posts[0]["caption"], "")
+        analyze_images.maybe_notify_urgent_frame(
+            "x.jpg", rec, "/tmp/x.jpg", trigger="priority", prev=rec)
+        self.assertEqual(len(self.posts), 1)
+
+    def test_urgent_budget_skip_still_notifies(self):
+        self._objects()
+        rec = analyze_images.merge_llm_into_fastpass(
+            {"person": True, "dog": True}, None, skip_reason="budget")
+        analyze_images.maybe_notify_urgent_frame(
+            "x.jpg", rec, "/tmp/x.jpg", trigger="priority")
+        self.assertEqual(len(self.posts), 1)
+        self.assertEqual(self.posts[0]["labels"], ["dog", "person"])
+        self.assertEqual(self.posts[0]["caption"], "")
+
+    def test_car_only_no_trigger_does_not_notify(self):
+        self._objects()
+        rec = {"car": True, "_llm_skip": "no_trigger"}
+        analyze_images.maybe_notify_urgent_frame(
+            "x.jpg", rec, "/tmp/x.jpg", trigger="priority")
+        self.assertEqual(self.posts, [])
+
+    def test_backfill_trigger_does_not_notify(self):
+        self._objects()
+        rec = {
+            "person": True, "porch_access": True,
+            "_llm": {"porch_access": True},
+        }
+        analyze_images.maybe_notify_urgent_frame(
+            "x.jpg", rec, "/tmp/x.jpg", trigger="backfill")
+        self.assertEqual(self.posts, [])
+
+    def test_merge_success_notifies_detector_labels_and_caption(self):
+        self._objects()
+        rec = analyze_images.merge_llm_into_fastpass(
+            {"person": True, "dog": True},
+            {"porch_access": True},
+            schema=analyze_images.FRONT_SCHEMA)
+        analyze_images.maybe_notify_urgent_frame(
+            "x.jpg", rec, "/tmp/x.jpg", trigger="priority")
+        self.assertEqual(len(self.posts), 1)
+        self.assertEqual(self.posts[0]["labels"], ["dog", "person"])
+        self.assertEqual(self.posts[0]["caption"], "Someone at the porch")
+        self.assertNotIn("porch_access", self.posts[0]["labels"])
+
+    def test_detector_label_change_renotifies(self):
+        self._objects()
+        prev = analyze_images.merge_llm_into_fastpass(
+            {"person": True}, None, skip_reason="budget")
+        rec = analyze_images.merge_llm_into_fastpass(
+            {"person": True, "dog": True}, None, skip_reason="budget")
+        analyze_images.maybe_notify_urgent_frame(
+            "x.jpg", rec, "/tmp/x.jpg", trigger="priority", prev=prev)
+        self.assertEqual(self.posts[0]["labels"], ["dog", "person"])
+
+    def test_notifier_failure_does_not_raise(self):
+        orig = intg.notify_image
+
+        def boom(*a, **k):
+            raise RuntimeError("slack down")
+
+        intg.notify_image = boom
+        try:
+            rec = analyze_images.merge_llm_into_fastpass(
+                {"person": True}, None, skip_reason="llm_disabled")
+            analyze_images.maybe_notify_urgent_frame(
+                "x.jpg", rec, "/tmp/x.jpg", trigger="priority")
+        finally:
+            intg.notify_image = orig
 
 
 if __name__ == "__main__":

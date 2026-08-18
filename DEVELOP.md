@@ -428,8 +428,9 @@ localStorage: `webcam_ai_blacklist` (hidden labels) and
 - `llm_verified` — `_llm` is a dict and `_llm_skip` is absent
 
 SSE `new-detection` uses the same `is_llm_verified` gate
-(`_verified_detections`). `detection.preliminary` requires a `fast_pass`
-key and is disjoint from verified.
+(`_verified_detections`). `detection.preliminary` is detector-only
+(`fast_pass` present, or `_llm_skip == "no_trigger"` with a YOLO True
+key) and is disjoint from verified.
 
 Flipping a verified entry back to `"fast_pass": "partial"` re-queues it
 for priority LLM re-scan (used for the one-off re-scan of mislabeled
