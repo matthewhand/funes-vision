@@ -457,7 +457,7 @@ move → verify) lives in [ROADMAP.md](ROADMAP.md).
 | `min_mem_for_local_gb` | 6.0 | min free RAM to attempt a **local** model; a `:cloud` model ignores this (see `runnable_chain`) |
 | `allow_cloud` | false | permit OpenRouter fallback (separate from an Ollama `:cloud` primary) |
 | `ollama_url` | http://localhost:11434 | local LLM endpoint |
-| `model_local` | gemma4:e2b | Ollama model tag (back-compat default for `model_primary`; import-time fallback in code is still `gemma4:12b`) |
+| `model_local` | gemma4:e2b | Ollama model tag (back-compat default for `model_primary`; import-time fallback in code is also `gemma4:e2b`) |
 | `model_primary` | gemma4:e2b | primary inference model via Ollama (local tag or a `:cloud` model) |
 | `model_fallback` | gemma4:e2b | optional fallback tried when the primary errors/rate-limits |
 | `max_deep_passes` | 30 | LLM calls per camera per sweep (local+cloud; import-time fallback is 15) |
