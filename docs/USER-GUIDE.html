@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Webcam gallery — how to use it</title>
+  <style>
+    :root {
+      --bg: #0b1220;
+      --card: #121a2b;
+      --text: #e8eef9;
+      --muted: #9aa8c2;
+      --accent: #3b82f6;
+      --line: #243049;
+      --ok: #10b981;
+      --warn: #f59e0b;
+    }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      font: 17px/1.55 ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+    .wrap { max-width: 880px; margin: 0 auto; padding: 32px 20px 80px; }
+    h1 { font-size: 2rem; line-height: 1.2; margin: 0 0 12px; }
+    h2 { font-size: 1.35rem; margin: 2.4rem 0 0.7rem; padding-top: 0.4rem; border-top: 1px solid var(--line); }
+    h3 { font-size: 1.05rem; margin: 1.4rem 0 0.5rem; color: #c9d6ee; }
+    p, li { color: var(--text); }
+    .lede, .muted { color: var(--muted); }
+    a { color: #93c5fd; }
+    nav {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 14px 18px;
+      margin: 20px 0 28px;
+    }
+    nav strong { display: block; margin-bottom: 8px; }
+    nav ol { margin: 0; padding-left: 1.2rem; columns: 2; gap: 24px; }
+    @media (max-width: 640px) { nav ol { columns: 1; } }
+    nav li { margin: 0.25rem 0; }
+    img {
+      display: block;
+      width: 100%;
+      height: auto;
+      border-radius: 10px;
+      border: 1px solid var(--line);
+      margin: 14px 0 8px;
+    }
+    figcaption { color: var(--muted); font-size: 0.85rem; margin: 0 0 1.2rem; }
+    table { width: 100%; border-collapse: collapse; margin: 12px 0 20px; font-size: 0.95rem; }
+    th, td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+    th { color: var(--muted); font-weight: 600; }
+    blockquote.callout {
+      margin: 16px 0;
+      padding: 12px 16px;
+      border-left: 4px solid var(--warn);
+      background: #1a1408;
+      border-radius: 0 10px 10px 0;
+    }
+    blockquote.callout strong { color: #fbbf24; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.88em; }
+    .top { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+    .top a { font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <h1>Webcam gallery — how to use it</h1>
+    <a href="USER-GUIDE.md">Markdown source</a>
+  </div>
+  <p class="lede">A two-camera, local-first gallery. Motion stills land on this box. A fast detector tags <strong>who or what</strong>. A local vision model (<code>gemma4:e2b</code>) adds <strong>scene flags</strong>. Nothing is uploaded unless you turn an integration on.</p>
+  <p>Read this top to bottom the first time. It follows the chrome you will see after you open the front camera.</p>
+
+  <blockquote class="callout">
+    <strong>How to read the pictures.</strong>
+    Every still is from a synthetic fixture gallery — not your house.
+    The fixture catalog includes sample sentences such as “A tan dog in the backyard…”.
+    Your live e2b pass <strong>does not write free-text captions</strong>.
+    Expect detector badges, quieter scene flags, and at most two synthesized facts
+    such as “Postal delivery on foot.” Detector-only visits often have no sentence at all.
+  </blockquote>
+
+  <nav>
+    <strong>On this page</strong>
+    <ol>
+      <li value="0"><a href="#box">This box, today</a></li>
+      <li><a href="#open">Open it</a></li>
+      <li><a href="#header">The header</a></li>
+      <li><a href="#views">Three views</a></li>
+      <li><a href="#rail">The left rail</a></li>
+      <li><a href="#find">Find something</a></li>
+      <li><a href="#card">Read a card</a></li>
+      <li><a href="#visit">Play a visit</a></li>
+      <li><a href="#lightbox">Lightbox</a></li>
+      <li><a href="#live">Live updates</a></li>
+      <li><a href="#status">The AI button</a></li>
+      <li><a href="#settings">Settings</a></li>
+      <li><a href="#integrations">Integrations</a></li>
+      <li><a href="#auto">What happens without you</a></li>
+      <li><a href="#privacy">Privacy</a></li>
+      <li><a href="#wrong">If it looks wrong</a></li>
+    </ol>
+  </nav>
+
+  <h2 id="box">This box, today</h2>
+  <table>
+    <tr><th>Knob</th><th>This box</th></tr>
+    <tr><td>Front camera</td><td><code>http://&lt;host&gt;:8180</code> (driveway / gate)</td></tr>
+    <tr><td>Back camera</td><td><code>http://&lt;host&gt;:8280</code> (yard / dogcam)</td></tr>
+    <tr><td>Vision model</td><td><code>gemma4:e2b</code> via local Ollama (~40 s/frame when busy)</td></tr>
+    <tr><td>Cloud fallback</td><td><strong>off</strong></td></tr>
+    <tr><td>Vision deep passes</td><td><strong>on</strong> (person/dog/cat/bird jump the queue)</td></tr>
+    <tr><td>Idle backfill</td><td><strong>off</strong></td></tr>
+    <tr><td>Multi-image summaries</td><td><strong>off</strong></td></tr>
+    <tr><td>Quiet label</td><td><code>car</code></td></tr>
+    <tr><td>Disk budget</td><td><strong>5 GB per camera</strong></td></tr>
+    <tr><td>Empty-frame age</td><td><strong>30 days</strong></td></tr>
+    <tr><td>Camera offline</td><td><strong>24 hours</strong> without a new still</td></tr>
+    <tr><td>Timezone</td><td><code>Australia/Sydney</code></td></tr>
+  </table>
+
+  <h2 id="open">1. Open it</h2>
+  <table>
+    <tr><th>Camera</th><th>Address</th></tr>
+    <tr><td>Front (driveway / gate)</td><td><code>http://&lt;host&gt;:8180</code></td></tr>
+    <tr><td>Back (yard / dogcam)</td><td><code>http://&lt;host&gt;:8280</code></td></tr>
+  </table>
+  <p>Each camera is its own site. They do not share one URL or one filter state. On a phone, Add to Home Screen — there is no service worker, so you will not get a stale offline copy.</p>
+  <p>The subtitle is the nickname plus a short timezone (<code>AEST</code> here), not a LAN address. <strong>Switch Feed</strong> jumps to the other camera. On a phone, <strong>Panels</strong> hides or shows the date list, charts, and saved searches.</p>
+  <figure>
+    <img src="guide/img/mobile-timeline.png" alt="Mobile timeline of dog and person visits">
+    <figcaption>Phone: Timeline is the default. Fixture captions are sample sentences — see the yellow note above.</figcaption>
+  </figure>
+
+  <h2 id="header">2. The header</h2>
+  <p>Left to right: camera name + timezone, Switch Feed, search, Refresh, and the <strong>Live</strong> switch.</p>
+  <table>
+    <tr><th>Badge</th><th>Meaning</th></tr>
+    <tr><td><strong>Live</strong></td><td>Event stream connected, heartbeats arriving</td></tr>
+    <tr><td><strong>Stale</strong></td><td>Stream still open, but the heartbeat went quiet</td></tr>
+    <tr><td><strong>Polling</strong></td><td>Asking the server on an interval</td></tr>
+    <tr><td><strong>Auto-refresh: OFF</strong></td><td>You flipped the switch; stream and polls are stopped</td></tr>
+  </table>
+
+  <h2 id="views">3. Three views</h2>
+  <figure>
+    <img src="guide/img/timeline.png" alt="Desktop Timeline with a dog visit and a person visit">
+    <figcaption>Timeline groups a run of stills into one visit you can play.</figcaption>
+  </figure>
+  <table>
+    <tr><th>Tab</th><th>What it is</th></tr>
+    <tr><td><strong>Timeline</strong></td><td>Object visits — one card you can play</td></tr>
+    <tr><td><strong>Objects</strong></td><td>Only frames the detector marked</td></tr>
+    <tr><td><strong>All</strong></td><td>Every motion still, including empty / CLEAR frames</td></tr>
+  </table>
+  <p>Grid density buttons appear on Objects and All only. Timeline hides them.</p>
+  <figure>
+    <img src="guide/img/objects.png" alt="Objects tab with person, dog, bird, and a preliminary car">
+    <figcaption>Amber <code>Car?</code> is a detector hit the vision model has not finished (or will not — parked cars are quiet).</figcaption>
+  </figure>
+  <figure>
+    <img src="guide/img/all-grid.png" alt="All-snapshots grid including empty frames">
+    <figcaption>All includes empty driveway stills labelled CLEAR.</figcaption>
+  </figure>
+  <figure>
+    <img src="guide/img/mobile-grid.png" alt="Mobile All-snapshots stack">
+    <figcaption>Phone All-tab is a single-column stack.</figcaption>
+  </figure>
+
+  <h2 id="rail">4. The left rail</h2>
+  <h3>Date Timeline</h3>
+  <p><strong>All Dates</strong> is the default. Tap a day to restrict the gallery. The count is how many stills that day has, not how many match the object filter.</p>
+  <h3>Motion Activity</h3>
+  <p><strong>By day</strong> — one bar per day, top = midnight, red marks when the currently filtered objects appeared. <strong>By hour</strong> — 12 AM → 11 PM. Search and object filters apply to these charts the same way they apply to the grid.</p>
+  <h3>Saved Searches</h3>
+  <p><strong>Save current view</strong> stores tab + chips + search + date + time range in <em>this browser only</em>. It does not sync to the other camera site or another phone.</p>
+
+  <h2 id="find">5. Find something</h2>
+  <figure>
+    <img src="guide/img/filters.png" alt="Filter chips: All objects, Bird, Car, Dog, Person">
+    <figcaption>Filters are detector objects only. Scene flags are not chips. “All objects” is the clear-chips control.</figcaption>
+  </figure>
+  <p><strong>Sticky select</strong> on: tap several chips (match any). Off: one at a time. Hidden labels never appear here — unhide them in Settings; Clear all will not unhide them.</p>
+  <p>Search matches time, detector labels, event type, and caption text (fixture sentences or synthesized HA facts). Charts and cards share the same predicate.</p>
+  <table>
+    <tr><th>Time pill</th><th>Hours</th></tr>
+    <tr><td>All day</td><td>00–23</td></tr>
+    <tr><td>Morning</td><td>06–11</td></tr>
+    <tr><td>Afternoon</td><td>12–16</td></tr>
+    <tr><td>Evening</td><td>17–20</td></tr>
+    <tr><td><strong>Night</strong></td><td><strong>21–05</strong> (wraps midnight)</td></tr>
+  </table>
+  <p>Night is the porch-camera window. Use the <strong>Night</strong> pill, not the slider. The thumbs will look inverted; dragging them drops the wrap.</p>
+
+  <h2 id="card">6. Read a card</h2>
+  <table>
+    <tr><th>You see</th><th>It means</th></tr>
+    <tr><td><code>Person</code> / <code>Dog</code> / <code>Car</code></td><td>YOLO saw that object</td></tr>
+    <tr><td><code>Car?</code> (amber)</td><td>Detector hit; no successful vision merge yet</td></tr>
+    <tr><td>Struck-through badge</td><td>Leftover disputed UI. Hidden unless Show unconfirmed is on. Rare with e2b</td></tr>
+    <tr><td><code>Postal delivery</code> / <code>Porch access</code></td><td>HA flags from a finished vision pass</td></tr>
+    <tr><td><strong>CLEAR</strong></td><td>Analyzed, no object</td></tr>
+  </table>
+  <p>Live captions: e2b does not write sentences. The gallery invents at most two facts from true HA flags. Detector-only cards often have no caption. Pin protects a file from retention. Delete confirms with date + label, never the FTP name.</p>
+
+  <h2 id="visit">7. Play a visit</h2>
+  <figure>
+    <img src="guide/img/visit-player.png" alt="Visit player with play, GIF download, and copy-link">
+    <figcaption>Play, step, Download GIF, Copy link. The flipbook stays on the same camera.</figcaption>
+  </figure>
+  <p>It will not pull in a still from the other camera or from more than five minutes earlier as “lead-in.”</p>
+
+  <h2 id="lightbox">8. Lightbox</h2>
+  <figure>
+    <img src="guide/img/lightbox.png" alt="Lightbox reviewing a single driveway still">
+    <figcaption>Heading is the human date/time. Footer says Detected:, not “AI DETECTED”.</figcaption>
+  </figure>
+  <p>On a phone: swipe to next/prev (one finger, not zoomed), pinch to zoom, drag to pan when zoomed.</p>
+
+  <h2 id="live">9. Live updates</h2>
+  <table>
+    <tr><th>Event</th><th>What you notice</th></tr>
+    <tr><td><code>image.new</code></td><td>A new still lands (often still empty)</td></tr>
+    <tr><td><code>detection.preliminary</code></td><td>Detector hit, including parked-car <code>Car?</code></td></tr>
+    <tr><td><code>new-detection</code></td><td>A successful vision merge with a detector label</td></tr>
+    <tr><td><code>new-burst</code></td><td>A visit summary — rare, summaries are off</td></tr>
+    <tr><td><code>ping</code></td><td>Heartbeat; missing pings turn the badge Stale</td></tr>
+  </table>
+  <p>A floating <strong>N new events — tap to view</strong> pill clears filters and jumps to the newest frames. Flip Live off and both the stream and the polls stop.</p>
+
+  <h2 id="status">10. The AI button</h2>
+  <figure>
+    <img src="guide/img/status.png" alt="Pipeline status panel">
+    <figcaption>Pipeline status. Cameras are Front / Back. Cloud counts hide unless cloud is on. “This view” is loaded-frame stats, not a product called Insights.</figcaption>
+  </figure>
+  <p>Queue numbers: new / priority / backfill / verified. Verified means a real <code>_llm</code> dict. Backfill is counted even though the switch is off, so the number stays honest. The button pulses amber while a frame is in the model.</p>
+
+  <h2 id="settings">11. Settings</h2>
+  <figure>
+    <img src="guide/img/settings.png" alt="Settings menu">
+    <figcaption>Green = on, red = off. First paint: vision deep passes on, idle backfill off, multi-image summaries off.</figcaption>
+  </figure>
+  <table>
+    <tr><th>Control</th><th>What it actually does</th></tr>
+    <tr><td>Hide / Show labels</td><td>Drops that object from Timeline / Objects / Filters. Unhide is the escape; Clear all does not unhide</td></tr>
+    <tr><td>Merge labels</td><td><code>face</code>/<code>body</code> → person</td></tr>
+    <tr><td>Show unconfirmed detections</td><td>Reveals disputed badges. <code>?</code> badges always show</td></tr>
+    <tr><td>Fast detector</td><td>Keep YOLO</td></tr>
+    <tr><td>Vision deep passes</td><td>Master switch for all vision-model work</td></tr>
+    <tr><td>Idle backfill</td><td>Verify leftover empties and car-only skips, nearest a detection first. Leave off</td></tr>
+    <tr><td>Multi-image summaries</td><td>Visit captions from several frames. Off. e2b 400s on that path</td></tr>
+  </table>
+
+  <h2 id="integrations">12. Integrations</h2>
+  <p>The panel is Slack. MQTT and ntfy are config-file only.</p>
+  <table>
+    <tr><th>Slack notify on</th><th>When it posts</th></tr>
+    <tr><td>Context — sequences only</td><td>Only after a multi-image summary. Summaries are off, so this mode is <strong>silent</strong></td></tr>
+    <tr><td>Object detections</td><td>Each new person/dog detector frame. Vision does not have to finish. Not parked cars. Not backfill</td></tr>
+    <tr><td>All images</td><td>Every newly analyzed frame (still not historical backfill)</td></tr>
+  </table>
+  <p>A corrupt secrets file is refused on Save (409): <em>integrations.json unreadable — save refused</em>. MQTT/ntfy are not wiped. Home Assistant MQTT needs an explicit broker host and publishes flags, not JPEGs, and only after a successful <code>_llm</code> merge. ntfy needs an explicit <code>server_url</code> — there is no public ntfy.sh default.</p>
+
+  <h2 id="auto">13. What the box does without you</h2>
+  <ul>
+    <li>New stills are picked up within seconds</li>
+    <li>Person / dog / cat / bird jump the queue for e2b flags (~40 s when busy)</li>
+    <li>Parked-car-only frames are stored as <code>Car?</code> and do not spend urgent LLM budget</li>
+    <li>Empty frames older than 30 days are removed</li>
+    <li>Each camera has a 5 GB image budget; pins are forever</li>
+    <li>A cron watchdog restarts a stuck pipeline and re-runs retention hourly</li>
+  </ul>
+
+  <h2 id="privacy">14. Privacy</h2>
+  <p>Frames and inference stay on this machine by default. Slack, ntfy, and HA MQTT can leave the box only if you turn them on. This guide’s screenshots are generated fiction.</p>
+
+  <h2 id="wrong">15. If it looks wrong</h2>
+  <table>
+    <tr><th>Symptom</th><th>Likely cause</th></tr>
+    <tr><td>Empty Objects tab</td><td>No detector hits in the current day / filter / search</td></tr>
+    <tr><td>Empty Timeline, “labels are hidden”</td><td>You hid a label in Settings. Unhide, not Clear all</td></tr>
+    <tr><td>One camera looks stale</td><td>No new stills for 24 hours</td></tr>
+    <tr><td>Images vanished</td><td>5 GB budget or 30-day empty-frame rule. Pins survive</td></tr>
+    <tr><td>Pin / delete / GIF do nothing</td><td>Write API on :8190 is down</td></tr>
+    <tr><td>Slack never pings</td><td>Mode is context and summaries are off. Switch to objects</td></tr>
+    <tr><td>Night slider looks broken</td><td>Use the Night pill</td></tr>
+    <tr><td>Caption missing on a visit</td><td>Normal. e2b does not write sentences</td></tr>
+  </table>
+
+  <p class="muted">Operators: <a href="../DEVELOP.md">DEVELOP.md</a> · <a href="../DEPLOYMENT.md">DEPLOYMENT.md</a> · <a href="../API.md">API.md</a> · <a href="../ROADMAP.md">ROADMAP.md</a></p>
+</div>
+</body>
+</html>

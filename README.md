@@ -4,7 +4,8 @@ A self-hosted, AI-assisted gallery for two home security cameras — local-first
 Frames stay on this machine. Slack notifications and optional Home Assistant
 MQTT **may leave the box**.
 
-How to use it: **[docs/USER-GUIDE.md](docs/USER-GUIDE.md)**.
+How to use it: **[docs/USER-GUIDE.md](docs/USER-GUIDE.md)**
+(rendered: **[docs/USER-GUIDE.html](docs/USER-GUIDE.html)**).
 
 ## Vision
 
@@ -81,12 +82,13 @@ aspirational.
   and optional Home Assistant MQTT (retained flags; **may leave the box**).
   ntfy exists as a config-file provider (no settings UI). Secrets isolated and
   never web-synced. Slack `notify_mode: context` only fires on burst summaries
-  — with summaries off, that path is silent.
+  — with summaries off, that path is silent. `objects` mode pings on each new
+  person/dog detector hit (the vision pass does not have to finish).
 - **Configurable display timezone** — `WEBCAM_TZ` env > `settings.json` >
   `Australia/Sydney`; filename timestamps parsed **DST-aware**.
 - **Installable PWA** — a web app manifest makes the gallery "Add to Home
   Screen"-able (standalone, themed); no service worker, so no stale-cache risk.
-- **Insights** — the AI status panel’s Insights block shows stats over
+- **This view** — the AI status panel’s “This view” block shows stats over
   **loaded** frames: count, busiest hour, a 24-hour activity sparkline,
   most-seen objects, and the HA schema viewer.
 - **Saved searches** — name the current filters (tab + objects + search +
@@ -131,13 +133,15 @@ opened). These are **not** the import-time fallbacks in `analyze_images.py`.
 | `max_deep_passes` | 30 |
 
 Slack is enabled with `notify_mode: context`; with burst summaries off, those
-notifications do not fire. HA MQTT is enabled and publishes off-box. Camera
-liveness is on `/api/health` (`cameras[].stale`) — do not take an offline
-claim from this README.
+sequence posts do not fire. Switch Slack to `objects` to ping on person/dog
+detector hits. HA MQTT is enabled and publishes off-box. Camera liveness is
+on `/api/health` (`cameras[].stale`) — do not take an offline claim from
+this README.
 
 ## Viewing
 
-How to use the gallery: **[docs/USER-GUIDE.md](docs/USER-GUIDE.md)**.
+How to use the gallery: **[docs/USER-GUIDE.md](docs/USER-GUIDE.md)** ·
+**[docs/USER-GUIDE.html](docs/USER-GUIDE.html)**.
 
 | Camera | URL |
 |--------|-----|
@@ -226,7 +230,8 @@ footage. Do not point the screenshot harness at `/mnt/models/Webcam21` or
 
 ## Documentation map
 
-- **[docs/USER-GUIDE.md](docs/USER-GUIDE.md)** — how to use the gallery (end user).
+- **[docs/USER-GUIDE.md](docs/USER-GUIDE.md)** /
+  **[docs/USER-GUIDE.html](docs/USER-GUIDE.html)** — how to use the gallery.
 - **[ROADMAP.md](ROADMAP.md)** — what remains, in detail (the live-streaming milestone).
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** — how it fits together today, and how earlier versions looked.
 - **[API.md](API.md)** — REST endpoints + the SSE event schema (request/response payloads).

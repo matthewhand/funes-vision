@@ -1,164 +1,464 @@
 # Webcam gallery — how to use it
 
-A two-camera, local-first gallery. Motion stills land on this box, a fast
-detector tags who-or-what, and a local vision model adds scene flags
-(delivery, porch, dog in the yard). Nothing is uploaded unless you turn
-an integration on.
+A two-camera, local-first gallery. Motion stills land on this box. A fast
+detector tags **who or what**. A local vision model (`gemma4:e2b`) adds
+**scene flags** (delivery, porch, dog in the yard). Nothing is uploaded
+unless you turn an integration on.
 
-Every picture in this guide is from a **synthetic fixture gallery** —
-fictional CCTV stills, not your cameras.
+Read this top to bottom the first time. It follows the chrome you will
+see after you open the front camera.
 
-## Open it
+A rendered copy with the pictures inline lives at
+[`USER-GUIDE.html`](USER-GUIDE.html) (open that file in a browser).
+
+---
+
+## How to read this guide (please do)
+
+Every picture here is from a **synthetic fixture gallery** — fictional
+CCTV stills, not your house. The screenshot harness **refuses**
+`/mnt/models/Webcam21` and `/mnt/models/Webcam22`.
+
+**The fixture shots over-promise captions.** You will see sentences such
+as *“A tan dog in the backyard near the garden bed.”* Those strings are
+baked into the fixture catalog so the screenshots look like a product.
+The live e2b pass **does not write free-text captions**. On your cameras
+you should expect:
+
+- detector badges (`Person`, `Dog`, `Car`, `Bird`, `Cat`)
+- quieter scene flags (`Postal delivery`, `Porch access`, `Animal type: dog`)
+- at most **two synthesized facts** on a Timeline card, such as
+  *“Postal delivery on foot. Someone at the porch.”*
+- **no sentence at all** on a detector-only visit (parked car, or a
+  person the vision model has not finished)
+
+The header, tabs, Settings labels, Live badge, and Front/Back camera
+names in the shots **do** match the live UI.
+
+---
+
+## This box, today
+
+These knobs are what the running pipeline is set to. Do not assume a
+fresh clone behaves the same if `settings.json` is missing.
+
+| Knob | This box |
+|------|----------|
+| Front camera | `http://<host>:8180` (driveway / gate) |
+| Back camera | `http://<host>:8280` (yard / dogcam) |
+| Vision model | `gemma4:e2b` via local Ollama (~40 s/frame when busy) |
+| Cloud fallback | **off** |
+| Vision deep passes | **on** (person/dog/cat/bird jump the queue) |
+| Idle backfill | **off** (empties and parked-car frames are not HA-flagged) |
+| Multi-image summaries | **off** |
+| Quiet label | `car` (does not spend urgent LLM budget) |
+| Disk budget | **5 GB per camera** |
+| Empty-frame age | **30 days** |
+| Camera offline | **24 hours** without a new still |
+| Timezone | `Australia/Sydney` (subtitle shows `AEST` / `AEDT`) |
+
+---
+
+## 1. Open it
 
 | Camera | Address |
 |--------|---------|
 | Front (driveway / gate) | `http://<host>:8180` |
 | Back (yard / dogcam) | `http://<host>:8280` |
 
-On a phone, use **Add to Home Screen**. There is no service worker, so you
-will not get a stale offline copy. **Switch camera** from the header if you
-opened the other feed. The subtitle is the camera nickname plus a short
-timezone (`AEST` here) — not a LAN address.
+Each camera is its **own site**. They do not share one URL or one
+filter state.
+
+On a phone, **Add to Home Screen**. There is no service worker, so you
+will not get a stale offline copy.
+
+The title is a camera nickname. The subtitle is the nickname plus a
+short timezone — **not** a LAN address. Filenames on disk still contain
+camera IPs; the chrome is not supposed to show them.
+
+**Switch Feed** in the header jumps to the other camera.
 
 ![Mobile timeline of dog and person visits](guide/img/mobile-timeline.png)
 
-## What you are looking at
+On a phone you will also see a **Panels** button. That hides or shows
+the date list, activity charts, and saved searches. Landscape desktop
+keeps the sidebar open.
 
-**Timeline** is the default. It groups a run of stills into one visit you
-can play, instead of a pile of near-identical JPEGs.
+---
+
+## 2. The header
+
+Left to right:
+
+- **Camera name + timezone**
+- **Switch Feed** — other camera
+- **Search** — time, detector labels, or caption text (see [§5](#5-find-something))
+- **Refresh** — force-reload catalogs from disk
+- **Live** — a switch, not just a light (see [§9](#9-live-updates))
+
+Default first paint is a green **Live** pill. Click it to pause. The
+visible states are:
+
+| Badge | Meaning |
+|-------|---------|
+| **Live** | Event stream connected, heartbeats arriving |
+| **Stale** | Stream still open, but the heartbeat went quiet |
+| **Polling** | Asking the server on an interval (SSE down or unsupported) |
+| **Auto-refresh: OFF** | You flipped the switch; stream and polls are stopped |
+
+---
+
+## 3. Three views
+
+The default tab is **Timeline**.
 
 ![Timeline with a dog visit and a person visit](guide/img/timeline.png)
 
-- **Timeline** — visits (“Dog visit · 18 sec · 2 frames”)
-- **Objects** — only frames the detector marked
-- **All** — every motion still, including empty ones
+| Tab | What it is |
+|-----|------------|
+| **Timeline** | Object *visits* — a run of stills grouped into one card you can play |
+| **Objects** | Only frames the detector marked (person / dog / car / …) |
+| **All** | Every motion still, including empty / **CLEAR** frames |
 
-Each camera is its own site. They do not share one URL.
+The count next to the tabs is honest about the current tab
+(*“2 visits detected”* vs *“Showing 7 of 10 snapshots”*).
 
-## Find something
-
-Use **Filters** for object chips (person, dog, car, bird…). The chips are
-built from what the detector has actually seen. Search matches time,
-detector labels, and captions — the activity charts and the grid both
-honor labels. Tap a day on the activity chart to drill into hours.
-Saved searches live in **this browser only**.
-
-![Object filter chips over the gallery](guide/img/filters.png)
-
-## Read a card
-
-Colour badges are detector objects: person, dog, car, cat, bird.
-
-Smaller scene flags (mail, porch, laundry, animal type) come from the
-local vision model. They describe *what happened*, they are not extra
-species of object.
-
-- A `?` badge (amber) means the fast detector fired and the vision model
-  has not confirmed yet — see the `Car?` tag in the grid below.
-- A struck-through badge means the two passes disagreed. Hidden unless
-  you turn on **Show unconfirmed detections**.
+Grid density buttons (small / medium / large / list) appear on
+**Objects** and **All** only. Timeline ignores them, so they hide there.
 
 ![Objects tab with person, dog, bird, and a preliminary car](guide/img/objects.png)
 
-**All** includes empty stills (labelled CLEAR) and anything still waiting
-on analysis:
+**All** is where empty driveway stills live. They are labelled **CLEAR**,
+not “nothing happened.”
 
 ![All-snapshots grid including empty frames](guide/img/all-grid.png)
 
-On a phone the same tab is a single-column stack:
+On a phone, **All** is a single-column stack:
 
 ![Mobile All-snapshots grid](guide/img/mobile-grid.png)
 
-## Play a visit
+---
 
-Tap a Timeline card (or its play button):
+## 4. The left rail
+
+### Date Timeline
+
+**All Dates** is the default. Tap a day to restrict the gallery. The
+count is how many stills that day has, not how many match the current
+object filter.
+
+### Motion Activity
+
+- **By day** — one bar per day, top = midnight. Red marks when the
+  *currently filtered* objects appeared.
+- **By hour** — 12 AM → 11 PM over the selected day(s).
+
+Tap a day bar to drill into hours. Tap again to clear. Search and object
+filters apply to these charts the same way they apply to the grid. Typing
+`person` hides empty hours on the chart, not just the cards.
+
+### Saved Searches
+
+**Save current view** stores the current tab + object chips + search +
+date + time range **in this browser only** (`localStorage`). It does not
+sync to the other camera site or another phone. Chips recall that
+snapshot; they do not change Settings.
+
+---
+
+## 5. Find something
+
+### Filters
+
+**Filters** lists detector objects the archive has actually seen
+(`Person`, `Dog`, `Car`, `Bird`…). Scene flags are **not** chips.
+
+![Object filter chips over the gallery](guide/img/filters.png)
+
+- **All objects** clears object chips. It does not reset the date or
+  time range (the banner **✕** / **Clear all filters** does).
+- **Sticky select** — on: tap several chips (match any). Off: one at a
+  time.
+- Hidden labels (Settings → Hide / Show) never appear here. Unhide them
+  in Settings; Clear all will not unhide them.
+
+On a phone the Filters menu is a centred sheet, same as Settings.
+
+### Search
+
+Placeholder: *Search time, labels, or caption…*
+
+Matches, case-insensitive, against:
+
+- human date / time (`Jun 18`, `10:14`)
+- detector labels (`person`, `dog`, `car`)
+- event type / filename tokens
+- caption text (fixture sentences **or** synthesized HA facts)
+
+The grid, Timeline, and activity charts share this predicate. If you
+type `person` and a card disappears, the red chart bars for that hour
+disappear too.
+
+### Time range
+
+The toolbar row starts collapsed as **Time Range: All day**. Expand it
+for a dual-range slider.
+
+On a phone you also get pills:
+
+| Pill | Hours |
+|------|-------|
+| All day | 00–23 |
+| Morning | 06–11 |
+| Afternoon | 12–16 |
+| Evening | 17–20 |
+| **Night** | **21–05** (wraps midnight) |
+
+Night is the porch-camera window. Use the **Night** pill, not the
+slider, to set it. The thumbs will look inverted (21 and 5); that is
+cosmetic. Dragging the slider yourself drops the wrap and becomes a
+normal start≤end range.
+
+**Reset** on the time row, or **Clear all filters**, returns All day and
+syncs the pills.
+
+A green **N new events — tap to view** pill (see [§9](#9-live-updates))
+also clears search, object chips, date, and time, then scrolls to top.
+
+---
+
+## 6. Read a card
+
+Colour badges are **detector objects**: person, dog, car, cat, bird.
+
+Smaller purple-ish flags are **scene flags** from the vision model.
+They describe *what happened*. They are not extra species, and they
+do not appear in Filters.
+
+| You see | It means |
+|---------|----------|
+| `Person` / `Dog` / `Car` | YOLO saw that object |
+| `Car?` (amber) | Detector hit; no successful `_llm` merge yet (includes parked-car skips) |
+| Struck-through badge | Leftover “disputed” UI (one pass said yes, the other did not). Hidden unless **Show unconfirmed detections** is on. The current e2b schema does **not** overwrite YOLO `person`/`dog`/`car`, so this is rare |
+| `Postal delivery` / `Porch access` / `Animal type: dog` | HA flags from a finished vision pass |
+| **CLEAR** | Analyzed, no object |
+| No badge, no CLEAR | Not in `analysis.json` yet |
+
+Captions on your live cameras:
+
+- If the catalog has a `description` (it will not, from e2b), that
+  sentence is used.
+- Otherwise the gallery invents at most two facts from true HA flags
+  (*“Postal delivery on foot”*, *“Dog in the yard”*, *“Clothes on the
+  line”*).
+- Detector-only cards often have **no** caption.
+
+Pin (📌) protects that file from retention forever. Delete asks
+`Delete person snapshot from 18 June 2026 · 10:14:18 am?` — date and
+label, never the FTP filename.
+
+---
+
+## 7. Play a visit
+
+Tap a Timeline card or its play button.
+
+![Visit player with play, GIF download, and copy-link](guide/img/visit-player.png)
+
+You get:
 
 - Play / pause the flipbook
 - Tap the image to step frame-by-frame
 - Arrows, Space, Esc
-- **Download GIF** of the visit
-- **Copy link** to this moment
-- Pin the key frame so retention never deletes it
+- **Full res**
+- **Download GIF** of the visit (needs the write API)
+- **Copy link** to this moment (deep link; this browser must have the
+  same catalogs loaded)
+- Pin the key frame
 
-![Visit player with play, GIF download, and copy-link](guide/img/visit-player.png)
+The flipbook stays on **the same camera** and will not pull in a still
+from more than five minutes earlier as “lead-in.” A dog visit will not
+open on a courier from the other camera.
 
-## Lightbox (single frame)
+---
 
-From Objects or All, tap a still for full-resolution review, next/previous,
-pin, and delete. Delete is permanent.
+## 8. Lightbox (single frame)
+
+From Objects or All, tap a still.
 
 ![Lightbox reviewing a single driveway still](guide/img/lightbox.png)
 
-## Live updates
+- Heading is the human date/time, not the FTP name
+- Play is a slideshow through the **current filtered** set
+- Zoom +/−, download, copy link, close
+- Footer: channel / event type / detected objects (labelled
+  **Detected:**, not “AI DETECTED”)
+- On a phone: swipe to next/prev (one finger, not zoomed), pinch to
+  zoom, drag to pan when zoomed
 
-The header badge is **Live** (SSE connected), **Stale** (SSE connected
-but the heartbeat went quiet), **Polling** (asking the server on an
-interval), or **Off**. Flip **Auto-refresh** off to pause the stream and
-the polls. The **AI** button opens pipeline status: queue, cameras, last
-sweep, and the vision-model audit trail.
+Delete from a card (not the lightbox header) is permanent.
+
+---
+
+## 9. Live updates
+
+New stills appear without a full-page reload. Under the hood the API
+polls `analysis.json` every ~3 s and emits:
+
+| Event | What you notice |
+|-------|-----------------|
+| `image.new` | A new still lands (often still empty) |
+| `detection.preliminary` | Detector hit, including parked-car `Car?` |
+| `new-detection` | A successful vision merge with a detector label |
+| `new-burst` | A visit summary was written (rare: summaries are **off**) |
+| `ping` | Heartbeat; missing pings turn the badge **Stale** |
+
+A floating **N new events — tap to view** pill accumulates while you
+are looking at an old slice. Tap it to clear filters and jump to the
+newest frames.
+
+Flip **Live** off and both the stream and the polls stop. The page
+will not quietly keep listening.
+
+---
+
+## 10. The AI button (pipeline status)
+
+The **AI** control is pipeline status, not a chat. It pulses amber
+with an elapsed time while a frame is in the vision model.
 
 ![AI status panel](guide/img/status.png)
 
-## Settings you might actually touch
+You should see, in order:
+
+- **Inference** — idle, or the file currently in the model
+- **New-image trigger** — `inotify` should be on (instant). Red if not
+- **Live updates** — live / polling / stale, same idea as the header
+- **Idle sweep** — 60 s on this box
+- **Fast detector** — YOLO
+- **LLM** — `gemma4:e2b`, reachable, **local only** (no “+cloud” unless
+  you turn cloud on)
+- **Idle backfill** / **Multi-image summaries** — both **off** here
+- **Quiet labels** — `car`
+- **Queue** — new / priority / backfill / verified. Verified means a
+  real `_llm` dict, not “missing `fast_pass`.” Backfill is counted even
+  though the switch is off, so the number stays honest
+- **Cameras** — **Front** and **Back** (not Webcam21 / 10.0.0.21), last
+  frame age, budget %
+- **This view** — stats over *loaded* frames (busiest hour, most-seen
+  objects), plus the HA schema viewer. Not a product called Insights
+- **Audit trail** — recent vision calls, titled with date/time
+
+---
+
+## 11. Settings
 
 ![Settings menu with detector, deep-pass, and interval controls](guide/img/settings.png)
 
-- Hide a noisy label (a parked car that is always in frame)
-- Merge face/body → person
-- Show / hide unconfirmed tags
-- **AI deep passes** — pause all vision-model work (detector-only)
-- **Idle backfill** — verifies leftover empties and car-only skips
-  (nearest detections first). Leave **off** unless you want the
-  archive re-checked (thousands of old empties)
-- **Multi-image summaries** — leave **off** unless you want visit captions
-  from several frames at once
+Green = on, red = off. First paint matches this box: deep passes on,
+idle backfill off, multi-image summaries off.
 
-## Alerts
+| Control | What it actually does |
+|---------|------------------------|
+| **Hide / Show labels** | Drops that object from Timeline / Objects / Filters. A parked car you are tired of. **Unhide** is the escape; Clear all does not unhide |
+| **Merge labels** | `face`/`body` → person, `raccoon` → dog |
+| **Show unconfirmed detections** | Reveals struck-through disputed badges. Preliminary `?` badges always show |
+| **Fast detector** | YOLO (keep this) or Haar (legacy) |
+| **Vision deep passes** | Master switch for **all** vision-model work. Off = detector-only, frees RAM |
+| **Idle backfill** | When idle, verify leftover empties **and** car-only skips, nearest a real detection first. Leave **off** unless you want thousands of old empties queued. It is **not** “every image, newest first” |
+| **Multi-image summaries** | LLM caption of a visit from several frames. Off because e2b 400s on that path. Single-frame flags are unchanged |
+| **Idle sweep (s)** | Server: seconds between catch-up sweeps |
+| **Status poll (s)** | This browser only: how often the AI panel refreshes |
 
-Slack (if enabled) does **not** always post a sequence. With
-**multi-image summaries off** and Slack set to *context*, it will stay
-quiet — that is intentional. Switch Slack to *objects* to ping on each
-new person/dog detector hit (the vision model does not have to finish).
+---
 
-Home Assistant MQTT is optional and **off unless you enable it**, and
-it needs an **explicit broker host** (no default address). It publishes
-flags, not JPEGs.
+## 12. Integrations
 
-## What the box does without you
+**Integrations** is Slack in the UI. MQTT and ntfy are config-file
+only (no panel).
 
-- New motion stills are picked up within seconds
-- Empty frames older than 30 days are removed
-- Each camera has a disk budget (5 GB); oldest empties go first
+### Slack
+
+| Notify on | When it posts |
+|-----------|----------------|
+| **Context — sequences only** | Only after a multi-image summary. Summaries are **off**, so this mode is **silent**. That is intentional |
+| **Object detections** | Each **new** person/dog (urgent detector) frame. The vision model does **not** have to finish. Not parked cars. Not idle backfill |
+| **All images** | Every newly analyzed frame (still not historical backfill) |
+
+Tokens stay on the box (`integrations.json`, mode `600`, never copied
+to the web root). Leave a token field blank to keep the stored secret.
+
+**Save** with a corrupt secrets file is refused (**409**). The status
+line will read *integrations.json unreadable — save refused*. MQTT/ntfy
+blocks are not wiped. **Send test** talks to Slack for real.
+
+### Home Assistant MQTT
+
+Optional. **Off unless you enable it**, and it needs an **explicit
+broker host** (no `10.0.0.111` default). It publishes retained **flags**,
+not JPEGs, and only after a successful `_llm` merge.
+
+### ntfy
+
+Config-file only. Needs both a topic **and** an explicit `server_url`.
+There is no public `ntfy.sh` default.
+
+---
+
+## 13. What the box does without you
+
+- New motion stills are picked up within seconds (`inotify`)
+- Person / dog / cat / bird jump the queue for e2b flags (~40 s each
+  when the box is busy)
+- Parked-car-only frames are stored as `Car?` and do **not** spend
+  urgent LLM budget
+- Empty frames older than **30 days** are removed
+- Each camera has a **5 GB** image budget; oldest empties go first,
+  then oldest detections, then oldest unanalyzed if still over
 - **Pins are forever**
-- A watchdog restarts a stuck pipeline
+- A cron watchdog restarts a stuck pipeline and re-runs retention
+  hourly, so cleanup does not depend on one long-lived process
 
-## Privacy
+---
 
-Frames and inference stay on this machine by default. Things that *can*
-leave, only if you turn them on:
+## 14. Privacy
+
+Frames and inference stay on this machine by default.
+
+Things that *can* leave, only if you turn them on:
 
 - Slack messages (and uploaded clips, if configured)
-- ntfy text (only if you set a server URL; there is no public ntfy.sh default)
-- Home Assistant MQTT flag JSON (no image bytes; off unless you enable it
-  and set a host)
+- ntfy text (only with an explicit server URL)
+- Home Assistant MQTT flag JSON (no image bytes; needs an explicit host)
 
 This guide’s screenshots are generated fiction. They are not your house.
-They were captured with `tools/screenshots/run_shots.sh`, which **refuses**
-to read `/mnt/models/Webcam21` or `/mnt/models/Webcam22`.
 
-## If it looks wrong
+---
+
+## 15. If it looks wrong
 
 | Symptom | Likely cause |
 |---------|----------------|
-| Empty Objects tab | No detector hits in the current day/filter |
-| One camera looks stale | That camera has not uploaded stills |
-| Images vanished | Retention budget / 30-day empty-frame rule (pins survive) |
-| Pin / delete / settings do nothing | The write API (`webcam-api`) is down |
-| “AI is looking…” never finishes | Local model not loaded, or RAM too tight |
-| Slack never pings | Summaries off + Slack mode `context` |
+| Empty Objects tab | No detector hits in the current day / filter / search |
+| Empty Timeline, “labels are hidden” | You hid `person` (etc.) in Settings. **Unhide**, not Clear all |
+| One camera looks stale | No new stills for 24 hours, or the FTP drop stopped |
+| Images vanished | 5 GB budget or 30-day empty-frame rule. Pins survive |
+| Pin / delete / settings / GIF do nothing | Write API (`webcam-api` on `:8190`) is down |
+| “AI is looking…” never finishes | Ollama not loaded, or free RAM below ~6 GB |
+| Slack never pings | Mode is **context** and summaries are off. Switch to **objects** |
+| Slack save says unreadable | `integrations.json` is corrupt. Do not keep hitting Save |
+| Live is Polling / Stale | SSE dropped. Refresh, or the API is down |
+| Night slider looks broken | Use the **Night** pill. Do not drag the thumbs to wrap |
+| Caption missing on a visit | Normal. e2b does not write sentences |
+| Status says Front / Back | Correct. Those are the two cameras |
+| Charts do not move when you search | They should. If they do not, refresh — that was a fixed bug |
+
+---
 
 ## For operators
 
 Developer / ops reference: [DEVELOP.md](../DEVELOP.md),
 [DEPLOYMENT.md](../DEPLOYMENT.md), [API.md](../API.md).
 How the screenshots were taken: [tools/screenshots/README.md](../tools/screenshots/README.md).
+What is still not built (token streaming, pipeline→API push):
+[ROADMAP.md](../ROADMAP.md).
