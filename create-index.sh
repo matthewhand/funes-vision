@@ -48,6 +48,12 @@ run_analysis() {
         [ -f "$BASE_DIR/icon.svg" ] && cp "$BASE_DIR/icon.svg" "$IMAGE_DIR/icon.svg" 2>/dev/null || true
         [ -f "$BASE_DIR/favicon.ico" ] && cp "$BASE_DIR/favicon.ico" "$IMAGE_DIR/favicon.ico" 2>/dev/null || true
         [ -f "$BASE_DIR/lucide.min.js" ] && cp "$BASE_DIR/lucide.min.js" "$IMAGE_DIR/lucide.min.js" 2>/dev/null || true
+        # In-gallery Help → the fixture-shot walkthrough (never live camera JPEGs).
+        if [ -f "$BASE_DIR/docs/USER-GUIDE.html" ]; then
+            cp "$BASE_DIR/docs/USER-GUIDE.html" "$IMAGE_DIR/USER-GUIDE.html" 2>/dev/null || true
+            mkdir -p "$IMAGE_DIR/guide/img"
+            cp "$BASE_DIR/docs/guide/img/"*.png "$IMAGE_DIR/guide/img/" 2>/dev/null || true
+        fi
         [ -f "$BASE_DIR/analysis.json" ] && cp "$BASE_DIR/analysis.json" "$IMAGE_DIR/analysis.json" 2>/dev/null || true
         [ -f "$BASE_DIR/bursts.json" ] && cp "$BASE_DIR/bursts.json" "$IMAGE_DIR/bursts.json" 2>/dev/null || true
         [ -f "$BASE_DIR/pins.json" ] && cp "$BASE_DIR/pins.json" "$IMAGE_DIR/pins.json" 2>/dev/null || true

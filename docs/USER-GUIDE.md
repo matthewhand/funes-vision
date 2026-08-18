@@ -94,6 +94,7 @@ Left to right:
 - **Switch Feed** — other camera
 - **Search** — time, detector labels, or caption text (see [§5](#5-find-something))
 - **Refresh** — force-reload catalogs from disk
+- **Help** — this walkthrough, in a new tab (fixture pictures, not your house)
 - **Live** — a switch, not just a light (see [§9](#9-live-updates))
 
 Default first paint is a green **Live** pill. Click it to pause. The

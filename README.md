@@ -61,8 +61,9 @@ aspirational.
 - **Timeline of visits** — contiguous detector presence runs grouped into one
   card each, with a flipbook animation; plus Objects/All tabs, auto object
   filters, label aliasing, blacklist, and day/hour activity charts. Scene flags
-  show as HA badges. Timeline cards read `analysis.description` for a caption
-  — the current model **does not write that field**.
+  show as HA badges. Timeline cards prefer `analysis.description`; the live
+  e2b pass does **not** write that field, so the gallery synthesizes at most
+  two HA facts (*“Postal delivery on foot”*) or shows no sentence.
 - **Retention (file rotation)** — per-camera byte budget (**5.0 GB** each on
   this box) + 30-day age limit for empty frames; pin to protect forever, delete
   to remove; detections are pruned only under disk pressure; unanalyzed backlog
@@ -176,11 +177,14 @@ footage. Do not point the screenshot harness at `/mnt/models/Webcam21` or
 
 ## Using the gallery
 
+- **Help** — opens the in-gallery walkthrough (`USER-GUIDE.html`, fixture
+  pictures only).
 - **Timeline tab** (default) — one card per object "visit" ("Person visit
   · 7:02–7:08 · 6 min · 4 frames"; brief visits read in seconds, e.g.
   "· 25 sec"). Tap a visit to play it as a short animation; tap the image to
   step frame-by-frame. Download GIF from the player. Free-text AI captions
-  are **not** produced by the current e2b pass.
+  are **not** produced by the current e2b pass; the gallery synthesizes at
+  most two HA facts or shows no sentence.
 - **Objects tab** — frames the fast detector marked (person/car/dog/…). HA
   scene flags can also appear as badges.
 - **All tab** — every snapshot.

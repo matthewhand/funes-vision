@@ -704,7 +704,11 @@ recommended, polling fallback), and an Ollama endpoint (`ollama_url`).
 # UI changes take effect immediately:
 cp index.html lucide.min.js /mnt/models/Webcam21/
 cp index.html lucide.min.js /mnt/models/Webcam22/
-# (create-index.sh also re-syncs them every sweep)
+# Help walkthrough (create-index.sh also copies these every sweep):
+cp docs/USER-GUIDE.html /mnt/models/Webcam21/ /mnt/models/Webcam22/
+mkdir -p /mnt/models/Webcam21/guide/img /mnt/models/Webcam22/guide/img
+cp docs/guide/img/*.png /mnt/models/Webcam21/guide/img/
+cp docs/guide/img/*.png /mnt/models/Webcam22/guide/img/
 
 # Pipeline changes: nothing to do - each sweep runs the script fresh.
 # API changes: sudo systemctl restart webcam-api

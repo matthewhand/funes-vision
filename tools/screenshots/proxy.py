@@ -180,6 +180,16 @@ class H(SimpleHTTPRequestHandler):
                     "lucide.min.js": "application/javascript",
                 }[rel]
                 return self._send_file(candidate, ctype)
+        # Help walkthrough (fixture shots only; never live camera roots).
+        if path in ("/USER-GUIDE.html", "/USER-GUIDE.md"):
+            guide = os.path.join(REPO, "docs", path.lstrip("/"))
+            if os.path.isfile(guide):
+                ctype = "text/html; charset=utf-8" if path.endswith(".html") else "text/markdown; charset=utf-8"
+                return self._send_file(guide, ctype)
+        if path.startswith("/guide/img/") and ".." not in path:
+            shot = os.path.join(REPO, "docs", rel)
+            if os.path.isfile(shot) and shot.lower().endswith(IMG_EXT):
+                return self._send_file(shot, "image/png")
         return super().do_GET()
 
     def do_GET(self):

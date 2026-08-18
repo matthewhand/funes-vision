@@ -45,4 +45,12 @@ assert.ok(!/409[\s\S]{0,200}not configured/.test(loadInt[1]),
 assert.ok(/\.blacklist-dropdown,\s*#filters-dropdown/.test(html),
   '#filters-dropdown must share the mobile blacklist-dropdown sheet rules');
 
+// In-gallery Help opens the local walkthrough (not a CDN, not camera JPEGs).
+assert.ok(/id="btn-help"/.test(html) && /href="USER-GUIDE.html"/.test(html),
+  'Help must link to USER-GUIDE.html');
+assert.ok(/card\.setAttribute\('role', 'group'\)/.test(html),
+  'cards must be role=group so pin/delete are not nested buttons');
+assert.ok(!/card\.setAttribute\('role', 'button'\)/.test(html),
+  'cards must not be role=button wrapping real controls');
+
 console.log('ui-nits: all assertions passed');

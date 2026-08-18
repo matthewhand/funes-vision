@@ -158,6 +158,31 @@ class TestScreenshotProxy(unittest.TestCase):
         finally:
             _stop(srv)
 
+    def test_serves_user_guide_from_docs(self):
+        p = load_proxy()
+        srv = _serve(p)
+        try:
+            host, port = srv.server_address
+            conn = http.client.HTTPConnection(host, port, timeout=2)
+            conn.request("GET", "/USER-GUIDE.html")
+            resp = conn.getresponse()
+            body = resp.read()
+            self.assertEqual(resp.status, 200)
+            self.assertIn(b"text/html", resp.getheader("Content-Type", "").encode())
+            self.assertIn(b"Webcam gallery", body)
+            self.assertNotIn(b"/mnt/models/Webcam21", body)
+            conn.close()
+            conn = http.client.HTTPConnection(host, port, timeout=2)
+            conn.request("GET", "/guide/img/timeline.png")
+            resp = conn.getresponse()
+            img = resp.read()
+            self.assertEqual(resp.status, 200)
+            self.assertGreater(len(img), 1000)
+            self.assertTrue(img.startswith(b"\x89PNG") or img[:3] == b"\xff\xd8\xff")
+            conn.close()
+        finally:
+            _stop(srv)
+
 
 if __name__ == "__main__":
     unittest.main()

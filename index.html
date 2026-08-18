@@ -1972,7 +1972,7 @@
               <div class="menu-section-title with-gap">
                 Fast Detector
               </div>
-              <select id="detector-select" class="menu-field" title="Pre-filter engine that gates AI deep analysis" style="width: 100%;">
+              <select id="detector-select" class="menu-field" title="Fast detector that decides who jumps the vision-model queue" style="width: 100%;">
                 <option value="yolo">YOLO (recommended)</option>
                 <option value="haar">Haar cascades (legacy)</option>
               </select>
@@ -2058,6 +2058,12 @@
               </div>
             </div>
           </div>
+
+          <a class="btn" id="btn-help" href="USER-GUIDE.html" target="_blank" rel="noopener"
+             title="How to use this gallery" aria-label="How to use this gallery">
+            <i data-lucide="book-open"></i>
+            <span>Help</span>
+          </a>
 
           <div class="blacklist-menu">
             <button class="btn" id="btn-system-status" aria-haspopup="true" aria-expanded="false" title="Pipeline status">
@@ -4234,7 +4240,8 @@
       const cardLabels = analysis
         ? [...effectiveLabels(analysis)].filter(l => !state.blacklist.includes(l)).sort()
         : [];
-      card.setAttribute('role', 'button');
+      // Not role=button: pin/delete/download are real controls inside the card.
+      card.setAttribute('role', 'group');
       card.tabIndex = 0;
       card.setAttribute('aria-label', cardAriaLabel(meta, cardLabels));
       
@@ -4256,7 +4263,7 @@
           const suffix = st === 'preliminary' ? '?' : st === 'disputed' ? ' &#10007;' : '';
 
           detectionsHtml += `
-            <span class="badge badge-ai tag-${escapeHtml(label)} ${cls}" role="img" aria-label="${escapeHtml(badgeLabel(label, st))}">
+            <span class="badge badge-ai tag-${escapeHtml(label)} ${cls}" aria-label="${escapeHtml(badgeLabel(label, st))}">
               <i data-lucide="${icon}" aria-hidden="true"></i>
               <span style="text-transform: capitalize;" aria-hidden="true">${escapeHtml(label)}${suffix}</span>
             </span>`;
@@ -4271,7 +4278,7 @@
             const displayLabel = label.replace(/_/g, ' ');
             const displayValue = isString ? `: ${value}` : '';
             detectionsHtml += `
-              <span class="badge badge-ha ${cls}" role="img" aria-label="${escapeHtml('HA ' + displayLabel + displayValue)}">
+              <span class="badge badge-ha ${cls}" aria-label="${escapeHtml('HA ' + displayLabel + displayValue)}">
                 <i data-lucide="${icon}" aria-hidden="true"></i>
                 <span style="text-transform: capitalize;" aria-hidden="true">${escapeHtml(displayLabel)}${escapeHtml(displayValue)}</span>
               </span>`;
@@ -5622,7 +5629,7 @@
             </div>`;
           }).join('') || '<div style="color:var(--text-secondary);">No inferences logged yet.</div>';
 
-          // Insights — content aggregates over all analysed frames (cheap; uses
+          // This view — content aggregates over loaded frames (cheap; uses
           // already-loaded state). Hours come from the filename (source TZ).
           const insHours = state.allImages.map(f => parseFilename(f).hour);
           const insBuckets = bucketByHour(insHours);
