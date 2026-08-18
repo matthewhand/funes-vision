@@ -512,7 +512,17 @@ class TestDetectionExtract(unittest.TestCase):
     def test_no_trigger_is_not_verified(self):
         rec = {"car": True, "_llm_skip": "no_trigger"}
         self.assertFalse(analyze_images.is_llm_verified(rec))
+        self.assertTrue(analyze_images.is_awaiting_backfill(rec))
+        self.assertTrue(analyze_images.in_backfill_pool(rec))
         self.assertNotIn("h.jpg", api_server.Handler._verified_detections(self.ANALYSIS))
+        self.assertEqual(api_server.Handler._verified_detections({"x.jpg": rec}), {})
+
+    def test_no_trigger_car_is_awaiting_not_verified(self):
+        """Car-only skip is backfill work, never an LLM verdict."""
+        rec = {"car": True, "_llm_skip": "no_trigger"}
+        self.assertTrue(analyze_images.is_awaiting_backfill(rec))
+        self.assertTrue(analyze_images.in_backfill_pool(rec))
+        self.assertFalse(analyze_images.is_llm_verified(rec))
         self.assertEqual(api_server.Handler._verified_detections({"x.jpg": rec}), {})
 
     def test_queue_counts_skip_only_and_bare_person(self):
@@ -523,12 +533,19 @@ class TestDetectionExtract(unittest.TestCase):
 
     def test_backfill_pool_includes_no_trigger_not_urgent_partials(self):
         pool = analyze_images.in_backfill_pool
+        awaiting = analyze_images.is_awaiting_backfill
         self.assertTrue(pool({"fast_pass": "negative"}))
+        self.assertTrue(awaiting({"fast_pass": "negative"}))
         self.assertTrue(pool({"car": True, "_llm_skip": "no_trigger"}))
+        self.assertTrue(awaiting({"car": True, "_llm_skip": "no_trigger"}))
         self.assertTrue(pool({"car": True, "fast_pass": "partial"}))
+        self.assertFalse(awaiting({"car": True, "fast_pass": "partial"}))
         self.assertFalse(pool({"person": True, "fast_pass": "partial", "_llm_skip": "budget"}))
+        self.assertFalse(awaiting({"person": True, "fast_pass": "partial", "_llm_skip": "budget"}))
         self.assertFalse(pool({"person": True, "_llm": {"porch_access": False}}))
+        self.assertFalse(awaiting({"person": True, "_llm": {"porch_access": False}}))
         self.assertFalse(pool({"person": True}))
+        self.assertFalse(awaiting({"person": True}))
 
     def test_preliminary_detector_only_with_labels(self):
         h = api_server.Handler
@@ -1056,6 +1073,61 @@ class TestCameraOfflineHours(unittest.TestCase):
                 api_server.WATCH_DIRS = orig
         self.assertFalse(mid[0]["stale"])   # 13h < 24h default (would be stale at 12)
         self.assertTrue(late[0]["stale"])   # 25h > 24h
+
+
+class TestNotifyImageMode(unittest.TestCase):
+    """objects-mode gating on detector labels — no Slack/ntfy network."""
+
+    def setUp(self):
+        self.posts = []
+        self.td = tempfile.TemporaryDirectory()
+        self._orig_state = intg.STATE_FILE
+        self._orig_load = intg.load_config
+        self._orig_provider = intg._provider
+        intg.STATE_FILE = os.path.join(self.td.name, "state.json")
+
+        class FakeMod:
+            @staticmethod
+            def post_image(cfg, filename, labels, caption, image_path):
+                self.posts.append({
+                    "filename": filename,
+                    "labels": list(labels or []),
+                    "caption": caption,
+                    "path": image_path,
+                })
+                return True, "ok"
+
+        intg._provider = lambda name: FakeMod()
+
+    def tearDown(self):
+        intg.STATE_FILE = self._orig_state
+        intg.load_config = self._orig_load
+        intg._provider = self._orig_provider
+        self.td.cleanup()
+
+    def test_objects_mode_sends_detector_person_even_if_ha_false(self):
+        intg.load_config = lambda: {
+            "slack": {"enabled": True, "notify_mode": "objects"},
+        }
+        intg.notify_image("x.jpg", ["person"], "", "/tmp/x.jpg")
+        self.assertEqual(len(self.posts), 1)
+        self.assertEqual(self.posts[0]["labels"], ["person"])
+        self.assertEqual(self.posts[0]["caption"], "")
+        self.assertNotIn("porch_access", self.posts[0]["labels"])
+
+    def test_objects_mode_skips_ha_only_porch_without_detector_labels(self):
+        intg.load_config = lambda: {
+            "slack": {"enabled": True, "notify_mode": "objects"},
+        }
+        intg.notify_image("x.jpg", [], "Someone at the porch", "/tmp/x.jpg")
+        self.assertEqual(self.posts, [])
+
+    def test_context_mode_skips_per_image(self):
+        intg.load_config = lambda: {
+            "slack": {"enabled": True, "notify_mode": "context"},
+        }
+        intg.notify_image("x.jpg", ["person"], "", "/tmp/x.jpg")
+        self.assertEqual(self.posts, [])
 
 
 if __name__ == "__main__":
