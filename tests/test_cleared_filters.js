@@ -42,4 +42,8 @@ assert.ok(!/state\.activeFilter\s*=/.test(resetFn[1]),
 assert.ok(!/dataset\.filter === 'all'/.test(resetFn[1]),
   'resetAllFilters must not force the All tab selected');
 
+// Hidden labels are settings. Clear all must not touch (or claim to clear) them.
+assert.ok(!/state\.blacklist/.test(resetFn[1]),
+  'resetAllFilters must not unhide labels — Unhide is the dedicated escape');
+
 console.log('clearedFilters: all assertions passed');

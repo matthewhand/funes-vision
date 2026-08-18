@@ -2690,7 +2690,7 @@
         const activeDay = state.activeDateFilter === dayStr ? 'active' : '';
         const title = `${d.label}: ${d.total} events, ${d.matchTotal} ${what}${d.matchTotal !== 1 ? 's' : ''}`;
         barWrapper.innerHTML = `
-          <div class="chart-bar day-bar ${activeDay}" style="height: 100%; background: rgba(59, 130, 246, ${intensity.toFixed(2)})" title="${title}">${segs}</div>
+          <div class="chart-bar day-bar ${activeDay}" style="height: 100%; background: rgba(59, 130, 246, ${intensity.toFixed(2)})" title="${escapeHtml(title)}">${segs}</div>
         `;
         barWrapper.setAttribute('aria-label', title);
         barWrapper.setAttribute('aria-pressed', String(!!activeDay));
@@ -2745,7 +2745,7 @@
         const barPct = matchCount > 0 ? Math.max(pct, 8) : pct;
 
         barWrapper.innerHTML = `
-          <div class="chart-bar ${activeClass}" style="height: ${barPct}%" title="${labelStr}">${matchHtml}</div>
+          <div class="chart-bar ${activeClass}" style="height: ${barPct}%" title="${escapeHtml(labelStr)}">${matchHtml}</div>
         `;
         barWrapper.setAttribute('aria-label', labelStr);
         barWrapper.setAttribute('aria-pressed', String(!!activeClass));
@@ -3499,7 +3499,7 @@
         item.dataset.label = label;
         item.setAttribute('aria-label', hideLabelSwitchName(label));
         item.innerHTML = `
-          <span style="text-transform: capitalize;">${label}</span>
+          <span style="text-transform: capitalize;">${escapeHtml(label)}</span>
           <div class="blacklist-status"></div>
         `;
         item.onclick = () => toggleBlacklist(label);
@@ -3939,18 +3939,23 @@
         // Accurate cause + a real escape, mirroring the grid empty-state — not a
         // static "waiting for the model" line (the model may be off, and the real
         // cause is usually an active filter/search).
+        // Hidden labels are settings, not a filter: Clear all does not unhide
+        // them, so blacklist-alone must not trip the "match current filters"
+        // empty-state. Unhide (below) is the dedicated escape.
         const filtersActive = !!(state.searchQuery || state.objectFilters.size ||
           state.activeDateFilter !== 'all' || state.timeStart !== 0 || state.timeEnd !== 23 ||
-          state.activeHourChartFilter !== null || state.blacklist.length);
+          state.activeHourChartFilter !== null);
         const es = timelineEmptyState(filtersActive);
         const kind = emptyStateKind({ filtersActive });
+        let msg = es.message;
         let actions = es.showReset ? '<button class="btn" id="empty-reset">Clear all filters</button>' : '';
         if (state.blacklist.length) {
+          msg += ` (${state.blacklist.length} label${state.blacklist.length !== 1 ? 's are' : ' is'} hidden via Settings.)`;
           actions += '<button class="btn" id="empty-unhide">Unhide all labels</button>';
         }
         // Prefer emptyStateKind titles (filtered vs empty archive); keep
         // timelineEmptyState's visit-specific message body.
-        showEmptyState(es.message, actions, kind.title === 'No snapshots yet' ? 'No visits yet' : kind.title);
+        showEmptyState(msg, actions, kind.title === 'No snapshots yet' ? 'No visits yet' : kind.title);
         return;
       }
 
@@ -4207,7 +4212,7 @@
           const suffix = st === 'preliminary' ? '?' : st === 'disputed' ? ' &#10007;' : '';
 
           detectionsHtml += `
-            <span class="badge badge-ai tag-${label} ${cls}" role="img" aria-label="${escapeHtml(badgeLabel(label, st))}">
+            <span class="badge badge-ai tag-${escapeHtml(label)} ${cls}" role="img" aria-label="${escapeHtml(badgeLabel(label, st))}">
               <i data-lucide="${icon}" aria-hidden="true"></i>
               <span style="text-transform: capitalize;" aria-hidden="true">${escapeHtml(label)}${suffix}</span>
             </span>`;
@@ -4695,7 +4700,7 @@
 
       footer.innerHTML = `
         <div style="margin-bottom: 8px;">
-          ${lightboxFooterMeta(meta, aiText)}
+          ${escapeHtml(lightboxFooterMeta(meta, aiText))}
         </div>
         ${captionHtml}
         ${burstHtml}
@@ -5579,7 +5584,7 @@
             `<span title="${String(h).padStart(2, '0')}:00 — ${c}" style="display:inline-block;width:3px;margin-right:1px;height:${Math.round(2 + (c / insMax) * 16)}px;background:${h === insPeak ? '#10b981' : 'var(--border-color)'};vertical-align:bottom;"></span>`
           ).join('');
           const insTopHtml = insTop.length
-            ? insTop.map(t => `${t.label} ${t.count}`).join(' &middot; ')
+            ? insTop.map(t => `${escapeHtml(t.label)} ${t.count}`).join(' &middot; ')
             : 'no detections yet';
 
           el.innerHTML = `
@@ -5587,11 +5592,11 @@
             <div><b>New-image trigger:</b> inotify ${ok(s.trigger.inotify_active)}${s.trigger.inotify_active ? ' (instant)' : ' <span style="color:#ef4444;">not running!</span>'}</div>
             <div><b>Live updates:</b> ${(() => { const st = streamStatusText(state.streamConnected, state.lastPingTs, Date.now() / 1000); return `${ok(st.ok)} ${st.label}`; })()}</div>
             <div><b>Idle sweep:</b> every ${s.trigger.idle_sweep_seconds}s</div>
-            <div><b>Fast detector:</b> ${(s.settings.fast_pass_engine || 'yolo').toUpperCase()}</div>
-            <div><b>LLM:</b> ${s.llm.model || '?'} ${ok(s.llm.reachable)} ${s.llm.allow_cloud ? '(+cloud)' : '(local only)'}</div>
+            <div><b>Fast detector:</b> ${escapeHtml(String(s.settings.fast_pass_engine || 'yolo').toUpperCase())}</div>
+            <div><b>LLM:</b> ${escapeHtml(s.llm.model || '?')} ${ok(s.llm.reachable)} ${s.llm.allow_cloud ? '(+cloud)' : '(local only)'}</div>
             <div><b>Idle backfill:</b> ${s.settings.deep_backfill ? 'on' : 'off'}</div>
             <div><b>Multi-image summaries:</b> ${s.settings.burst_summaries_enabled ? 'on' : 'off'}</div>
-            <div><b>Quiet labels:</b> ${(s.settings.gate_ignore_labels || []).join(', ') || 'none'}</div>
+            <div><b>Quiet labels:</b> ${(s.settings.gate_ignore_labels || []).map(l => escapeHtml(l)).join(', ') || 'none'}</div>
             <div style="margin-top:6px;"><b>Queue:</b>
               ${formatCount(s.queue.unanalyzed)} new &middot; ${formatCount(s.queue.unverified_partials)} priority &middot;
               ${formatCount(s.queue.awaiting_backfill)} backfill &middot; ${formatCount(s.queue.llm_verified)} verified
