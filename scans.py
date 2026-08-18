@@ -22,15 +22,17 @@ _POSTAL = {
         "postal_delivery": {
             "type": "boolean",
             "description": (
-                "True only if a postie, courier, or parcel delivery is "
-                "happening now. A resident, walker, or suitcase is false."
+                "True only if a uniformed postie or courier is delivering "
+                "mail or a parcel right now (hi-vis, postal bag, branded van). "
+                "A resident with a suitcase, shopping, or pram is false. "
+                "A parked private car is false."
             ),
         },
         "postal_how": {
             "type": "string",
             "enum": ["van", "bike", "on foot", "truck", "scooter", "car",
                      "unknown", "none"],
-            "description": "How the delivery arrives. none if postal_delivery is false.",
+            "description": "How the courier arrives. none if postal_delivery is false.",
         },
     },
 }
@@ -43,8 +45,10 @@ _PORCH = {
         "porch_access": {
             "type": "boolean",
             "description": (
-                "True only if a person is on or stepping onto the front "
-                "porch/entrance. A person on the path or driveway is false."
+                "True only if a person is standing on the grey tiled porch "
+                "against the house (by the deck box, rail, or front door). "
+                "The red brick garden path, lawn, driveway, and street are "
+                "NOT the porch — those are false."
             ),
         },
     },
@@ -65,23 +69,6 @@ _PACKAGE = {
     },
 }
 
-_ANIMAL = {
-    "type": "object",
-    "additionalProperties": False,
-    "required": ["animal_detected", "animal_type"],
-    "properties": {
-        "animal_detected": {
-            "type": "boolean",
-            "description": "True only if a live animal is visible in this frame.",
-        },
-        "animal_type": {
-            "type": "string",
-            "enum": ["dog", "cat", "bird", "wildlife", "other", "none"],
-            "description": "none if animal_detected is false.",
-        },
-    },
-}
-
 _DOG_WALK = {
     "type": "object",
     "additionalProperties": False,
@@ -90,14 +77,18 @@ _DOG_WALK = {
         "dog_walked": {
             "type": "boolean",
             "description": (
-                "True only if a person is walking a dog (leash or clearly "
-                "accompanying). A dog alone is false."
+                "True only if a person AND a dog are both visible and the "
+                "person is walking the dog (leash or clearly leading). "
+                "A dog with no person, or a person standing near a sitting "
+                "dog, is false."
             ),
         },
     },
 }
 
 # Priority order. First matching scans run up to MAX_SCANS_PER_IMAGE.
+# animal_detected is NOT an LLM scan — YOLO dog/cat/bird is copied through
+# (e2b missed a clear yard dog and invented animals on person-only frames).
 SCANS = (
     {
         "id": "postal",
@@ -107,25 +98,18 @@ SCANS = (
         "num_predict": SCAN_TOKENS,
     },
     {
-        "id": "porch",
-        "cameras": ("front",),
-        "need_any": ("person", "face", "body"),
-        "schema": _PORCH,
-        "num_predict": 32,
-    },
-    {
-        "id": "animal",
-        "cameras": ("front", "back"),
-        "need_any": ("dog", "cat", "bird"),
-        "schema": _ANIMAL,
-        "num_predict": SCAN_TOKENS,
-    },
-    {
         "id": "dog_walk",
         "cameras": ("front", "back"),
         "need_any": ("person", "face", "body"),
         "need_all": ("dog",),
         "schema": _DOG_WALK,
+        "num_predict": 32,
+    },
+    {
+        "id": "porch",
+        "cameras": ("front",),
+        "need_any": ("person", "face", "body"),
+        "schema": _PORCH,
         "num_predict": 32,
     },
     {
@@ -157,6 +141,15 @@ def yolo_set(fp_labels):
     return {k for k in (fp_labels or []) if k}
 
 
+def yolo_animal_seed(fp_labels):
+    """Copy detector animal class through — do not spend an e2b call on it."""
+    ys = yolo_set(fp_labels)
+    for kind in ("dog", "cat", "bird"):
+        if kind in ys:
+            return {"animal_detected": True, "animal_type": kind}
+    return {}
+
+
 def scans_for(kind, fp_labels, limit=MAX_SCANS_PER_IMAGE):
     """Ordered applicable scans for this camera + detector labels."""
     ys = yolo_set(fp_labels)
@@ -176,12 +169,21 @@ def scans_for(kind, fp_labels, limit=MAX_SCANS_PER_IMAGE):
     return out
 
 
-def union_schema(specs):
+def union_schema(specs, seed=None):
     props, req = {}, []
     for spec in specs:
         sch = spec.get("schema") or {}
         props.update(sch.get("properties") or {})
         for k in sch.get("required") or []:
+            if k not in req:
+                req.append(k)
+    if seed:
+        props["animal_detected"] = {"type": "boolean"}
+        props["animal_type"] = {
+            "type": "string",
+            "enum": ["dog", "cat", "bird", "wildlife", "other", "none"],
+        }
+        for k in ("animal_detected", "animal_type"):
             if k not in req:
                 req.append(k)
     return {

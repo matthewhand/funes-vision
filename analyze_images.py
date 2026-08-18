@@ -811,11 +811,16 @@ def run_deep_pass(image_path, img_name, can_run_chain, api_key, trigger, fp_labe
         fp_labels = sorted(k for k, v in fp.items() if v is True)
     kind = camera_kind(image_path)
     todo = scans.scans_for(kind, fp_labels, scans.MAX_SCANS_PER_IMAGE)
+    seed = scans.yolo_animal_seed(fp_labels)
     if not todo:
         LAST_DURATION_S = time.time() - started
+        if seed:
+            seed["_yolo"] = list(fp_labels or [])
+            seed["_scans"] = ["yolo_animal"]
+            return seed, 0
         return None, 0
 
-    combined = {}
+    combined = dict(seed)
     n = 0
     used = None
     for spec in todo:
@@ -1590,15 +1595,17 @@ def main(retention_only=False):
                             image_path, img, can_run_chain, api_key,
                             "priority", fp_labels=fresh_fp)
                         deep_pass_count += n_scans
-                        asked = scans.scans_for(
-                            camera_kind(image_path),
+                        labels_for_scans = (
                             fresh_fp if fresh_fp is not None else
                             sorted(k for k, v in fp_results.items() if v is True))
+                        asked = scans.scans_for(
+                            camera_kind(image_path), labels_for_scans)
                         if result:
                             rec = merge_llm_into_fastpass(
                                 fp_results, result, model=LAST_MODEL_USED,
                                 duration_s=LAST_DURATION_S,
-                                schema=scans.union_schema(asked))
+                                schema=scans.union_schema(
+                                    asked, scans.yolo_animal_seed(labels_for_scans)))
                         elif n_scans == 0:
                             rec = detector_labels(fp_results)
                             rec["_llm_skip"] = "no_scan"

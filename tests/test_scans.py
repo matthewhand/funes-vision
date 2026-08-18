@@ -13,29 +13,31 @@ class TestScansFor(unittest.TestCase):
         got = [s["id"] for s in scans.scans_for("front", ["person"], limit=2)]
         self.assertEqual(got, ["postal", "porch"])
 
-    def test_front_dog_only_is_animal(self):
-        got = [s["id"] for s in scans.scans_for("front", ["dog"], limit=2)]
-        self.assertEqual(got, ["animal"])
+    def test_front_dog_only_is_yolo_seed(self):
+        self.assertEqual(scans.scans_for("front", ["dog"], limit=2), [])
+        self.assertEqual(scans.yolo_animal_seed(["dog"]),
+                         {"animal_detected": True, "animal_type": "dog"})
 
     def test_front_person_and_dog(self):
         got = [s["id"] for s in scans.scans_for("front", ["person", "dog"], limit=2)]
-        self.assertEqual(got, ["postal", "porch"])  # dog_walk is 4th, over limit
+        self.assertEqual(got, ["postal", "dog_walk"])
 
     def test_front_person_and_dog_three(self):
         got = [s["id"] for s in scans.scans_for("front", ["person", "dog"], limit=4)]
-        self.assertEqual(got, ["postal", "porch", "animal", "dog_walk"])
+        self.assertEqual(got, ["postal", "dog_walk", "porch", "package"])
 
     def test_back_person_only_asks_nothing(self):
         # approaching_house dropped — do not spend 40s on it
         self.assertEqual(scans.scans_for("back", ["person"], limit=2), [])
 
-    def test_back_dog_is_animal(self):
-        got = [s["id"] for s in scans.scans_for("back", ["dog"], limit=2)]
-        self.assertEqual(got, ["animal"])
+    def test_back_dog_is_yolo_seed_not_a_scan(self):
+        self.assertEqual(scans.scans_for("back", ["dog"], limit=2), [])
+        self.assertEqual(scans.yolo_animal_seed(["dog"]),
+                         {"animal_detected": True, "animal_type": "dog"})
 
     def test_back_person_and_dog(self):
         got = [s["id"] for s in scans.scans_for("back", ["person", "dog"], limit=2)]
-        self.assertEqual(got, ["animal", "dog_walk"])
+        self.assertEqual(got, ["dog_walk"])
 
     def test_car_only_asks_nothing(self):
         self.assertEqual(scans.scans_for("front", ["car"], limit=2), [])
@@ -62,3 +64,13 @@ class TestDeepPassNoScan(unittest.TestCase):
             fp_labels=["person"])
         self.assertIsNone(result)
         self.assertEqual(n, 0)
+
+    def test_backyard_dog_is_yolo_seed_no_llm(self):
+        ai.RATE_LIMITED = False
+        result, n = ai.run_deep_pass(
+            "/mnt/models/Webcam22/x.jpg", "x.jpg", True, None, "priority",
+            fp_labels=["dog"])
+        self.assertEqual(n, 0)
+        self.assertEqual(result["animal_detected"], True)
+        self.assertEqual(result["animal_type"], "dog")
+        self.assertEqual(result["_scans"], ["yolo_animal"])

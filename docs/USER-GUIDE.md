@@ -250,11 +250,14 @@ frame is worth it (at most two questions per still):
 
 | Scan | Camera | Only if YOLO saw | Why |
 |------|--------|------------------|-----|
-| postal delivery | Front | person | The flag we actually care about |
-| porch access | Front | person | Best precision in the vision audit |
-| animal + type | Both | dog / cat / bird | Do not ask if the detector saw no animal |
-| dog walked | Both | person **and** dog | Dog alone is not a walk |
+| postal delivery | Front | person | Courier only — suitcase/resident is false |
+| dog walked | Both | person **and** dog | Asked before porch when both are present |
+| porch access | Front | person | Grey tiled porch by the door, not the brick path |
 | opens a box | Front | person | After the others, if budget remains |
+
+**Animal** is not an e2b question. If YOLO saw dog/cat/bird we copy that
+through (`animal_detected` + type). e2b was missing real yard dogs and
+inventing animals on person-only frames.
 
 We **do not ask** `approaching_house`, `car_access`, `clothes_drying`,
 `leaving_house`, `enters_car` / `exits_car`, car colour/outfit, or
