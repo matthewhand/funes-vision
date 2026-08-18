@@ -1,0 +1,125 @@
+{
+  "10.0.0.22_01_20260618143028000_MOTDEC.jpg": {
+    "dog": true,
+    "_yolo": [
+      "dog"
+    ],
+    "animal_detected": true,
+    "animal_type": "dog",
+    "dog_walked": false,
+    "approaching_house": false,
+    "leaving_house": false,
+    "weapon_detected": false,
+    "clothes_drying": false,
+    "_llm": {
+      "animal_detected": true,
+      "animal_type": "dog"
+    },
+    "_llm_model": "gemma4:e2b",
+    "_llm_ms": 41200,
+    "description": "A tan dog standing on the back lawn."
+  },
+  "10.0.0.22_01_20260618143010000_MOTDEC.jpg": {
+    "dog": true,
+    "_yolo": [
+      "dog"
+    ],
+    "animal_detected": true,
+    "animal_type": "dog",
+    "_llm": {
+      "animal_detected": true,
+      "animal_type": "dog"
+    },
+    "_llm_model": "gemma4:e2b",
+    "_llm_ms": 39800,
+    "description": "A tan dog in the backyard near the garden bed."
+  },
+  "10.0.0.22_01_20260618120000000_MOTDEC.jpg": {
+    "bird": true,
+    "_yolo": [
+      "bird"
+    ],
+    "animal_detected": true,
+    "animal_type": "bird",
+    "_llm": {
+      "animal_detected": true,
+      "animal_type": "bird"
+    },
+    "_llm_model": "gemma4:e2b",
+    "_llm_ms": 38100,
+    "description": "Magpies on the back fence."
+  },
+  "10.0.0.21_01_20260618101522301_MOTDEC.jpg": {
+    "person": true,
+    "_yolo": [
+      "person"
+    ],
+    "postal_delivery": true,
+    "postal_how": "on foot",
+    "porch_access": true,
+    "dog_walked": false,
+    "car_access": false,
+    "enters_car": false,
+    "exits_car": false,
+    "car_outfit": "none",
+    "car_color": "none",
+    "car_make": "none",
+    "opens_box": false,
+    "animal_detected": false,
+    "animal_type": "none",
+    "_llm": {
+      "postal_delivery": true,
+      "postal_how": "on foot",
+      "porch_access": true
+    },
+    "_llm_model": "gemma4:e2b",
+    "_llm_ms": 44100,
+    "description": "Courier walking a parcel up to the front door."
+  },
+  "10.0.0.21_01_20260618101445190_MOTDEC.jpg": {
+    "person": true,
+    "_yolo": [
+      "person"
+    ],
+    "postal_delivery": true,
+    "postal_how": "on foot",
+    "porch_access": true,
+    "_llm": {
+      "postal_delivery": true,
+      "postal_how": "on foot",
+      "porch_access": true
+    },
+    "_llm_model": "gemma4:e2b",
+    "_llm_ms": 43000,
+    "description": "A person carrying a parcel on the front driveway."
+  },
+  "10.0.0.21_01_20260618101418112_MOTDEC.jpg": {
+    "person": true,
+    "_yolo": [
+      "person"
+    ],
+    "postal_delivery": true,
+    "postal_how": "on foot",
+    "porch_access": false,
+    "_llm": {
+      "postal_delivery": true,
+      "postal_how": "on foot"
+    },
+    "_llm_model": "gemma4:e2b",
+    "_llm_ms": 42800,
+    "description": "A person with a parcel entering the driveway."
+  },
+  "10.0.0.21_01_20260618093015000_MOTDEC.jpg": {
+    "car": true,
+    "_yolo": [
+      "car"
+    ],
+    "fast_pass": "partial"
+  },
+  "10.0.0.22_01_20260618080000000_MOTDEC.jpg": {
+    "fast_pass": "negative"
+  },
+  "10.0.0.21_01_20260618070200000_MOTDEC.jpg": {
+    "fast_pass": "negative"
+  }
+}

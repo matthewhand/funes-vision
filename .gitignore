@@ -1,15 +1,19 @@
-bursts.json
+# Live catalogs / secrets at the repo root (and any accidental copies).
+# Fixture trees under tools/screenshots/fixtures/ are tracked — they are
+# fictional and required for the screenshot harness.
+/bursts.json
+/pins.json
+/analysis.json
+/inference_log.json
+/inference_status.json
+/integrations.json
+/integrations_state.json
+/retention_log.json
+/alert_state.json
 *.log
 nohup.out
 __pycache__/
-pins.json
-analysis.json
-inference_log.json
-inference_status.json
-integrations.json
-integrations_state.json
-retention_log.json
-alert_state.json
 
-# Local-only user-guide screenshots (contain real webcam footage — never commit)
-docs/img/
+# Old captures from the live cameras — never commit.
+# User-guide shots from the synthetic fixture gallery live in docs/guide/img/.
+/docs/img/

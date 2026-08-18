@@ -1,0 +1,25 @@
+[
+  {
+    "image": "10.0.0.21_01_20260618101522301_MOTDEC.jpg",
+    "model": "gemma4:e2b",
+    "trigger": "priority",
+    "started": 1781769700,
+    "duration_s": 44.1,
+    "labels": [
+      "person",
+      "postal_delivery"
+    ],
+    "ok": true
+  },
+  {
+    "image": "10.0.0.22_01_20260618143028000_MOTDEC.jpg",
+    "model": "gemma4:e2b",
+    "trigger": "priority",
+    "started": 1781769800,
+    "duration_s": 41.2,
+    "labels": [
+      "dog"
+    ],
+    "ok": true
+  }
+]
