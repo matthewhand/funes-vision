@@ -38,6 +38,8 @@ assert.strictEqual(countActiveFilters({
 }), 6);
 assert.strictEqual(countActiveFilters({ objectFilters: new Set(['a', 'b']) }), 2);
 assert.strictEqual(countActiveFilters({ activeDateFilter: 'all', timeStart: 0, timeEnd: 23 }), 0);
+assert.strictEqual(countActiveFilters({ activeDateFilter: '2026-08-21' }, '2026-08-21'), 0);
+assert.strictEqual(countActiveFilters({ activeDateFilter: '2026-08-20' }, '2026-08-21'), 1);
 assert.deepStrictEqual(activeFilterBanner({}), { count: 0, text: '' });
 assert.deepStrictEqual(activeFilterBanner({ searchQuery: 'hi' }), { count: 1, text: '1 filter active' });
 assert.deepStrictEqual(activeFilterBanner({ objectFilters: ['a', 'b'] }), { count: 2, text: '2 filters active' });

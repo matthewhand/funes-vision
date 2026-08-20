@@ -16,6 +16,7 @@ assert.deepStrictEqual(clearedFilters(), {
   searchQuery: '', objectFilters: [],
   activeDateFilter: 'all', timeStart: 0, timeEnd: 23, activeHourChartFilter: null,
 });
+assert.deepStrictEqual(clearedFilters('2026-08-21').activeDateFilter, '2026-08-21');
 // Returns a fresh object each call (no shared mutable refs).
 const a = clearedFilters(), b = clearedFilters();
 assert.notStrictEqual(a, b);

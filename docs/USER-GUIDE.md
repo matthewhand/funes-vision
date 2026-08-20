@@ -159,9 +159,11 @@ On a phone, **All** is a single-column stack:
 
 ### Date Timeline
 
-**All Dates** is the default. Tap a day to restrict the gallery. The
-count is how many stills that day has, not how many match the current
-object filter.
+**Today** is the default (the civil date in `Australia/Sydney`). **All
+Dates** is still on the rail if you want the whole archive. If today
+has no stills yet, the newest day in the catalog is selected instead.
+The count is how many stills that day has, not how many match the
+current object filter. Clear all returns to this home day.
 
 ### Motion Activity
 

@@ -2301,7 +2301,8 @@
       // "Sticky" select accumulates filters (toggle several on/off); off = one-at-a-time
       stickySelect: JSON.parse(localStorage.getItem('webcam_sticky_filters') || 'false'),
       filtersHidden: JSON.parse(localStorage.getItem('webcam_filters_hidden') || 'false'),
-      activeDateFilter: 'all', // timeline filter: all, YYYY-MM-DD
+      activeDateFilter: 'all', // set to today on first catalog load; all = explicit
+      dateUserSet: false,     // user picked All Dates / a day / a saved search
       timeStart: 0,
       timeEnd: 23,
       activeHourChartFilter: null, // specific hour filter: null, 0-23
@@ -2739,6 +2740,12 @@
         }
 
         state.allImages = imagesList;
+        if (!state.dateUserSet) {
+          const dates = imagesList.map(f => parseFilename(f).dateStr);
+          const home = homeDateFilter(todayDateStr(new Date(), DISPLAY_TZ), dates);
+          if (state.activeDateFilter !== home) analysisChanged = true;
+          state.activeDateFilter = home;
+        }
         if (silent && imagesUnchanged && !analysisChanged) return;
         renderDateSidebar();
         renderObjectFilters();
@@ -2778,6 +2785,7 @@
       allItem.innerHTML = `<span>All Dates</span><span class="count-badge">${state.allImages.length}</span>`;
       bindActivatable(allItem, () => {
         state.activeDateFilter = 'all';
+        state.dateUserSet = true;
         document.querySelectorAll('.sidebar-item').forEach(el => el.classList.remove('active'));
         allItem.classList.add('active');
         applyFiltersAndSearch();
@@ -2795,6 +2803,7 @@
         item.innerHTML = `<span>${escapeHtml(label)}</span><span class="count-badge">${dateCounts[dateStr].count}</span>`;
         bindActivatable(item, () => {
           state.activeDateFilter = dateStr;
+          state.dateUserSet = true;
           document.querySelectorAll('.sidebar-item').forEach(el => el.classList.remove('active'));
           item.classList.add('active');
           applyFiltersAndSearch();
@@ -2868,7 +2877,10 @@
         barWrapper.setAttribute('aria-pressed', String(!!activeDay));
         bindActivatable(barWrapper, () => {
           // Drill into that day; activating the active day clears it
-          state.activeDateFilter = state.activeDateFilter === dayStr ? 'all' : dayStr;
+          const dates = (state.allImages || []).map(f => parseFilename(f).dateStr);
+          state.activeDateFilter = state.activeDateFilter === dayStr
+            ? homeDateFilter(todayDateStr(new Date(), DISPLAY_TZ), dates) : dayStr;
+          state.dateUserSet = true;
           renderDateSidebar();
           applyFiltersAndSearch();
         });
@@ -3147,11 +3159,14 @@
     // === pure:countActiveFilters ===
     // How many filter dimensions are non-default (search, date, time range,
     // hour chart, object chips). Used for the always-visible filter banner.
-    function countActiveFilters(snap) {
+    function countActiveFilters(snap, todayStr) {
       snap = snap || {};
       let n = 0;
       if (snap.searchQuery) n += 1;
-      if (snap.activeDateFilter && snap.activeDateFilter !== 'all') n += 1;
+      // Today is the home view, not a filter. All Dates is an expansion (no
+      // banner). A specific other day is a date filter.
+      if (snap.activeDateFilter && snap.activeDateFilter !== 'all'
+          && snap.activeDateFilter !== (todayStr || '')) n += 1;
       // Time-of-day range is one dimension (either bound non-default).
       const ts = Number.isInteger(snap.timeStart) ? snap.timeStart : 0;
       const te = Number.isInteger(snap.timeEnd) ? snap.timeEnd : 23;
@@ -3168,8 +3183,8 @@
 
     // === pure:activeFilterBanner ===
     // Banner copy for the always-visible active-filter strip.
-    function activeFilterBanner(snap) {
-      const count = countActiveFilters(snap);
+    function activeFilterBanner(snap, todayStr) {
+      const count = countActiveFilters(snap, todayStr);
       if (count === 0) return { count: 0, text: '' };
       return { count, text: `${count} filter${count === 1 ? '' : 's'} active` };
     }
@@ -3462,10 +3477,11 @@
     // === pure:clearedFilters ===
     // The canonical "no filters" state (objectFilters as []). Omits the view
     // tab so reset cannot switch Timeline → All. Other keys match filterSnapshot.
-    function clearedFilters() {
+    function clearedFilters(todayStr) {
       // View tab (state.activeFilter) is not a filter — leave it alone.
+      // Date home view is today (YYYY-MM-DD); All Dates is an explicit expansion.
       return { searchQuery: '', objectFilters: [],
-               activeDateFilter: 'all', timeStart: 0, timeEnd: 23, activeHourChartFilter: null };
+               activeDateFilter: todayStr || 'all', timeStart: 0, timeEnd: 23, activeHourChartFilter: null };
     }
     // === /pure:clearedFilters ===
 
@@ -3473,10 +3489,12 @@
     // canonical "escape" so "Show all / Clear all filters" never dead-ends.
     // Does not switch Timeline / Objects / All.
     function resetAllFilters() {
-      const f = clearedFilters();
+      const dates = (state.allImages || []).map(f => parseFilename(f).dateStr);
+      const f = clearedFilters(homeDateFilter(todayDateStr(new Date(), DISPLAY_TZ), dates));
       state.searchQuery = f.searchQuery;
       state.objectFilters.clear();
       state.activeDateFilter = f.activeDateFilter;
+      state.dateUserSet = false;
       state.timeStart = f.timeStart; state.timeEnd = f.timeEnd;
       state.activeHourChartFilter = f.activeHourChartFilter;
       const si = document.getElementById('search-input'); if (si) si.value = '';
@@ -3817,8 +3835,11 @@
       document.getElementById('stats-label').textContent = gridStatsLabel(state.filteredImages.length, state.allImages.length);
 
       if (state.filteredImages.length === 0) {
+        const dates = (state.allImages || []).map(f => parseFilename(f).dateStr);
+        const home = homeDateFilter(todayDateStr(new Date(), DISPLAY_TZ), dates);
         const filtersActive = !!(state.searchQuery || state.objectFilters.size ||
-          state.activeDateFilter !== 'all' || state.timeStart !== 0 || state.timeEnd !== 23 ||
+          (state.activeDateFilter && state.activeDateFilter !== 'all' && state.activeDateFilter !== home) ||
+          state.timeStart !== 0 || state.timeEnd !== 23 ||
           state.activeHourChartFilter !== null);
         const kind = emptyStateKind({
           filtersActive: filtersActive || state.activeFilter === 'objects'
@@ -3845,6 +3866,43 @@
         renderNextPage();
       }
     }
+
+    // === pure:todayDateStr ===
+    // Civil date in a timezone as YYYY-MM-DD (en-CA). Used as the gallery's
+    // default date-rail selection. `now` is a Date or epoch-ms.
+    function todayDateStr(now, timeZone) {
+      const d = now instanceof Date ? now : new Date(now || Date.now());
+      const tz = timeZone || 'UTC';
+      try {
+        return d.toLocaleDateString('en-CA', { timeZone: tz });
+      } catch (e) {
+        return d.toISOString().slice(0, 10);
+      }
+    }
+    // === /pure:todayDateStr ===
+
+    // === pure:homeDateFilter ===
+    // Default date-rail selection: today when the archive has that day,
+    // otherwise the newest day present (so first paint is never All Dates
+    // and is not an empty "today" at 00:01).
+    function homeDateFilter(todayStr, availableDates) {
+      const dates = [];
+      if (Array.isArray(availableDates)) {
+        for (let i = 0; i < availableDates.length; i++) {
+          const d = availableDates[i];
+          if (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d) && dates.indexOf(d) < 0) {
+            dates.push(d);
+          }
+        }
+      }
+      if (todayStr && dates.indexOf(todayStr) !== -1) return todayStr;
+      if (dates.length) {
+        dates.sort();
+        return dates[dates.length - 1];
+      }
+      return todayStr || 'all';
+    }
+    // === /pure:homeDateFilter ===
 
     // === pure:dayLabel ===
     // 'Today'/'Yesterday'/'' for a YYYY-MM-DD vs a reference YYYY-MM-DD.
@@ -4135,8 +4193,11 @@
         // Hidden labels are settings, not a filter: Clear all does not unhide
         // them, so blacklist-alone must not trip the "match current filters"
         // empty-state. Unhide (below) is the dedicated escape.
+        const dates = (state.allImages || []).map(f => parseFilename(f).dateStr);
+        const home = homeDateFilter(todayDateStr(new Date(), DISPLAY_TZ), dates);
         const filtersActive = !!(state.searchQuery || state.objectFilters.size ||
-          state.activeDateFilter !== 'all' || state.timeStart !== 0 || state.timeEnd !== 23 ||
+          (state.activeDateFilter && state.activeDateFilter !== 'all' && state.activeDateFilter !== home) ||
+          state.timeStart !== 0 || state.timeEnd !== 23 ||
           state.activeHourChartFilter !== null);
         const es = timelineEmptyState(filtersActive);
         const kind = emptyStateKind({ filtersActive });
@@ -4897,7 +4958,8 @@
       const textEl = document.getElementById('filter-active-banner-text');
       if (!banner || !textEl) return;
       const snap = filterSnapshot(state);
-      const b = activeFilterBanner(snap);
+      const dates = (state.allImages || []).map(f => parseFilename(f).dateStr);
+      const b = activeFilterBanner(snap, homeDateFilter(todayDateStr(new Date(), DISPLAY_TZ), dates));
       if (b.count === 0) {
         banner.hidden = true;
         textEl.textContent = '';
@@ -5453,6 +5515,7 @@
         state.activeFilter = f.activeFilter || 'events';
         state.objectFilters = new Set(f.objectFilters || []);
         state.activeDateFilter = f.activeDateFilter || 'all';
+        state.dateUserSet = true;
         state.timeStart = Number.isInteger(f.timeStart) ? f.timeStart : 0;
         state.timeEnd = Number.isInteger(f.timeEnd) ? f.timeEnd : 23;
         state.activeHourChartFilter = (f.activeHourChartFilter == null ? null : f.activeHourChartFilter);
