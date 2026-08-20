@@ -493,6 +493,7 @@ move → verify) lives in [ROADMAP.md](ROADMAP.md).
 | `deep_backfill` | false | idle LLM verification of the archive (UI-toggleable; **off** on this box) |
 | `burst_summaries_enabled` | false | multi-image (burst) LLM captions of a visit; off does not affect single-frame deep passes (UI-toggleable) |
 | `gate_ignore_labels` | ["car"] | labels that alone don't trigger urgent deep passes |
+| `ignore_regions` | front triangle | YOLO spatial mask. A `car` whose box centre sits in the polygon is dropped (parked orange SUV). A car on the street or leaving the driveway is kept. UI: Settings → Ignore parked car / Draw triangle. Applies to **new** stills |
 | `camera_offline_hours` | 24 | no frames in this long → a Slack "camera offline?" alert |
 
 ## Observability & health alerts

@@ -50,6 +50,7 @@ MUTABLE_SETTINGS = {
     "deep_passes_enabled": {"choices": (True, False)},
     "burst_summaries_enabled": {"choices": (True, False)},
     "idle_sweep_seconds": {"min": 15, "max": 3600},
+    "ignore_regions": {"kind": "ignore_regions"},
 }
 
 def resolve_timezone(env_val=None, settings_val=None):
@@ -63,6 +64,9 @@ def resolve_timezone(env_val=None, settings_val=None):
 
 def setting_valid(key, value):
     spec = MUTABLE_SETTINGS[key]
+    if spec.get("kind") == "ignore_regions":
+        import zones
+        return zones.ignore_regions_valid(value)
     if "choices" in spec:
         return value in spec["choices"]
     return (isinstance(value, int) and not isinstance(value, bool)
@@ -722,7 +726,12 @@ class Handler(BaseHTTPRequestHandler):
             for key, spec in MUTABLE_SETTINGS.items():
                 if key in payload:
                     if not setting_valid(key, payload[key]):
-                        detail = list(spec["choices"]) if "choices" in spec else f"{spec['min']}..{spec['max']}"
+                        if spec.get("kind") == "ignore_regions":
+                            detail = "a list of {camera, polygon[3+], labels?}"
+                        elif "choices" in spec:
+                            detail = list(spec["choices"])
+                        else:
+                            detail = f"{spec['min']}..{spec['max']}"
                         self._send(400, {"error": f"{key} must be {detail}"})
                         return
                     changed[key] = payload[key]

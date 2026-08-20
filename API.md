@@ -38,7 +38,7 @@ Permanently remove an image and its thumbnail, and unpin it.
 
 ### `GET /api/settings`
 The mutable settings subset only.
-- **200** → `{"fast_pass_engine", "deep_backfill", "deep_passes_enabled", "burst_summaries_enabled", "idle_sweep_seconds"}`
+- **200** → `{"fast_pass_engine", "deep_backfill", "deep_passes_enabled", "burst_summaries_enabled", "idle_sweep_seconds", "ignore_regions"}`
 
 ### `POST /api/settings`
 Update one or more mutable settings (validated; others ignored).
@@ -48,6 +48,10 @@ Update one or more mutable settings (validated; others ignored).
   - `deep_passes_enabled` ∈ `true | false`
   - `burst_summaries_enabled` ∈ `true | false`
   - `idle_sweep_seconds` ∈ integer `15..3600`
+  - `ignore_regions` ∈ list of `{camera, polygon, labels?, enabled?}`.
+    `polygon` is 3–8 points in `[0,1]` image fractions (origin top-left).
+    YOLO drops a listed label when the box centre is inside an enabled
+    polygon on that camera. Empty list = no mask.
 - **200** → `{"ok": true, ...changed}`
 - **400** → `{"error": "<key> must be <choices|range>"}` on an invalid value,
   or `{"error": "no recognized settings in payload"}` if nothing applied

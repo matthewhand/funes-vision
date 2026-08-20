@@ -440,6 +440,7 @@ idle backfill off, multi-image summaries off.
 | **Multi-image summaries** | LLM caption of a visit from several frames. Off because e2b 400s on that path. Single-frame flags are unchanged |
 | **Idle sweep (s)** | Server: seconds between catch-up sweeps |
 | **Status poll (s)** | This browser only: how often the AI panel refreshes |
+| **Ignore parked car** | Front camera: a triangle over the orange SUV bay. YOLO **drops** a `car` whose centre sits in that triangle (the parked car that is in almost every still). A car on the street, or the orange car **leaving** onto the street, sits outside the triangle and is kept. **Draw triangle…** to retarget. Applies to **new** stills, not the archive |
 
 ---
 

@@ -43,6 +43,9 @@ WATCH_DIRS = []  # REQUIRED via settings.json watch_dirs - deployment specific
 # in frame 24/7). Persisted as _llm_skip=no_trigger (not partial — that
 # would re-queue as urgent). Idle backfill verifies them later if enabled.
 GATE_IGNORE_LABELS = ["car"]
+# Spatial ignore: drop a YOLO hit whose box centre sits in a polygon
+# (the parked orange SUV bay on the front camera). Empty = no mask.
+IGNORE_REGIONS = []
 # Slack "camera offline?" and /api/status stale share this default.
 CAMERA_OFFLINE_HOURS_DEFAULT = 24
 
@@ -72,6 +75,7 @@ if os.path.exists(_settings_path):
         except Exception:
             pass
         GATE_IGNORE_LABELS = _s.get("gate_ignore_labels", GATE_IGNORE_LABELS)
+        IGNORE_REGIONS = _s.get("ignore_regions") or []
         WATCH_DIRS = _s.get("watch_dirs", WATCH_DIRS)
         YOLO_DIR = _s.get("yolo_dir", YOLO_DIR)
     except (ValueError, OSError) as e:
@@ -135,12 +139,28 @@ def fast_pass_yolo(image_path):
         img = cv2.imread(image_path)
         if img is None:
             return {}
-        ids, confs, _ = _load_yolo().detect(img, confThreshold=YOLO_CONF, nmsThreshold=0.4)
+        h, w = img.shape[:2]
+        ids, confs, boxes = _load_yolo().detect(img, confThreshold=YOLO_CONF, nmsThreshold=0.4)
         results = {}
-        for cid in np.array(ids).flatten():
+        if len(ids) == 0:
+            return results
+        ids = np.array(ids).flatten()
+        boxes = np.array(boxes)
+        kind = camera_kind(image_path)
+        try:
+            import zones
+        except Exception:
+            zones = None
+        for i, cid in enumerate(ids):
             label = YOLO_CLASSES.get(int(cid))
-            if label:
-                results[label] = True
+            if not label:
+                continue
+            if zones is not None and IGNORE_REGIONS and w > 0 and h > 0:
+                x, y, bw, bh = [float(v) for v in boxes[i]]
+                cx, cy = (x + bw / 2.0) / w, (y + bh / 2.0) / h
+                if zones.detection_ignored(label, cx, cy, kind, IGNORE_REGIONS):
+                    continue
+            results[label] = True
         return results
     except Exception as e:
         print(f"YOLO fast pass error: {e}")

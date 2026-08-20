@@ -41,6 +41,18 @@ class TestSettingValid(unittest.TestCase):
         self.assertFalse(api_server.setting_valid("idle_sweep_seconds", 60.0))  # float rejected
         self.assertFalse(api_server.setting_valid("idle_sweep_seconds", 15.5))
 
+    def test_ignore_regions(self):
+        ok = [{
+            "camera": "front",
+            "labels": ["car"],
+            "enabled": True,
+            "polygon": [[0.0, 0.22], [0.2, 0.45], [0.0, 0.72]],
+        }]
+        self.assertTrue(api_server.setting_valid("ignore_regions", ok))
+        self.assertTrue(api_server.setting_valid("ignore_regions", []))
+        self.assertFalse(api_server.setting_valid("ignore_regions", "nope"))
+        self.assertFalse(api_server.setting_valid("ignore_regions", [{"polygon": [[0, 0]]}]))
+
 
 class TestBackoff(unittest.TestCase):
     def test_exponential_capped(self):
