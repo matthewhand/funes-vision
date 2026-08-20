@@ -25,7 +25,7 @@ assert.ok(!/gemma|verif/i.test(empty.message), 'must not reference a specific/di
 // Hidden labels are settings, not a filter. Clear all does not unhide them, so
 // renderEventsView must not OR state.blacklist into filtersActive (that would
 // offer a dead "Clear all" while the empty grid stays). Unhide is the escape.
-const ev = html.match(/function renderEventsView\(\) \{([\s\S]*?)\n    function openEventPlayer/);
+const ev = html.match(/function renderEventsView\([^)]*\) \{([\s\S]*?)\n    function openEventPlayer/);
 assert(ev, 'renderEventsView not found');
 const fa = ev[1].match(/const filtersActive = !!\(([\s\S]*?)\);/);
 assert(fa, 'timeline filtersActive assignment missing');

@@ -363,10 +363,12 @@ localStorage: `webcam_ai_blacklist` (hidden labels) and
   IntersectionObserver. A missing thumb shows the unavailable glyph —
   it does **not** pull the full JPEG into the grid. Lightbox / download
   still use full res. `lucide.min.js` loads at the end of `<body>`.
-  Catalogs fetch in parallel with `cache: 'no-cache'` (no `?t=` bust);
-  `create-index.sh` slices `analysis.json` / `bursts.json` / `pins.json`
-  to the files in that camera's `images.json` so :8180 does not download
-  the back camera's rows.
+  `images.json` paints the date rail before `analysis.json` is parsed.
+  Visit grouping runs only on the selected day (default today), not the
+  whole archive. Activity charts wait for idle. Catalogs revalidate with
+  `cache: 'no-cache'` (no `?t=` bust); `create-index.sh` slices
+  `analysis.json` / `bursts.json` / `pins.json` to that camera's
+  `images.json`.
 - Timezones: filenames carry the camera's **local wall-clock** time.
   `SOURCE_TZ` (the camera location, `Australia/Sydney`) is the zone those
   digits are in; `zonedTimeToUtc()` resolves the true instant **DST-aware**

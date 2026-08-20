@@ -29,4 +29,16 @@ assert.strictEqual(homeDateFilter('2026-08-21', ['2026-08-20', '2026-08-21']), '
 assert.strictEqual(homeDateFilter('2026-08-21', ['2026-06-18', '2026-08-20']), '2026-08-20');
 assert.strictEqual(homeDateFilter('2026-08-21', []), '2026-08-21');
 
+const fo = html.match(/pure:filenamesOnDate ===\n([\s\S]*?)\n\s*\/\/ === \/pure:filenamesOnDate/);
+assert(fo, 'filenamesOnDate sentinel missing');
+eval(fo[1]);
+eval(html.match(/pure:parseFilenameFields ===\n([\s\S]*?)\n\s*\/\/ === \/pure:parseFilenameFields/)[1]);
+const files = [
+  '10.0.0.21_01_20260821080000000_MOTDEC.jpg',
+  '10.0.0.21_01_20260820080000000_MOTDEC.jpg',
+  '10.0.0.21_01_20260821090000000_MOTDEC.jpg',
+];
+assert.deepStrictEqual(filenamesOnDate(files, '2026-08-21'), [files[0], files[2]]);
+assert.strictEqual(filenamesOnDate(files, 'all').length, 3);
+
 console.log('dayLabel: all assertions passed');

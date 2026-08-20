@@ -1427,6 +1427,11 @@
       height: 15px;
     }
 
+    .visit-row {
+      content-visibility: auto;
+      contain-intrinsic-size: auto 72px;
+    }
+
     /* Skeleton placeholders */
     .skeleton-card {
       background: var(--bg-secondary);
@@ -2492,6 +2497,28 @@
     }
     // === /pure:parseFilenameFields ===
 
+    // === pure:filenamesOnDate ===
+    // Restrict a filename list to one YYYY-MM-DD (filename civil date).
+    // 'all' / blank returns the input. dateOf defaults to parseFilenameFields.
+    function filenamesOnDate(filenames, dateFilter, dateOf) {
+      const list = filenames || [];
+      if (!dateFilter || dateFilter === 'all') return list;
+      const of = dateOf || (f => parseFilenameFields(f).dateStr);
+      const out = [];
+      for (let i = 0; i < list.length; i++) {
+        if (of(list[i]) === dateFilter) out.push(list[i]);
+      }
+      return out;
+    }
+    // === /pure:filenamesOnDate ===
+
+    function catalogDateStrs(filenames) {
+      const list = filenames || [];
+      const out = [];
+      for (let i = 0; i < list.length; i++) out.push(parseFilenameFields(list[i]).dateStr);
+      return out;
+    }
+
     // === pure:visitAltText ===
     // A human, screen-reader-friendly alt for a Timeline visit thumbnail
     // (was alt="", i.e. announced as an unlabelled image). Pure.
@@ -2664,6 +2691,12 @@
       try { if (res && res.body && typeof res.body.cancel === 'function') res.body.cancel(); } catch (e) { /* ignore */ }
     }
 
+    function afterPaint(fn) {
+      const ric = window.requestIdleCallback;
+      if (typeof ric === 'function') ric(() => fn(), { timeout: 180 });
+      else requestAnimationFrame(fn);
+    }
+
     // Load data from images.json and analysis.json
     async function loadData(silent = false) {
       if (!silent) {
@@ -2676,15 +2709,14 @@
       }
       
       try {
-        // Parallel, revalidating fetches. Never cache-bust with ?t= — that
-        // forced a full re-download of analysis.json (~2 MB shared, or the
-        // per-camera slice) on every poll.
-        const [imgResponse, analysisResp, burstResp, pinsResp] = await Promise.all([
-          fetch('images.json', { cache: 'no-cache' }),
+        // Start extras in parallel, but paint the date rail as soon as the
+        // (smaller) images.json arrives — don't wait on analysis.json parse.
+        const extrasP = Promise.all([
           fetch('analysis.json', { cache: 'no-cache' }).catch(() => null),
           fetch('bursts.json', { cache: 'no-cache' }).catch(() => null),
           fetch('pins.json', { cache: 'no-cache' }).catch(() => null),
         ]);
+        const imgResponse = await fetch('images.json', { cache: 'no-cache' });
         if (!imgResponse.ok) throw new Error('Network error loading images catalog');
 
         const imgTag = catalogTag(imgResponse);
@@ -2694,10 +2726,34 @@
         else imagesList = await imgResponse.json();
         if (imgTag) catalogTags.images = imgTag;
 
+        if (!imagesList || !Array.isArray(imagesList)) {
+          const k = emptyStateKind({
+            error: 'Invalid file format. Scaffold images.json output is corrupted.'
+          });
+          showEmptyState(k.message, '', k.title);
+          return;
+        }
+
+        if (state.allImages.length > 0 && imagesList.length > state.allImages.length) {
+          const diffCount = imagesList.length - state.allImages.length;
+          showToast(`Captured ${diffCount} new camera snapshot(s)!`);
+        }
+
         let analysisChanged = false;
+        state.allImages = imagesList;
+        if (!state.dateUserSet) {
+          const dates = imagesList.map(f => parseFilenameFields(f).dateStr);
+          const home = homeDateFilter(todayDateStr(new Date(), DISPLAY_TZ), dates);
+          if (state.activeDateFilter !== home) analysisChanged = true;
+          state.activeDateFilter = home;
+        }
+        if (!silent) renderDateSidebar();
+
+        const [analysisResp, burstResp, pinsResp] = await extrasP;
+
         if (analysisResp && analysisResp.ok) {
           const tag = catalogTag(analysisResp);
-          if (tag && tag === catalogTags.analysis && state.analysis) {
+          if (tag && tag === catalogTags.analysis && state.analysis && Object.keys(state.analysis).length) {
             drainBody(analysisResp);
           } else {
             state.analysis = await analysisResp.json();
@@ -2725,31 +2781,10 @@
           }
           if (tag) catalogTags.pins = tag;
         }
-        
-        if (!imagesList || !Array.isArray(imagesList)) {
-          const k = emptyStateKind({
-            error: 'Invalid file format. Scaffold images.json output is corrupted.'
-          });
-          showEmptyState(k.message, '', k.title);
-          return;
-        }
 
-        if (state.allImages.length > 0 && imagesList.length > state.allImages.length) {
-          const diffCount = imagesList.length - state.allImages.length;
-          showToast(`Captured ${diffCount} new camera snapshot(s)!`);
-        }
-
-        state.allImages = imagesList;
-        if (!state.dateUserSet) {
-          const dates = imagesList.map(f => parseFilename(f).dateStr);
-          const home = homeDateFilter(todayDateStr(new Date(), DISPLAY_TZ), dates);
-          if (state.activeDateFilter !== home) analysisChanged = true;
-          state.activeDateFilter = home;
-        }
         if (silent && imagesUnchanged && !analysisChanged) return;
-        renderDateSidebar();
-        renderObjectFilters();
         applyFiltersAndSearch();
+        afterPaint(() => renderObjectFilters());
         
       } catch (err) {
         console.error('Error fetching data:', err);
@@ -2769,10 +2804,10 @@
     function renderDateSidebar() {
       const dateCounts = {};
       state.allImages.forEach(filename => {
-        const meta = parseFilename(filename);
-        if (meta.dateStr !== 'Unknown') {
-          dateCounts[meta.dateStr] = dateCounts[meta.dateStr] || { label: meta.formattedDate, count: 0 };
-          dateCounts[meta.dateStr].count++;
+        const dateStr = parseFilenameFields(filename).dateStr;
+        if (dateStr !== 'Unknown') {
+          dateCounts[dateStr] = dateCounts[dateStr] || { count: 0, sample: filename };
+          dateCounts[dateStr].count++;
         }
       });
       
@@ -2799,7 +2834,8 @@
         const item = document.createElement('div');
         item.className = `sidebar-item ${state.activeDateFilter === dateStr ? 'active' : ''}`;
         const rel = dayLabel(dateStr, todayStr);
-        const label = rel ? `${rel} · ${dateCounts[dateStr].label}` : dateCounts[dateStr].label;
+        const pretty = parseFilename(dateCounts[dateStr].sample).formattedDate || dateStr;
+        const label = rel ? `${rel} · ${pretty}` : pretty;
         item.innerHTML = `<span>${escapeHtml(label)}</span><span class="count-badge">${dateCounts[dateStr].count}</span>`;
         bindActivatable(item, () => {
           state.activeDateFilter = dateStr;
@@ -2877,7 +2913,7 @@
         barWrapper.setAttribute('aria-pressed', String(!!activeDay));
         bindActivatable(barWrapper, () => {
           // Drill into that day; activating the active day clears it
-          const dates = (state.allImages || []).map(f => parseFilename(f).dateStr);
+          const dates = catalogDateStrs(state.allImages);
           state.activeDateFilter = state.activeDateFilter === dayStr
             ? homeDateFilter(todayDateStr(new Date(), DISPLAY_TZ), dates) : dayStr;
           state.dateUserSet = true;
@@ -3489,7 +3525,7 @@
     // canonical "escape" so "Show all / Clear all filters" never dead-ends.
     // Does not switch Timeline / Objects / All.
     function resetAllFilters() {
-      const dates = (state.allImages || []).map(f => parseFilename(f).dateStr);
+      const dates = catalogDateStrs(state.allImages);
       const f = clearedFilters(homeDateFilter(todayDateStr(new Date(), DISPLAY_TZ), dates));
       state.searchQuery = f.searchQuery;
       state.objectFilters.clear();
@@ -3776,7 +3812,17 @@
 
     // Apply Active Filters & Search Query
     function applyFiltersAndSearch() {
-      state.filteredImages = state.allImages.filter(filename => {
+      const scoped = filenamesOnDate(state.allImages, state.activeDateFilter);
+      if (state.activeFilter === 'events') {
+        const viewToggles = document.getElementById('view-toggles');
+        if (viewToggles) viewToggles.style.display = 'none';
+        if (typeof updateFilterActiveBanner === 'function') updateFilterActiveBanner();
+        renderEventsView(scoped);
+        afterPaint(() => renderActivityChart());
+        return;
+      }
+
+      state.filteredImages = scoped.filter(filename => {
         const meta = parseFilename(filename);
         const analysis = state.analysis[filename] || {};
         
@@ -3791,8 +3837,7 @@
         // "show unconfirmed" is on); "All" shows everything.
         if (state.activeFilter === 'objects' && !objectFilterActive() && !hasWhitelistedDetection) return false;
 
-        // 3. Date Timeline filter
-        if (state.activeDateFilter !== 'all' && meta.dateStr !== state.activeDateFilter) return false;
+        // 3. Date already applied via filenamesOnDate.
 
         // 4. Time-of-day Range filter (wraps midnight when start > end)
         const hr = meta.hour;
@@ -3810,8 +3855,7 @@
         return true;
       });
 
-      // Render chart to reflect current counts
-      renderActivityChart();
+      afterPaint(() => renderActivityChart());
       if (typeof updateFilterActiveBanner === 'function') updateFilterActiveBanner();
 
       // The card-layout toggles (small/medium/large/list) only drive the
@@ -3835,7 +3879,7 @@
       document.getElementById('stats-label').textContent = gridStatsLabel(state.filteredImages.length, state.allImages.length);
 
       if (state.filteredImages.length === 0) {
-        const dates = (state.allImages || []).map(f => parseFilename(f).dateStr);
+        const dates = catalogDateStrs(state.allImages);
         const home = homeDateFilter(todayDateStr(new Date(), DISPLAY_TZ), dates);
         const filtersActive = !!(state.searchQuery || state.objectFilters.size ||
           (state.activeDateFilter && state.activeDateFilter !== 'all' && state.activeDateFilter !== home) ||
@@ -4086,20 +4130,27 @@
     }
     // === /pure:visitPlayFrames ===
 
-    function computeVisits() {
-      const items = state.allImages
-        .map(f => ({ f, meta: parseFilename(f), a: state.analysis[f] }))
-        .filter(x => x.meta && x.a) // analyzed images only - unknown is not "absent"
-        .sort((x, y) => `${x.meta.dateStr} ${x.meta.timeStr}`.localeCompare(`${y.meta.dateStr} ${y.meta.timeStr}`));
+    function computeVisits(filenames) {
+      const src = filenames || state.allImages;
+      const items = [];
+      for (let i = 0; i < src.length; i++) {
+        const f = src[i];
+        const a = state.analysis[f];
+        if (!a) continue;
+        const meta = parseFilename(f);
+        if (!meta) continue;
+        items.push({ f, meta, a, labels: effectiveLabels(a) });
+      }
+      items.sort((x, y) => `${x.meta.dateStr} ${x.meta.timeStr}`.localeCompare(`${y.meta.dateStr} ${y.meta.timeStr}`));
 
       const labels = new Set();
-      items.forEach(x => effectiveLabels(x.a).forEach(l => {
+      items.forEach(x => x.labels.forEach(l => {
         if (!state.blacklist.includes(l)) labels.add(l);
       }));
 
       const visits = [];
       labels.forEach(label => {
-        const present = smoothFlicker(items.map(x => effectiveLabels(x.a).has(label)));
+        const present = smoothFlicker(items.map(x => x.labels.has(label)));
         let i = 0;
         while (i < present.length) {
           if (!present[i]) { i++; continue; }
@@ -4158,14 +4209,14 @@
       return formatDuration(ms, v.count);
     };
 
-    function renderEventsView() {
+    function renderEventsView(scoped) {
       const grid = document.getElementById('image-grid');
       grid.innerHTML = '';
       document.getElementById('sentinel-text').textContent = '';
 
-      let visits = computeVisits();
+      const src = scoped || filenamesOnDate(state.allImages, state.activeDateFilter);
+      let visits = computeVisits(src);
       if (objectFilterActive()) visits = visits.filter(v => state.objectFilters.has(v.label));
-      if (state.activeDateFilter !== 'all') visits = visits.filter(v => v.start.meta.dateStr === state.activeDateFilter);
       visits = visits.filter(v => visitPassesTimeFilter(
         v, state.timeStart, state.timeEnd, state.activeHourChartFilter));
       if (state.searchQuery) {
@@ -4193,7 +4244,7 @@
         // Hidden labels are settings, not a filter: Clear all does not unhide
         // them, so blacklist-alone must not trip the "match current filters"
         // empty-state. Unhide (below) is the dedicated escape.
-        const dates = (state.allImages || []).map(f => parseFilename(f).dateStr);
+        const dates = catalogDateStrs(state.allImages);
         const home = homeDateFilter(todayDateStr(new Date(), DISPLAY_TZ), dates);
         const filtersActive = !!(state.searchQuery || state.objectFilters.size ||
           (state.activeDateFilter && state.activeDateFilter !== 'all' && state.activeDateFilter !== home) ||
@@ -4229,6 +4280,7 @@
         // The player/clip is capped at 60 frames; tell the user when a visit is longer.
         const framesNote = (v.frames && v.count > v.frames.length) ? ` (first ${v.frames.length} shown)` : '';
         const row = document.createElement('div');
+        row.className = 'visit-row';
         row.style.cssText = 'display:flex;align-items:center;gap:12px;padding:10px 12px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:8px;color:var(--text-primary);cursor:pointer;';
         row.innerHTML = `
           <img class="card-img unloaded" data-src="thumbs/${encodeURIComponent(v.start.f)}" data-full="${encodeURIComponent(v.start.f)}" loading="lazy" decoding="async" alt="${escapeHtml(visitAltText(v.label, v.start.meta.formattedTime, v.count, v.ongoing))}" style="width:80px;height:52px;object-fit:cover;border-radius:4px;flex-shrink:0;">
@@ -4958,7 +5010,7 @@
       const textEl = document.getElementById('filter-active-banner-text');
       if (!banner || !textEl) return;
       const snap = filterSnapshot(state);
-      const dates = (state.allImages || []).map(f => parseFilename(f).dateStr);
+      const dates = catalogDateStrs(state.allImages);
       const b = activeFilterBanner(snap, homeDateFilter(todayDateStr(new Date(), DISPLAY_TZ), dates));
       if (b.count === 0) {
         banner.hidden = true;

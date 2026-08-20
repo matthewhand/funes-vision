@@ -10,8 +10,10 @@ const createIndex = fs.readFileSync(root + '/create-index.sh', 'utf8');
 
 assert.ok(!/images\.json\?t=/.test(html), 'must not cache-bust images.json with ?t=');
 assert.ok(!/analysis\.json\?t=/.test(html), 'must not cache-bust analysis.json with ?t=');
-assert.ok(/Promise\.all\(/.test(html) && /fetch\('analysis\.json'/.test(html),
-  'catalogs must fetch in parallel');
+assert.ok(/fetch\('images\.json'/.test(html) && /fetch\('analysis\.json'/.test(html),
+  'images.json and analysis.json must both be fetched');
+assert.ok(/filenamesOnDate/.test(html),
+  'Timeline must scope visit grouping to the selected day');
 assert.ok(/cache:\s*'no-cache'/.test(html), 'catalog fetches must revalidate, not bypass cache');
 
 const head = html.split(/<body/i)[0];
