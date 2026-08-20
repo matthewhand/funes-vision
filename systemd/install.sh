@@ -13,6 +13,11 @@ rm -rf /etc/systemd/system/ollama.service.d
 cp /home/user/webcam/systemd/webcam-pipeline@.service /etc/systemd/system/
 cp /home/user/webcam/systemd/webcam-api.service /etc/systemd/system/
 cp /home/user/webcam/systemd/ollama.service /etc/systemd/system/
+mkdir -p /etc/systemd/system/ollama.service.d
+cat > /etc/systemd/system/ollama.service.d/keep-alive.conf <<'EOF'
+[Service]
+Environment=OLLAMA_KEEP_ALIVE=24h
+EOF
 systemctl daemon-reload
 
 # Stop any ad-hoc watchers so systemd owns the processes

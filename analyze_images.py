@@ -28,6 +28,8 @@ MAX_AGE_DAYS = 30   # retention: no-detection images older than this are removed
 MAX_DIR_GB = 5.0    # retention: per-camera disk budget
 ALLOW_CLOUD = False  # OpenRouter only when settings allow_cloud is true
 OLLAMA_URL = "http://localhost:11434"
+# Idle unload: each /api/chat refreshes this TTL. Ollama's default is 5m.
+OLLAMA_KEEP_ALIVE = "24h"
 MAX_DEEP_PASSES = 30  # LLM calls (local or cloud) per camera per sweep
 DEEP_CONCURRENCY = 1   # parallel backfill deep passes; >1 only sane for a cloud
                        # model (no local RAM contention). Rate-limit backoff guards it.
@@ -61,6 +63,7 @@ if os.path.exists(_settings_path):
         MIN_MEM_FOR_LOCAL_GB = _s.get("min_mem_for_local_gb", MIN_MEM_FOR_LOCAL_GB)
         ALLOW_CLOUD = _s.get("allow_cloud", ALLOW_CLOUD)
         OLLAMA_URL = _s.get("ollama_url", OLLAMA_URL)
+        OLLAMA_KEEP_ALIVE = str(_s.get("ollama_keep_alive", OLLAMA_KEEP_ALIVE) or "24h")
         MAX_DEEP_PASSES = _s.get("max_deep_passes", MAX_DEEP_PASSES)
         DEEP_CONCURRENCY = _s.get("deep_concurrency", DEEP_CONCURRENCY)
         MODEL_LOCAL = _s.get("model_local", MODEL_LOCAL)
@@ -980,10 +983,18 @@ def backoff_delay(attempt, base=LLM_BACKOFF_BASE, cap=LLM_BACKOFF_CAP):
     return min(cap, base * (2 ** attempt))
 
 
+def ollama_payload(payload):
+    """Copy a chat payload and default keep_alive so activity holds the model."""
+    out = dict(payload or {})
+    out.setdefault("keep_alive", OLLAMA_KEEP_ALIVE)
+    return out
+
+
 def _ollama_chat(payload, timeout):
     """POST /api/chat with exponential-backoff retry on 429/503. Returns the
     response on success; raises RateLimited if still throttled after
     LLM_MAX_RETRIES. Other request errors propagate to the caller."""
+    payload = ollama_payload(payload)
     for attempt in range(LLM_MAX_RETRIES):
         resp = requests.post(f"{OLLAMA_URL}/api/chat", json=payload, timeout=timeout)
         if resp.status_code in (429, 503):
@@ -1050,7 +1061,7 @@ def _ollama_chat_stream(payload, on_delta, timeout):
     """Stream /api/chat (stream:true), accumulating the content. Calls
     on_delta(delta, accumulated) per chunk; returns the full text. Shares the
     429/503 backoff + RateLimited semantics of _ollama_chat."""
-    payload = {**payload, "stream": True}
+    payload = ollama_payload({**payload, "stream": True})
     for attempt in range(LLM_MAX_RETRIES):
         resp = requests.post(f"{OLLAMA_URL}/api/chat", json=payload, timeout=timeout, stream=True)
         if resp.status_code in (429, 503):

@@ -75,6 +75,17 @@ class TestRescanWindow(unittest.TestCase):
         self.assertFalse(analyze_images.rec_is_urgent_detection({"fast_pass": "negative"}))
 
 
+class TestOllamaKeepAlive(unittest.TestCase):
+    def test_defaults_to_24h(self):
+        p = analyze_images.ollama_payload({"model": "gemma4:e2b"})
+        self.assertEqual(p["keep_alive"], "24h")
+        self.assertEqual(p["model"], "gemma4:e2b")
+
+    def test_explicit_keep_alive_wins(self):
+        p = analyze_images.ollama_payload({"model": "x", "keep_alive": "5m"})
+        self.assertEqual(p["keep_alive"], "5m")
+
+
 class TestBackoff(unittest.TestCase):
     def test_exponential_capped(self):
         self.assertEqual(analyze_images.backoff_delay(0, base=2.0, cap=60.0), 2.0)
