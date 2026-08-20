@@ -174,6 +174,7 @@ outside the per-camera budget — see [DEPLOYMENT.md](DEPLOYMENT.md)).
 |------|------|
 | Full sweep | Every `analyze_images.py` run (inotify / idle / startup), step 1 |
 | `--retention-only` | Cron hourly + manual; age/budget + catalog prune only — **no** YOLO/LLM queue |
+| `--rescan-days N` | One-shot: re-YOLO + current e2b scans on person/dog/cat/bird frames in the last N days. Empties and car-only skipped. Holds the pipeline flock |
 | Manual API delete | `POST /api/delete` (also unpins); not retention, but same disk effect |
 
 After deletes, the sweep **prunes** stale keys from `analysis.json` /

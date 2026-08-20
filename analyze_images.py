@@ -10,7 +10,9 @@ import random
 import bisect
 import threading
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, timedelta
+import re
+import fcntl
 
 # CONFIGURATION (defaults; override in settings.json next to this script)
 MODEL_CLOUD = "google/gemma-4-31b-it"
@@ -388,6 +390,50 @@ def get_llm_schema():
 
 def max_tokens_for_kind(kind):
     return BACK_MAX_TOKENS if kind == "back" else FRONT_MAX_TOKENS
+
+
+_FNAME_TS = re.compile(r"_(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})\d{3}_")
+
+
+def filename_within_days(name, days, now=None, tz_name="Australia/Sydney"):
+    """True if the Hikvision filename clock is within the last `days` days."""
+    try:
+        days = int(days)
+    except (TypeError, ValueError):
+        return False
+    if days < 1 or not name:
+        return False
+    m = _FNAME_TS.search(str(name))
+    if not m:
+        return False
+    y, mo, d, h, mi, s = map(int, m.groups())
+    try:
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo(tz_name)
+        dt = datetime(y, mo, d, h, mi, s, tzinfo=tz)
+        now = now or datetime.now(tz)
+    except Exception:
+        try:
+            dt = datetime(y, mo, d, h, mi, s)
+        except ValueError:
+            return False
+        now = now.replace(tzinfo=None) if now is not None else datetime.now()
+    try:
+        return timedelta(0) <= (now - dt) <= timedelta(days=days)
+    except TypeError:
+        return False
+
+
+def rec_is_urgent_detection(rec):
+    """Person/dog/cat/bird (not car-only). Used to pick a rescan set."""
+    rec = rec if isinstance(rec, dict) else {}
+    if llm_should_trigger(rec):
+        return True
+    yolo = rec.get("_yolo") or []
+    return any(
+        l in LLM_TRIGGER_LABELS and l not in GATE_IGNORE_LABELS
+        for l in yolo
+    )
 
 
 def llm_should_trigger(fp_results):
@@ -1504,7 +1550,7 @@ def generate_thumbnails(image_dir, images):
     if made:
         print(f"Generated {made} thumbnails in {thumb_dir}")
 
-def main(retention_only=False):
+def main(retention_only=False, rescan_days=None):
     global RATE_LIMITED
     RATE_LIMITED = False  # fresh budget each sweep; a throttle only pauses one sweep
     api_key = os.getenv("OPENROUTER_API_KEY")
@@ -1548,7 +1594,8 @@ def main(retention_only=False):
         if not os.path.exists(image_dir): continue
         print(f"Scanning {image_dir}...")
         
-        apply_retention(image_dir, analysis_data, pins)
+        if not rescan_days:
+            apply_retention(image_dir, analysis_data, pins)
 
         # Cron/watchdog path: honor age + disk budgets without re-entering
         # the multi-hour analysis queue (which can hold the global lock).
@@ -1563,37 +1610,57 @@ def main(retention_only=False):
         # images (taken days apart) into one false "burst".
         images.sort(key=lambda x: os.path.getmtime(os.path.join(image_dir, x)))
 
-        generate_thumbnails(image_dir, images)
+        if not rescan_days:
+            generate_thumbnails(image_dir, images)
 
-        # Catch-up prioritization:
-        # 1. Images not in analysis_data at all
-        # 2. Images marked as "partial" (OpenCV hit, but no LLM yet)
-        missing = [i for i in images if i not in analysis_data]
-        partials = [i for i in images if i in analysis_data and analysis_data[i].get("fast_pass") == "partial"]
-        
-        # Combine: newest missing first, then newest partials (live hits first)
         _mtime = lambda x: os.path.getmtime(os.path.join(image_dir, x))
-        queue = sorted(missing, key=_mtime, reverse=True) + sorted(partials, key=_mtime, reverse=True)
-        
+        rescan_mode = bool(rescan_days)
+        if rescan_mode:
+            # Detections only (person/dog/cat/bird). Empties and car-only stay put.
+            queue = [
+                i for i in images
+                if filename_within_days(i, rescan_days)
+                and rec_is_urgent_detection(analysis_data.get(i) or {})
+            ]
+            queue.sort(key=_mtime, reverse=True)
+            print(f"Rescan last {rescan_days}d: {len(queue)} detections in {image_dir}")
+        else:
+            # Catch-up prioritization:
+            # 1. Images not in analysis_data at all
+            # 2. Images marked as "partial" (OpenCV hit, but no LLM yet)
+            missing = [i for i in images if i not in analysis_data]
+            partials = [i for i in images if i in analysis_data and analysis_data[i].get("fast_pass") == "partial"]
+            queue = sorted(missing, key=_mtime, reverse=True) + sorted(partials, key=_mtime, reverse=True)
+
         if not queue:
             print(f"No pending analysis for {image_dir}")
 
         new_analysis = False
         deep_pass_count = 0
-        max_deep_passes = MAX_DEEP_PASSES # Batch size (local AND cloud count)
+        max_deep_passes = MAX_DEEP_PASSES
+        if rescan_mode:
+            max_deep_passes = max(MAX_DEEP_PASSES, len(queue) * 4)
 
         for img in queue:
             image_path = os.path.join(image_dir, img)
 
-            # If it's a partial, we already have fp_results
-            was_partial = img in analysis_data and analysis_data[img].get("fast_pass") == "partial"
-            if was_partial:
-                fp_results = detector_labels(analysis_data[img])
-            else:
+            if rescan_mode:
+                # Fresh YOLO (parked-car mask) then current e2b scans, even if
+                # the row was already verified under an older schema.
                 fp_results = fast_pass_dispatch(image_path)
+                was_partial = False
+            else:
+                was_partial = img in analysis_data and analysis_data[img].get("fast_pass") == "partial"
+                if was_partial:
+                    fp_results = detector_labels(analysis_data[img])
+                else:
+                    fp_results = fast_pass_dispatch(image_path)
 
             if fp_results:
-                needs_deep = img not in analysis_data or analysis_data[img].get("fast_pass") == "partial"
+                if rescan_mode:
+                    needs_deep = True
+                else:
+                    needs_deep = img not in analysis_data or analysis_data[img].get("fast_pass") == "partial"
                 # YOLO person/dog/animal hits go to e2b. Car-only does not.
                 urgent = llm_should_trigger(fp_results)
 
@@ -1683,6 +1750,12 @@ def main(retention_only=False):
             if deep_pass_count >= max_deep_passes:
                 print(f"Batch limit ({max_deep_passes}) reached for {image_dir}")
                 break
+
+        if rescan_mode:
+            if new_analysis:
+                flush_analysis(analysis_file, analysis_data, force=True)
+            print(f"Rescan done for {image_dir}: {deep_pass_count} e2b calls")
+            continue
 
         # 1b. Idle backfill: spend any leftover deep-pass budget verifying
         # fast-pass negatives with the LLM, newest first, so the whole
@@ -1893,6 +1966,25 @@ if __name__ == "__main__":
             status = "ok" if ok else "FAIL"
             print(f"{kind}: {status} {detail}")
         raise SystemExit(0 if out and any(ok for ok, _ in out.values()) else 2)
+    rescan_days = None
+    if "--rescan-days" in sys.argv:
+        i = sys.argv.index("--rescan-days")
+        try:
+            rescan_days = int(sys.argv[i + 1])
+        except (IndexError, ValueError):
+            print("usage: analyze_images.py --rescan-days N", file=sys.stderr)
+            raise SystemExit(2)
+        if rescan_days < 1:
+            print("--rescan-days must be >= 1", file=sys.stderr)
+            raise SystemExit(2)
+        print(f"Waiting for pipeline lock to rescan last {rescan_days}d of detections...")
+        lock = open("/tmp/webcam_analysis.lock", "a")
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        try:
+            main(rescan_days=rescan_days)
+        finally:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+        raise SystemExit(0)
     # --retention-only: apply settings.json age/disk budgets + prune catalogs,
     # then exit. Used by the cron watchdog so cleanup never depends solely on
     # the long-lived create-index / analyze loop staying healthy.

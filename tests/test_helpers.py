@@ -54,6 +54,27 @@ class TestSettingValid(unittest.TestCase):
         self.assertFalse(api_server.setting_valid("ignore_regions", [{"polygon": [[0, 0]]}]))
 
 
+class TestRescanWindow(unittest.TestCase):
+    def test_filename_within_days(self):
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo("Australia/Sydney")
+        now = datetime(2026, 8, 21, 12, 0, 0, tzinfo=tz)
+        recent = "10.0.0.21_01_20260820120000000_MOTDEC.jpg"
+        old = "10.0.0.21_01_20260801120000000_MOTDEC.jpg"
+        future = "10.0.0.21_01_20260822120000000_MOTDEC.jpg"
+        self.assertTrue(analyze_images.filename_within_days(recent, 3, now=now))
+        self.assertFalse(analyze_images.filename_within_days(old, 3, now=now))
+        self.assertFalse(analyze_images.filename_within_days(future, 3, now=now))
+        self.assertFalse(analyze_images.filename_within_days("nope.jpg", 3, now=now))
+
+    def test_rec_is_urgent_detection(self):
+        self.assertTrue(analyze_images.rec_is_urgent_detection({"person": True}))
+        self.assertTrue(analyze_images.rec_is_urgent_detection({"_yolo": ["dog"]}))
+        self.assertFalse(analyze_images.rec_is_urgent_detection({"car": True, "_yolo": ["car"]}))
+        self.assertFalse(analyze_images.rec_is_urgent_detection({"fast_pass": "negative"}))
+
+
 class TestBackoff(unittest.TestCase):
     def test_exponential_capped(self):
         self.assertEqual(analyze_images.backoff_delay(0, base=2.0, cap=60.0), 2.0)
