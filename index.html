@@ -10,9 +10,6 @@
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icon.svg">
 
-  <!-- Icons: pinned local Lucide UMD (create-index.sh copies it into each web root). -->
-  <script src="lucide.min.js"></script>
-  
   <style>
     :root {
       --bg-primary: #080c14;
@@ -2227,6 +2224,9 @@
     <span id="toast-text">New snapshots are available!</span>
   </div>
 
+  <!-- Icons: pinned local Lucide UMD (create-index.sh copies it into each web root).
+       At the end of body so first paint of the chrome is not blocked on ~350 KB. -->
+  <script src="lucide.min.js"></script>
   <script>
     // System-wide states
     const state = {
@@ -2556,33 +2556,53 @@
       });
     }
 
-    // Parse filename details - source wall-clock is SOURCE_TZ (DST-aware)
+    // Parse filename details - source wall-clock is SOURCE_TZ (DST-aware).
+    // Memoized: first paint walks the catalog several times (sidebar, charts,
+    // filters, visits) and toLocaleDateString on 10k+ names is the stall.
+    const _filenameMeta = new Map();
     const parseFilename = (filename) => {
+      const hit = _filenameMeta.get(filename);
+      if (hit) return hit;
       const f = parseFilenameFields(filename);
+      let meta;
       if (!f.matched) {
-        return {
+        meta = {
           ip: f.ip, channel: f.channel, dateObj: null, hour: f.hour,
           dateStr: f.dateStr, timeStr: f.timeStr,
           formattedDate: 'Unknown Date', formattedTime: 'Unknown Time',
           eventType: f.eventType, original: f.original,
         };
+      } else {
+        // Resolve the true instant from the camera's local (SOURCE_TZ) wall-clock,
+        // DST-aware (fixes the old fixed +10:00 summer drift); display in DISPLAY_TZ.
+        const dateObj = new Date(zonedTimeToUtc(f.parts[0], f.parts[1], f.parts[2], f.parts[3], f.parts[4], f.parts[5], SOURCE_TZ));
+        meta = {
+          ip: f.ip,
+          channel: f.channel,
+          dateObj,
+          hour: hourInZone(dateObj, DISPLAY_TZ),
+          dateStr: f.dateStr,
+          timeStr: f.timeStr,
+          formattedDate: dateObj.toLocaleDateString('en-AU', { month: 'short', day: 'numeric', year: 'numeric', timeZone: DISPLAY_TZ }),
+          formattedTime: dateObj.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: DISPLAY_TZ }),
+          eventType: f.eventType,
+          original: f.original,
+        };
       }
-      // Resolve the true instant from the camera's local (SOURCE_TZ) wall-clock,
-      // DST-aware (fixes the old fixed +10:00 summer drift); display in DISPLAY_TZ.
-      const dateObj = new Date(zonedTimeToUtc(f.parts[0], f.parts[1], f.parts[2], f.parts[3], f.parts[4], f.parts[5], SOURCE_TZ));
-      return {
-        ip: f.ip,
-        channel: f.channel,
-        dateObj,
-        hour: hourInZone(dateObj, DISPLAY_TZ),
-        dateStr: f.dateStr,
-        timeStr: f.timeStr,
-        formattedDate: dateObj.toLocaleDateString('en-AU', { month: 'short', day: 'numeric', year: 'numeric', timeZone: DISPLAY_TZ }),
-        formattedTime: dateObj.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: DISPLAY_TZ }),
-        eventType: f.eventType,
-        original: f.original,
-      };
+      _filenameMeta.set(filename, meta);
+      return meta;
     };
+
+    // Catalog HTTP tag (ETag / Last-Modified). Same tag => skip JSON.parse and
+    // skip a full re-render on the 30s reconcile poll.
+    const catalogTags = { images: '', analysis: '', bursts: '', pins: '' };
+    function catalogTag(res) {
+      if (!res || !res.headers) return '';
+      return res.headers.get('ETag') || res.headers.get('Last-Modified') || '';
+    }
+    function drainBody(res) {
+      try { if (res && res.body && typeof res.body.cancel === 'function') res.body.cancel(); } catch (e) { /* ignore */ }
+    }
 
     // Load data from images.json and analysis.json
     async function loadData(silent = false) {
@@ -2596,23 +2616,54 @@
       }
       
       try {
-        // Fetch images.json
-        const imgResponse = await fetch('images.json?t=' + Date.now());
+        // Parallel, revalidating fetches. Never cache-bust with ?t= — that
+        // forced a full re-download of analysis.json (~2 MB shared, or the
+        // per-camera slice) on every poll.
+        const [imgResponse, analysisResp, burstResp, pinsResp] = await Promise.all([
+          fetch('images.json', { cache: 'no-cache' }),
+          fetch('analysis.json', { cache: 'no-cache' }).catch(() => null),
+          fetch('bursts.json', { cache: 'no-cache' }).catch(() => null),
+          fetch('pins.json', { cache: 'no-cache' }).catch(() => null),
+        ]);
         if (!imgResponse.ok) throw new Error('Network error loading images catalog');
-        const imagesList = await imgResponse.json();
-        
-        // Fetch analysis.json
-        try {
-          const analysisResp = await fetch('analysis.json?t=' + Date.now());
-          if (analysisResp.ok) state.analysis = await analysisResp.json();
-          
-          const burstResp = await fetch('bursts.json?t=' + Date.now());
-          if (burstResp.ok) state.bursts = await burstResp.json();
 
-          const pinsResp = await fetch('pins.json?t=' + Date.now());
-          if (pinsResp.ok) state.pins = new Set(await pinsResp.json());
-        } catch (e) {
-          console.warn('Could not load analysis files', e);
+        const imgTag = catalogTag(imgResponse);
+        const imagesUnchanged = !!(imgTag && imgTag === catalogTags.images && state.allImages.length);
+        let imagesList;
+        if (imagesUnchanged) { drainBody(imgResponse); imagesList = state.allImages; }
+        else imagesList = await imgResponse.json();
+        if (imgTag) catalogTags.images = imgTag;
+
+        let analysisChanged = false;
+        if (analysisResp && analysisResp.ok) {
+          const tag = catalogTag(analysisResp);
+          if (tag && tag === catalogTags.analysis && state.analysis) {
+            drainBody(analysisResp);
+          } else {
+            state.analysis = await analysisResp.json();
+            analysisChanged = true;
+          }
+          if (tag) catalogTags.analysis = tag;
+        }
+        if (burstResp && burstResp.ok) {
+          const tag = catalogTag(burstResp);
+          if (tag && tag === catalogTags.bursts) {
+            drainBody(burstResp);
+          } else {
+            state.bursts = await burstResp.json();
+            analysisChanged = true;
+          }
+          if (tag) catalogTags.bursts = tag;
+        }
+        if (pinsResp && pinsResp.ok) {
+          const tag = catalogTag(pinsResp);
+          if (tag && tag === catalogTags.pins) {
+            drainBody(pinsResp);
+          } else {
+            state.pins = new Set(await pinsResp.json());
+            analysisChanged = true;
+          }
+          if (tag) catalogTags.pins = tag;
         }
         
         if (!imagesList || !Array.isArray(imagesList)) {
@@ -2629,6 +2680,7 @@
         }
 
         state.allImages = imagesList;
+        if (silent && imagesUnchanged && !analysisChanged) return;
         renderDateSidebar();
         renderObjectFilters();
         applyFiltersAndSearch();
@@ -4059,7 +4111,7 @@
         const row = document.createElement('div');
         row.style.cssText = 'display:flex;align-items:center;gap:12px;padding:10px 12px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:8px;color:var(--text-primary);cursor:pointer;';
         row.innerHTML = `
-          <img src="thumbs/${encodeURIComponent(v.start.f)}" onerror="this.onerror=function(){this.onerror=null;this.src=window.IMG_UNAVAILABLE};this.src='${encodeURIComponent(v.start.f)}'" loading="lazy" alt="${escapeHtml(visitAltText(v.label, v.start.meta.formattedTime, v.count, v.ongoing))}" style="width:80px;height:52px;object-fit:cover;border-radius:4px;flex-shrink:0;">
+          <img class="card-img unloaded" data-src="thumbs/${encodeURIComponent(v.start.f)}" data-full="${encodeURIComponent(v.start.f)}" loading="lazy" decoding="async" alt="${escapeHtml(visitAltText(v.label, v.start.meta.formattedTime, v.count, v.ongoing))}" style="width:80px;height:52px;object-fit:cover;border-radius:4px;flex-shrink:0;">
           <i data-lucide="${icon}" style="color:${v.ongoing ? '#f59e0b' : '#10b981'};width:20px;height:20px;flex-shrink:0;"></i>
           <div style="flex:1;min-width:0;">
             <div style="font-weight:600;"><span style="text-transform:capitalize;">${escapeHtml(v.label)}</span> visit ${v.ongoing ? '<span style="color:#f59e0b;">(ongoing)</span>' : ''}</div>
@@ -4079,6 +4131,7 @@
         list.appendChild(more);
       }
       grid.appendChild(list);
+      list.querySelectorAll('img.card-img').forEach(img => imageObserver.observe(img));
       lucide.createIcons();
     }
 
@@ -4335,7 +4388,7 @@
 
       card.innerHTML = `
         <div class="card-img-wrapper">
-          <img class="card-img unloaded" data-src="thumbs/${encodeURIComponent(filename)}" data-full="${encodeURIComponent(filename)}" alt="${escapeHtml(cardAriaLabel(meta, cardLabels))}">
+          <img class="card-img unloaded" data-src="thumbs/${encodeURIComponent(filename)}" data-full="${encodeURIComponent(filename)}" loading="lazy" decoding="async" alt="${escapeHtml(cardAriaLabel(meta, cardLabels))}">
         </div>
         <div class="card-overlay">
           <div class="meta-info">
@@ -4560,10 +4613,7 @@
           const img = entry.target;
           // Thumbnail first; fall back to the full image; if that's gone too,
           // show the calm placeholder instead of a broken-image glyph.
-          img.onerror = () => {
-            img.onerror = () => { img.onerror = null; img.src = IMG_UNAVAILABLE; };
-            img.src = img.dataset.full;
-          };
+          img.onerror = () => { img.onerror = null; img.src = IMG_UNAVAILABLE; };
           img.src = img.dataset.src;
           img.onload = () => img.classList.add('loaded');
           observer.unobserve(img);

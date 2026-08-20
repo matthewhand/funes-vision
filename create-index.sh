@@ -54,9 +54,40 @@ run_analysis() {
             mkdir -p "$IMAGE_DIR/guide/img"
             cp "$BASE_DIR/docs/guide/img/"*.png "$IMAGE_DIR/guide/img/" 2>/dev/null || true
         fi
-        [ -f "$BASE_DIR/analysis.json" ] && cp "$BASE_DIR/analysis.json" "$IMAGE_DIR/analysis.json" 2>/dev/null || true
-        [ -f "$BASE_DIR/bursts.json" ] && cp "$BASE_DIR/bursts.json" "$IMAGE_DIR/bursts.json" 2>/dev/null || true
-        [ -f "$BASE_DIR/pins.json" ] && cp "$BASE_DIR/pins.json" "$IMAGE_DIR/pins.json" 2>/dev/null || true
+        # Publish only THIS camera's rows. The pipeline catalog is shared
+        # (front+back); copying it whole made :8180 download the other
+        # camera's megabytes before first paint.
+        slice_object_catalog() {
+            local src="$1" dest="$2"
+            [ -f "$src" ] && [ -f "$IMAGE_DIR/images.json" ] || return 1
+            jq --slurpfile imgs "$IMAGE_DIR/images.json" '
+              ($imgs[0] // []) as $list
+              | ($list | map({(.): true}) | add // {}) as $want
+              | if ($want | type) != "object" then .
+                else with_entries(select(
+                  ($want[.key] == true)
+                  or ((.value.images // []) | map($want[.] == true) | any)
+                ))
+                end
+            ' "$src" > "$dest.tmp" && mv "$dest.tmp" "$dest"
+        }
+        slice_array_catalog() {
+            local src="$1" dest="$2"
+            [ -f "$src" ] && [ -f "$IMAGE_DIR/images.json" ] || return 1
+            jq --slurpfile imgs "$IMAGE_DIR/images.json" '
+              ($imgs[0] // []) as $list
+              | ($list | map({(.): true}) | add // {}) as $want
+              | if ($want | type) != "object" then .
+                else map(select($want[.] == true))
+                end
+            ' "$src" > "$dest.tmp" && mv "$dest.tmp" "$dest"
+        }
+        slice_object_catalog "$BASE_DIR/analysis.json" "$IMAGE_DIR/analysis.json" \
+            || { [ -f "$BASE_DIR/analysis.json" ] && cp "$BASE_DIR/analysis.json" "$IMAGE_DIR/analysis.json"; } || true
+        slice_object_catalog "$BASE_DIR/bursts.json" "$IMAGE_DIR/bursts.json" \
+            || { [ -f "$BASE_DIR/bursts.json" ] && cp "$BASE_DIR/bursts.json" "$IMAGE_DIR/bursts.json"; } || true
+        slice_array_catalog "$BASE_DIR/pins.json" "$IMAGE_DIR/pins.json" \
+            || { [ -f "$BASE_DIR/pins.json" ] && cp "$BASE_DIR/pins.json" "$IMAGE_DIR/pins.json"; } || true
 
         if [ "$analysis_rc" -eq 0 ]; then
             touch "$MARKER"
