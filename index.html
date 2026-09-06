@@ -1544,6 +1544,10 @@
       fill: rgba(249, 115, 22, 0.35);
       stroke: #f97316; stroke-width: 0.008;
     }
+    .zone-editor-stage.is-porch polygon {
+      fill: rgba(45, 212, 191, 0.35);
+      stroke: #2dd4bf;
+    }
     .zone-editor-actions {
       display: flex; justify-content: center; gap: 8px;
     }
@@ -2066,6 +2070,16 @@
                 Draw triangle…
               </button>
               <div class="menu-section-title with-gap">
+                Porch zone
+              </div>
+              <div class="blacklist-item" id="porch-mask-toggle" title="Person YOLO centre must sit on the grey tiled porch. Path, driveway, and street are not porch — e2b is not asked.">
+                <span>Gate porch by tiles</span>
+                <div class="blacklist-status"></div>
+              </div>
+              <button type="button" class="btn" id="porch-mask-edit" style="width:100%; margin-top:6px; justify-content:center; font-size:0.75rem;">
+                Draw porch…
+              </button>
+              <div class="menu-section-title with-gap">
                 Intervals
               </div>
               <label style="display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:0.78rem; padding:2px 0;" title="Server: seconds between idle catch-up sweeps">
@@ -2262,11 +2276,11 @@
     </div>
   </div>
 
-  <div class="zone-editor" id="zone-editor" hidden role="dialog" aria-modal="true" aria-label="Draw parked-car triangle">
+  <div class="zone-editor" id="zone-editor" hidden role="dialog" aria-modal="true" aria-label="Draw a spatial mask">
     <div class="zone-editor-frame">
       <p class="zone-editor-hint" id="zone-editor-hint">Click three corners of the parked car. Street traffic should stay outside the triangle.</p>
-      <div class="zone-editor-stage">
-        <img id="zone-editor-img" alt="Latest still for drawing the parked-car mask">
+      <div class="zone-editor-stage" id="zone-editor-stage">
+        <img id="zone-editor-img" alt="Latest still for drawing a spatial mask">
         <svg id="zone-editor-svg" viewBox="0 0 1 1" preserveAspectRatio="none">
           <polygon id="zone-editor-poly" points=""></polygon>
         </svg>
@@ -2716,7 +2730,7 @@
           fetch('bursts.json', { cache: 'no-cache' }).catch(() => null),
           fetch('pins.json', { cache: 'no-cache' }).catch(() => null),
         ]);
-        const imgResponse = await fetch('images.json', { cache: 'no-cache' });
+        const imgResponse = await fetchWithTimeout('images.json', { cache: 'no-cache' });
         if (!imgResponse.ok) throw new Error('Network error loading images catalog');
 
         const imgTag = catalogTag(imgResponse);
@@ -2789,10 +2803,10 @@
       } catch (err) {
         console.error('Error fetching data:', err);
         if (state.allImages.length === 0) {
-          const k = emptyStateKind({
-            error: 'Could not find image listings. Run index scraper and check directory permissions.'
-          });
+          const k = loadErrorKind(err);
           showEmptyState(k.message, '', k.title);
+          const label = document.getElementById('stats-label');
+          if (label) label.textContent = k.title;
         }
       } finally {
         document.getElementById('refresh-icon').classList.remove('lucide-animate-spin');
@@ -3291,6 +3305,23 @@
         message: 'Motion captures will appear here when the camera uploads frames.' };
     }
     // === /pure:emptyStateKind ===
+
+    // === pure:loadErrorKind ===
+    // Map a catalog-load failure to a friendly empty state. A timeout
+    // (AbortError or a 'timeout' message) means the camera service is
+    // unreachable — the next poll retries automatically. Anything else is a
+    // catalog/infra problem.
+    function loadErrorKind(err) {
+      const msg = String((err && err.message) || err || '');
+      const isTimeout = (err && err.name === 'AbortError') || /timeout/i.test(msg);
+      if (isTimeout) {
+        return { kind: 'error', title: 'Camera service unreachable',
+          message: "Couldn't reach the camera service. Retrying automatically…" };
+      }
+      return { kind: 'error', title: 'Something went wrong',
+        message: 'Could not find image listings. Run index scraper and check directory permissions.' };
+    }
+    // === /pure:loadErrorKind ===
 
     // === pure:sparklineHasData ===
     // True when any hour bucket is non-zero (drives "no activity yet" copy).
@@ -4627,6 +4658,22 @@
       return resp.json();
     }
 
+    // Catalog loads (images.json / analysis.json / bursts.json / pins.json) go
+    // through here so an unreachable camera service fails fast instead of
+    // hanging the grid on "Loading snapshots…" indefinitely. Rejects with the
+    // AbortError after LOAD_TIMEOUT_MS; the loadData catch maps it to a
+    // friendly unreachable state (retry happens on the next poll).
+    const LOAD_TIMEOUT_MS = 10000;
+    async function fetchWithTimeout(url, options = {}, ms = LOAD_TIMEOUT_MS) {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), ms);
+      try {
+        return await fetch(url, { ...options, signal: ctrl.signal });
+      } finally {
+        clearTimeout(t);
+      }
+    }
+
     function apiPost(path, payload) {
       return apiFetch(path, {
         method: 'POST',
@@ -4659,21 +4706,34 @@
     let burstSummariesOn = false;
     let ignoreRegions = [];
     const parkedMaskToggle = document.getElementById('parked-mask-toggle');
+    const porchMaskToggle = document.getElementById('porch-mask-toggle');
     const thisCameraKind = () => {
       const t = (document.getElementById('camera-title') || {}).textContent || '';
       return /dogcam/i.test(t) ? 'back' : 'front';
     };
-    const regionForThisCamera = () =>
-      (ignoreRegions || []).find(r => r && r.camera === thisCameraKind());
-    const parkedMaskOn = () => {
-      const r = regionForThisCamera();
+    const regionIdOf = (r) => {
+      if (r && r.id) return r.id;
+      if (r && (r.mode === 'gate' || r.scan === 'porch')) return 'porch';
+      return 'parked_car';
+    };
+    const regionById = (id, kind) =>
+      (ignoreRegions || []).find(r => r && regionIdOf(r) === id &&
+        (r.camera || 'front') === (kind || thisCameraKind()));
+    const maskOn = (id) => {
+      const r = regionById(id);
       return !!(r && r.enabled !== false && Array.isArray(r.polygon) && r.polygon.length >= 3);
     };
+    const parkedMaskOn = () => maskOn('parked_car');
+    const porchMaskOn = () => maskOn('porch');
     const renderBackfillToggle = () => backfillToggle.classList.toggle('hidden-label', !backfillOn);
     const renderDeepPassesToggle = () => deepPassesToggle.classList.toggle('hidden-label', !deepPassesOn);
     const renderBurstSummariesToggle = () => burstSummariesToggle.classList.toggle('hidden-label', !burstSummariesOn);
     const renderParkedMaskToggle = () =>
       parkedMaskToggle.classList.toggle('hidden-label', !parkedMaskOn());
+    const renderPorchMaskToggle = () => {
+      if (!porchMaskToggle) return;
+      porchMaskToggle.classList.toggle('hidden-label', thisCameraKind() !== 'front' || !porchMaskOn());
+    };
     (async () => {
       try {
         const s = await apiFetch('/api/settings');
@@ -4687,17 +4747,19 @@
         renderDeepPassesToggle();
         renderBurstSummariesToggle();
         renderParkedMaskToggle();
+        renderPorchMaskToggle();
       } catch (e) {
         // API offline: keep import-time defaults (deep on, backfill/summaries off).
         renderBackfillToggle();
         renderDeepPassesToggle();
         renderBurstSummariesToggle();
         renderParkedMaskToggle();
+        renderPorchMaskToggle();
       }
     })();
 
     // Make the Settings on/off toggles accessible switches (keyboard + aria-checked).
-    ['alias-toggle', 'unconfirmed-toggle', 'deep-passes-toggle', 'backfill-toggle', 'burst-summaries-toggle', 'slack-enabled-toggle', 'parked-mask-toggle']
+    ['alias-toggle', 'unconfirmed-toggle', 'deep-passes-toggle', 'backfill-toggle', 'burst-summaries-toggle', 'slack-enabled-toggle', 'parked-mask-toggle', 'porch-mask-toggle']
       .forEach(id => bindSwitch(document.getElementById(id)));
 
     // Resolve the display timezone from the API (WEBCAM_TZ env > settings >
@@ -4770,39 +4832,49 @@
       await apiPost('/api/settings', { ignore_regions: next });
       ignoreRegions = next;
       renderParkedMaskToggle();
+      renderPorchMaskToggle();
     }
-    parkedMaskToggle.onclick = async () => {
+    async function toggleMask(id) {
       const kind = thisCameraKind();
-      const on = parkedMaskOn();
+      if (id === 'porch' && kind !== 'front') {
+        showToast('Porch zone is a front-camera mask');
+        return;
+      }
+      const on = maskOn(id);
       let next = (ignoreRegions || []).map(r => ({ ...r }));
-      const idx = next.findIndex(r => r.camera === kind);
+      const idx = next.findIndex(r => regionIdOf(r) === id && (r.camera || 'front') === kind);
       if (on) {
         if (idx >= 0) next[idx].enabled = false;
       } else if (idx >= 0 && Array.isArray(next[idx].polygon) && next[idx].polygon.length >= 3) {
         next[idx].enabled = true;
       } else {
-        openZoneEditor();
+        openZoneEditor(id);
         return;
       }
       try {
         await saveIgnoreRegions(next);
-        showToast(on
-          ? 'Parked-car mask OFF — every car YOLO sees is kept'
-          : 'Parked-car mask ON — cars in the triangle are ignored');
+        showToast(id === 'porch'
+          ? (on ? 'Porch gate OFF — e2b will guess porch_access again' : 'Porch gate ON — tiles only, no e2b porch scan')
+          : (on ? 'Parked-car mask OFF — every car YOLO sees is kept' : 'Parked-car mask ON — cars in the triangle are ignored'));
       } catch (err) {
         showToast('Failed to update - is the API service running?');
       }
-    };
+    }
+    parkedMaskToggle.onclick = () => toggleMask('parked_car');
+    if (porchMaskToggle) porchMaskToggle.onclick = () => toggleMask('porch');
 
     const zoneEditor = document.getElementById('zone-editor');
+    const zoneStage = document.getElementById('zone-editor-stage');
     const zoneImg = document.getElementById('zone-editor-img');
     const zonePoly = document.getElementById('zone-editor-poly');
     const zoneHint = document.getElementById('zone-editor-hint');
     const zoneSave = document.getElementById('zone-editor-save');
     let zoneClicks = [];
+    let zoneEditId = 'parked_car';
+    const zoneNeed = () => zoneEditId === 'porch' ? 4 : 3;
     function zoneSetPoly(pts) {
       zonePoly.setAttribute('points', pts.map(p => p[0] + ',' + p[1]).join(' '));
-      zoneSave.disabled = pts.length < 3;
+      zoneSave.disabled = pts.length < zoneNeed();
     }
     function zoneNormFromEvent(ev) {
       const r = zoneImg.getBoundingClientRect();
@@ -4814,49 +4886,68 @@
       zoneEditor.hidden = true;
       zoneClicks = [];
     }
-    function openZoneEditor() {
+    function openZoneEditor(id) {
       const file = (state.allImages || [])[0];
       if (!file) {
-        showToast('No stills yet — wait for a frame, then draw the triangle');
+        showToast('No stills yet — wait for a frame, then draw the mask');
         return;
       }
-      const existing = regionForThisCamera();
+      zoneEditId = id || 'parked_car';
+      const need = zoneNeed();
+      const existing = regionById(zoneEditId);
       zoneClicks = (existing && existing.polygon) ? existing.polygon.map(p => [p[0], p[1]]) : [];
       zoneImg.src = file;
       zoneSetPoly(zoneClicks);
-      zoneHint.textContent = zoneClicks.length >= 3
-        ? 'Existing triangle. Click the still to redraw (three corners).'
-        : 'Click three corners around the parked car. Keep the street outside.';
+      zoneStage.classList.toggle('is-porch', zoneEditId === 'porch');
+      zoneSave.textContent = zoneEditId === 'porch' ? 'Save porch' : 'Save triangle';
+      zoneEditor.setAttribute('aria-label', zoneEditId === 'porch'
+        ? 'Draw porch zone' : 'Draw parked-car triangle');
+      zoneHint.textContent = zoneClicks.length >= need
+        ? (zoneEditId === 'porch'
+          ? 'Existing porch. Click the still to redraw (four corners of the grey tiles).'
+          : 'Existing triangle. Click the still to redraw (three corners).')
+        : (zoneEditId === 'porch'
+          ? 'Click four corners of the grey tiled porch. Path and street stay outside.'
+          : 'Click three corners around the parked car. Keep the street outside.');
       zoneEditor.hidden = false;
       document.getElementById('blacklist-dropdown').classList.remove('active');
     }
     zoneImg.addEventListener('click', (ev) => {
-      if (zoneClicks.length >= 3) zoneClicks = [];
+      const need = zoneNeed();
+      if (zoneClicks.length >= need) zoneClicks = [];
       zoneClicks.push(zoneNormFromEvent(ev));
       zoneSetPoly(zoneClicks);
-      zoneHint.textContent = zoneClicks.length < 3
-        ? `Corner ${zoneClicks.length} of 3 — click the next corner`
-        : 'Triangle set. Save to apply on new stills.';
+      zoneHint.textContent = zoneClicks.length < need
+        ? `Corner ${zoneClicks.length} of ${need} — click the next corner`
+        : (zoneEditId === 'porch'
+          ? 'Porch set. Save to apply on new stills.'
+          : 'Triangle set. Save to apply on new stills.');
     });
-    document.getElementById('parked-mask-edit').onclick = () => openZoneEditor();
+    document.getElementById('parked-mask-edit').onclick = () => openZoneEditor('parked_car');
+    const porchEdit = document.getElementById('porch-mask-edit');
+    if (porchEdit) porchEdit.onclick = () => openZoneEditor('porch');
     document.getElementById('zone-editor-cancel').onclick = closeZoneEditor;
     document.getElementById('zone-editor-save').onclick = async () => {
-      if (zoneClicks.length < 3) return;
+      const need = zoneNeed();
+      if (zoneClicks.length < need) return;
       const kind = thisCameraKind();
-      const next = (ignoreRegions || []).filter(r => r.camera !== kind);
-      next.push({
-        camera: kind,
-        labels: ['car'],
-        enabled: true,
-        polygon: zoneClicks.slice(0, 3).map(p => [
-          Math.round(p[0] * 1000) / 1000,
-          Math.round(p[1] * 1000) / 1000,
-        ]),
-      });
+      const next = (ignoreRegions || []).filter(r => regionIdOf(r) !== zoneEditId);
+      const payload = zoneEditId === 'porch'
+        ? { id: 'porch', camera: 'front', mode: 'gate', scan: 'porch',
+            labels: ['person', 'face', 'body'], enabled: true }
+        : { id: 'parked_car', camera: kind, mode: 'ignore',
+            labels: ['car'], enabled: true };
+      payload.polygon = zoneClicks.slice(0, need).map(p => [
+        Math.round(p[0] * 1000) / 1000,
+        Math.round(p[1] * 1000) / 1000,
+      ]);
+      next.push(payload);
       try {
         await saveIgnoreRegions(next);
         closeZoneEditor();
-        showToast('Parked-car triangle saved — new stills will ignore a car in that bay');
+        showToast(zoneEditId === 'porch'
+          ? 'Porch zone saved — person on the tiles is porch_access, no e2b guess'
+          : 'Parked-car triangle saved — new stills will ignore a car in that bay');
       } catch (err) {
         showToast('Failed to save — is the API service running?');
       }
@@ -4869,6 +4960,8 @@
     renderBackfillToggle();
     renderBurstSummariesToggle();
     renderDeepPassesToggle();
+    renderParkedMaskToggle();
+    renderPorchMaskToggle();
 
     async function deleteImage(filename) {
       const meta = parseFilename(filename);
@@ -5491,6 +5584,7 @@
     document.addEventListener('DOMContentLoaded', () => {
       const profile = getFeedProfile();
       document.getElementById('camera-title').textContent = profile.title;
+      if (typeof renderPorchMaskToggle === 'function') renderPorchMaskToggle();
       const zone = shortTimeZoneName(new Date(), DISPLAY_TZ);
       document.getElementById('camera-subtitle').textContent = zone
         ? `${profile.subtitle} · ${zone}`
