@@ -156,16 +156,25 @@ def fast_pass_yolo(image_path):
             import zones
         except Exception:
             zones = None
+        centres = {}
+        best_area = {}
         for i, cid in enumerate(ids):
             label = YOLO_CLASSES.get(int(cid))
             if not label:
                 continue
+            x, y, bw, bh = [float(v) for v in boxes[i]]
+            cx = (x + bw / 2.0) / w if w else 0.0
+            cy = (y + bh / 2.0) / h if h else 0.0
             if zones is not None and IGNORE_REGIONS and w > 0 and h > 0:
-                x, y, bw, bh = [float(v) for v in boxes[i]]
-                cx, cy = (x + bw / 2.0) / w, (y + bh / 2.0) / h
                 if zones.detection_ignored(label, cx, cy, kind, IGNORE_REGIONS):
                     continue
             results[label] = True
+            area = (bw / w if w else 0.0) * (bh / h if h else 0.0)
+            if label not in centres or area > best_area.get(label, -1):
+                centres[label] = (round(cx, 4), round(cy, 4))
+                best_area[label] = area
+        if centres:
+            results["_centres"] = centres
         return results
     except Exception as e:
         print(f"YOLO fast pass error: {e}")
@@ -269,7 +278,7 @@ LLM_TRIGGER_LABELS = ("person", "dog", "cat", "bird", "face", "body")
 YOLO_PRESENCE_KEYS = ("person", "dog", "car", "cat", "bird", "face", "body")
 LLM_META_KEYS = (
     "fast_pass", "_yolo", "description", "_llm", "_llm_skip",
-    "_llm_model", "_llm_ms", "_llm_raw",
+    "_llm_model", "_llm_ms", "_llm_raw", "_centres",
 )
 FRONT_MAX_TOKENS = 220
 BACK_MAX_TOKENS = 160
@@ -454,6 +463,31 @@ def detector_true_labels(fp_results):
     """Sorted YOLO/detector keys that are True. Never HA flag names."""
     rec = fp_results or {}
     return sorted(k for k in YOLO_PRESENCE_KEYS if rec.get(k) is True)
+
+
+def labels_and_centres(fp_results):
+    """True YOLO labels plus any `_centres` map from fast_pass_yolo."""
+    if isinstance(fp_results, (list, tuple, set)):
+        return sorted({x for x in fp_results if x}), {}
+    rec = fp_results or {}
+    centres = rec.get("_centres") if isinstance(rec.get("_centres"), dict) else {}
+    return detector_true_labels(rec), centres
+
+
+def scan_skip_ids(kind):
+    try:
+        import zones
+        return zones.gated_scan_ids(kind, IGNORE_REGIONS)
+    except Exception:
+        return set()
+
+
+def scan_geometry_flags(kind, centres):
+    try:
+        import zones
+        return zones.scan_gate_flags(kind, centres, IGNORE_REGIONS)
+    except Exception:
+        return {}
 
 
 def is_llm_verified(rec):
@@ -868,24 +902,30 @@ def run_deep_pass(image_path, img_name, can_run_chain, api_key, trigger, fp_labe
     Returns ``(result_or_none, n_calls)``. n_calls counts against
     max_deep_passes. Empty scans (e.g. backyard person, no dog) → (None, 0)
     so the caller can persist ``_llm_skip=no_scan`` without re-queueing.
-    fp_labels=None means run the detector fresh.
+    fp_labels=None means run the detector fresh. A dict from
+    fast_pass_yolo (including ``_centres``) is also accepted.
     """
     global LAST_DURATION_S
     import scans
     if RATE_LIMITED:
         return None, 0
     started = time.time()
+    centres = {}
     if fp_labels is None:
         fp = fast_pass_dispatch(image_path) or {}
-        fp_labels = sorted(k for k, v in fp.items() if v is True)
+        fp_labels, centres = labels_and_centres(fp)
+    elif isinstance(fp_labels, dict):
+        fp_labels, centres = labels_and_centres(fp_labels)
     kind = camera_kind(image_path)
-    todo = scans.scans_for(kind, fp_labels, scans.MAX_SCANS_PER_IMAGE)
+    skip = scan_skip_ids(kind)
+    todo = scans.scans_for(kind, fp_labels, scans.MAX_SCANS_PER_IMAGE, skip=skip)
     seed = scans.yolo_animal_seed(fp_labels)
+    seed.update(scan_geometry_flags(kind, centres))
     if not todo:
         LAST_DURATION_S = time.time() - started
         if seed:
             seed["_yolo"] = list(fp_labels or [])
-            seed["_scans"] = ["yolo_animal"]
+            seed["_scans"] = ["yolo_animal"] if scans.yolo_animal_seed(fp_labels) else ["porch_gate"]
             return seed, 0
         return None, 0
 
@@ -1632,6 +1672,8 @@ def main(retention_only=False, rescan_days=None):
                 i for i in images
                 if filename_within_days(i, rescan_days)
                 and rec_is_urgent_detection(analysis_data.get(i) or {})
+                # Resume: rows already written by this scan path have `_scans`.
+                and not isinstance((analysis_data.get(i) or {}).get("_scans"), list)
             ]
             queue.sort(key=_mtime, reverse=True)
             print(f"Rescan last {rescan_days}d: {len(queue)} detections in {image_dir}")
@@ -1676,7 +1718,9 @@ def main(retention_only=False, rescan_days=None):
                 urgent = llm_should_trigger(fp_results)
 
                 if needs_deep and urgent:
-                    print(f"Deep Pass Required for {img}: {fp_results}")
+                    shown = {k: v for k, v in (fp_results or {}).items()
+                             if k != "_centres" and v is True}
+                    print(f"Deep Pass Required for {img}: {shown}")
                     result = None
                     prev = analysis_data.get(img)
                     # Only attempt (and spend budget) when an engine is
@@ -1687,23 +1731,22 @@ def main(retention_only=False, rescan_days=None):
                         # Stale stored labels (re-queued partials) force a
                         # fresh detector run so YOLO flags stay current
                         import scans
-                        fresh_fp = None if was_partial else \
-                            sorted(k for k, v in fp_results.items() if v is True)
+                        kind = camera_kind(image_path)
+                        fresh_fp = None if was_partial else fp_results
                         result, n_scans = run_deep_pass(
                             image_path, img, can_run_chain, api_key,
                             "priority", fp_labels=fresh_fp)
                         deep_pass_count += n_scans
-                        labels_for_scans = (
-                            fresh_fp if fresh_fp is not None else
-                            sorted(k for k, v in fp_results.items() if v is True))
+                        labels_for_scans, _centres = labels_and_centres(fp_results)
+                        if result and result.get("_yolo"):
+                            labels_for_scans = list(result["_yolo"])
                         asked = scans.scans_for(
-                            camera_kind(image_path), labels_for_scans)
+                            kind, labels_for_scans, skip=scan_skip_ids(kind))
                         if result:
                             rec = merge_llm_into_fastpass(
                                 fp_results, result, model=LAST_MODEL_USED,
                                 duration_s=LAST_DURATION_S,
-                                schema=scans.union_schema(
-                                    asked, scans.yolo_animal_seed(labels_for_scans)))
+                                schema=scans.union_schema(asked, result))
                         elif n_scans == 0:
                             rec = detector_labels(fp_results)
                             rec["_llm_skip"] = "no_scan"
@@ -1825,14 +1868,16 @@ def main(retention_only=False, rescan_days=None):
                 if result:
                     import scans
                     prior = detector_labels(analysis_data.get(img) or {})
+                    kind = camera_kind(os.path.join(image_dir, img))
+                    labels_for_scans = list(result.get("_yolo") or detector_true_labels(prior))
                     asked = scans.scans_for(
-                        camera_kind(os.path.join(image_dir, img)), prior)
+                        kind, labels_for_scans, skip=scan_skip_ids(kind))
                     persist_row(
                         analysis_file, analysis_data, img,
                         merge_llm_into_fastpass(
                             prior, result, model=LAST_MODEL_USED,
                             duration_s=LAST_DURATION_S,
-                            schema=scans.union_schema(asked)),
+                            schema=scans.union_schema(asked, result)),
                         existed=True)
                     new_analysis = True
             if workers > 1:

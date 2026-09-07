@@ -255,9 +255,9 @@ also clears search, object chips, date, and time, then scrolls to top.
 
 Colour badges are **detector objects**: person, dog, car, cat, bird.
 
-Smaller purple-ish flags are **scene flags** from the vision model.
-They describe *what happened*. They are not extra species, and they
-do not appear in Filters.
+Smaller purple-ish flags are **scene flags** (e2b, or the porch-zone
+mask). They describe *what happened*. They are not extra species, and
+they do not appear in Filters.
 
 e2b is asked **one question at a time**, and only when YOLO says the
 frame is worth it (at most two questions per still):
@@ -266,8 +266,8 @@ frame is worth it (at most two questions per still):
 |------|--------|------------------|-----|
 | postal delivery | Front | person | Courier only — suitcase/resident is false |
 | dog walked | Both | person **and** dog | Asked before porch when both are present |
-| porch access | Front | person | Grey tiled porch by the door, not the brick path |
-| opens a box | Front | person | After the others, if budget remains |
+| porch access | Front | person centre on the tiles | **Not an e2b question.** A porch-zone polygon (Settings → Gate porch by tiles) sets the flag from YOLO geometry. Path / driveway / street is false. |
+| opens a box | Front | person | Second slot, now that porch no longer spends a scan |
 
 **Animal** is not an e2b question. If YOLO saw dog/cat/bird we copy that
 through (`animal_detected` + type). e2b was missing real yard dogs and
@@ -489,6 +489,9 @@ There is no public `ntfy.sh` default.
   when the box is busy)
 - Parked-car-only frames are stored as `Car?` and do **not** spend
   urgent LLM budget
+- The **porch zone** (grey tiles, right of the front still) is a
+  geometry gate like the parked-car triangle. People on the brick path
+  or street do not count as porch, and e2b is not asked that question.
 - Empty frames older than **30 days** are removed
 - Each camera has a **5 GB** image budget; oldest empties go first,
   then oldest detections, then oldest unanalyzed if still over

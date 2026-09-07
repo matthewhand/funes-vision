@@ -21,9 +21,10 @@ fallback if inotify misses events. On platforms without inotify
 
 ## Hosting
 
-Two stock-nginx containers (`docker-compose.yml`): camera dirs bind-
-mounted **read-only** at ports 8180/8280. All writes (pins, deletes,
-settings) go through `api_server.py` on :8190, which runs on the host.
+Stock-nginx container (`docker-compose.yml`): camera dirs bind-mounted
+**read-only** at port 8180, with Webcam21 files at `/` and Webcam22
+files at `/Webcam22/`. All writes (pins, deletes, settings) go through
+`api_server.py` on :8190, which runs on the host.
 
 ## Services
 

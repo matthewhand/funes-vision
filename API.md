@@ -48,10 +48,13 @@ Update one or more mutable settings (validated; others ignored).
   - `deep_passes_enabled` ∈ `true | false`
   - `burst_summaries_enabled` ∈ `true | false`
   - `idle_sweep_seconds` ∈ integer `15..3600`
-  - `ignore_regions` ∈ list of `{camera, polygon, labels?, enabled?}`.
+  - `ignore_regions` ∈ list of `{camera, polygon, labels?, enabled?, mode?, scan?, id?}`.
     `polygon` is 3–8 points in `[0,1]` image fractions (origin top-left).
-    YOLO drops a listed label when the box centre is inside an enabled
-    polygon on that camera. Empty list = no mask.
+    `mode=ignore` (default): YOLO drops a listed label when the box centre
+    is inside an enabled polygon (parked-car bay). `mode=gate` + `scan=porch`:
+    do **not** drop the person; skip the e2b porch question and set
+    `porch_access` from whether the person centre sits in the polygon.
+    Empty list = no mask.
 - **200** → `{"ok": true, ...changed}`
 - **400** → `{"error": "<key> must be <choices|range>"}` on an invalid value,
   or `{"error": "no recognized settings in payload"}` if nothing applied

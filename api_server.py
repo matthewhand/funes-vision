@@ -727,7 +727,7 @@ class Handler(BaseHTTPRequestHandler):
                 if key in payload:
                     if not setting_valid(key, payload[key]):
                         if spec.get("kind") == "ignore_regions":
-                            detail = "a list of {camera, polygon[3+], labels?}"
+                            detail = "a list of {camera, polygon[3+], labels?, mode?, scan?, id?}"
                         elif "choices" in spec:
                             detail = list(spec["choices"])
                         else:

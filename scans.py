@@ -111,6 +111,7 @@ SCANS = (
         "need_any": ("person", "face", "body"),
         "schema": _PORCH,
         "num_predict": 32,
+        # Skipped when a mode=gate porch region is on; geometry sets the flag.
     },
     {
         "id": "package",
@@ -150,12 +151,18 @@ def yolo_animal_seed(fp_labels):
     return {}
 
 
-def scans_for(kind, fp_labels, limit=MAX_SCANS_PER_IMAGE):
-    """Ordered applicable scans for this camera + detector labels."""
+def scans_for(kind, fp_labels, limit=MAX_SCANS_PER_IMAGE, skip=None):
+    """Ordered applicable scans for this camera + detector labels.
+
+    ``skip`` is a set of scan ids replaced by a geometry gate (porch).
+    """
     ys = yolo_set(fp_labels)
+    skip = {str(x) for x in (skip or ()) if x}
     out = []
     for spec in SCANS:
         if kind not in spec["cameras"]:
+            continue
+        if spec["id"] in skip:
             continue
         need_any = spec.get("need_any") or ()
         if need_any and not (ys & set(need_any)):
@@ -178,12 +185,24 @@ def union_schema(specs, seed=None):
             if k not in req:
                 req.append(k)
     if seed:
-        props["animal_detected"] = {"type": "boolean"}
-        props["animal_type"] = {
-            "type": "string",
-            "enum": ["dog", "cat", "bird", "wildlife", "other", "none"],
-        }
-        for k in ("animal_detected", "animal_type"):
+        if "animal_detected" in seed or "animal_type" in seed:
+            props["animal_detected"] = {"type": "boolean"}
+            props["animal_type"] = {
+                "type": "string",
+                "enum": ["dog", "cat", "bird", "wildlife", "other", "none"],
+            }
+            for k in ("animal_detected", "animal_type"):
+                if k not in req:
+                    req.append(k)
+        for k, v in seed.items():
+            if not isinstance(k, str) or k.startswith("_") or k in props:
+                continue
+            if isinstance(v, bool):
+                props[k] = {"type": "boolean"}
+            elif isinstance(v, str):
+                props[k] = {"type": "string"}
+            else:
+                continue
             if k not in req:
                 req.append(k)
     return {

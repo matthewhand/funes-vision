@@ -213,7 +213,7 @@
     <tr><td><strong>CLEAR</strong></td><td>Analyzed, no object</td></tr>
   </table>
   <p>Live captions: e2b does not write sentences. The gallery invents at most two facts from true HA flags. Detector-only cards often have no caption. Pin protects a file from retention. Delete confirms with date + label, never the FTP name.</p>
-  <p>e2b is asked at most two YOLO-gated questions per still (postal, dog-walk, porch, package). Animal is copied from YOLO (dog/cat/bird) — e2b is not asked. It is <strong>not</strong> asked approaching_house, parked-car access, clothes on the line, or weapons. A backyard person with no dog spends no e2b time. A backyard dog with no person is tagged animal from YOLO only.</p>
+  <p>e2b is asked at most two YOLO-gated questions per still (postal, dog-walk, package). Porch access is a tile-zone mask, not an e2b guess. Animal is copied from YOLO (dog/cat/bird) — e2b is not asked. It is <strong>not</strong> asked approaching_house, parked-car access, clothes on the line, or weapons. A backyard person with no dog spends no e2b time. A backyard dog with no person is tagged animal from YOLO only.</p>
 
   <h2 id="visit">7. Play a visit</h2>
   <figure>
@@ -270,6 +270,7 @@
     <tr><td>Idle backfill</td><td>Verify leftover empties and car-only skips, nearest a detection first. Leave off</td></tr>
     <tr><td>Multi-image summaries</td><td>Visit captions from several frames. Off. e2b 400s on that path</td></tr>
     <tr><td>Ignore parked car</td><td>Front: triangle over the orange SUV bay. YOLO drops a car whose centre is in the triangle; a car on the street or leaving the driveway is kept. Draw triangle… to retarget. New stills only</td></tr>
+    <tr><td>Gate porch by tiles</td><td>Front: person YOLO centre on the grey tiled porch (right of frame) sets <code>porch_access</code>. Path, driveway, and street are false. e2b is not asked. Draw porch… to retarget. New stills only</td></tr>
   </table>
 
   <h2 id="integrations">12. Integrations</h2>
@@ -291,6 +292,7 @@
     <li>New stills are picked up within seconds</li>
     <li>Person / dog / cat / bird jump the queue for e2b flags (~40 s when busy)</li>
     <li>Parked-car-only frames are stored as <code>Car?</code> and do not spend urgent LLM budget</li>
+    <li>The porch zone is a geometry gate like the parked-car triangle. People on the brick path or street do not count as porch</li>
     <li>Empty frames older than 30 days are removed</li>
     <li>Each camera has a 5 GB image budget; pins are forever</li>
     <li>A cron watchdog restarts a stuck pipeline and re-runs retention hourly</li>

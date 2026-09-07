@@ -497,7 +497,7 @@ move → verify) lives in [ROADMAP.md](ROADMAP.md).
 | `deep_backfill` | false | idle LLM verification of the archive (UI-toggleable; **off** on this box) |
 | `burst_summaries_enabled` | false | multi-image (burst) LLM captions of a visit; off does not affect single-frame deep passes (UI-toggleable) |
 | `gate_ignore_labels` | ["car"] | labels that alone don't trigger urgent deep passes |
-| `ignore_regions` | front triangle | YOLO spatial mask. A `car` whose box centre sits in the polygon is dropped (parked orange SUV). A car on the street or leaving the driveway is kept. UI: Settings → Ignore parked car / Draw triangle. Applies to **new** stills |
+| `ignore_regions` | parked-car triangle + porch quad | Spatial masks. `mode=ignore`: YOLO drops a `car` whose centre sits in the parked-SUV triangle (street / leaving cars kept). `mode=gate` + `scan=porch`: person centre on the grey tiles → `porch_access` without an e2b call; path/street is false. UI: Settings → Ignore parked car / Gate porch by tiles. Applies to **new** stills |
 | `camera_offline_hours` | 24 | no frames in this long → a Slack "camera offline?" alert |
 
 ## Observability & health alerts

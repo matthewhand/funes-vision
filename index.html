@@ -2377,7 +2377,7 @@
       const proto = protocol || 'https:';
       if (h.includes('dogcam')) return proto + '//' + h.replace('dogcam', 'webcam') + '/';
       if (h.includes('webcam')) return proto + '//' + h.replace('webcam', 'dogcam') + '/';
-      return isDog ? '/Webcam21/' : '/Webcam22/';
+      return isDog ? '/Webcam22/' : '/';
     }
     // === /pure:peerFeedUrl ===
 

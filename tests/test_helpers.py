@@ -49,9 +49,19 @@ class TestSettingValid(unittest.TestCase):
             "polygon": [[0.0, 0.22], [0.2, 0.45], [0.0, 0.72]],
         }]
         self.assertTrue(api_server.setting_valid("ignore_regions", ok))
+        gate = [{
+            "id": "porch", "camera": "front", "mode": "gate", "scan": "porch",
+            "labels": ["person"], "enabled": True,
+            "polygon": [[0.66, 0.28], [1.0, 0.22], [1.0, 1.0], [0.62, 1.0]],
+        }]
+        self.assertTrue(api_server.setting_valid("ignore_regions", ok + gate))
         self.assertTrue(api_server.setting_valid("ignore_regions", []))
         self.assertFalse(api_server.setting_valid("ignore_regions", "nope"))
         self.assertFalse(api_server.setting_valid("ignore_regions", [{"polygon": [[0, 0]]}]))
+        self.assertFalse(api_server.setting_valid("ignore_regions", [{
+            "camera": "front", "mode": "gate", "polygon": [[0, 0], [1, 0], [1, 1]],
+            "labels": ["person"],
+        }]))
 
 
 class TestRescanWindow(unittest.TestCase):

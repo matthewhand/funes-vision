@@ -61,6 +61,8 @@ assert.ok(!/every new analyzed frame/.test(html), 'Slack all must not claim ever
 // In-gallery Help opens the local walkthrough (not a CDN, not camera JPEGs).
 assert.ok(/id="parked-mask-toggle"/.test(html) && /id="parked-mask-edit"/.test(html),
   'Settings must expose the parked-car mask toggle and Draw triangle control');
+assert.ok(/id="porch-mask-toggle"/.test(html) && /id="porch-mask-edit"/.test(html),
+  'Settings must expose the porch-zone toggle and Draw porch control');
 assert.ok(/id="zone-editor"/.test(html), 'parked-car triangle editor overlay missing');
 assert.ok(/id="btn-help"/.test(html) && /href="USER-GUIDE.html"/.test(html),
   'Help must link to USER-GUIDE.html');

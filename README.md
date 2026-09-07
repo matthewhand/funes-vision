@@ -147,8 +147,8 @@ How to use the gallery: **[docs/USER-GUIDE.md](docs/USER-GUIDE.md)** ·
 
 | Camera | URL |
 |--------|-----|
-| Webcam (front, car in frame) | `http://<host>:8180` |
-| Dogcam | `http://<host>:8280` |
+| Webcam (front, car in frame) | `http://<host>:8180/` |
+| Dogcam | `http://<host>:8180/Webcam22/` |
 
 Use **Switch feed** in the page to jump between the two.
 
