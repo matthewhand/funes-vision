@@ -327,12 +327,13 @@ def schema_for_kind(kind):
     return BACK_SCHEMA if kind == "back" else FRONT_SCHEMA
 
 
-def collect_timeline_images(image_dir, current_img, max_age_minutes=10.0):
+def collect_timeline_images(image_dir, current_img, max_age_minutes=10.0, max_images=3):
     """Return prior frames from the same camera taken within max_age_minutes
-    before current_img, newest-first (so the LLM sees the sequence in order).
+    before current_img, oldest-first, capped to max_images total entries.
 
-    Returns a list of full paths [oldest, ..., newest] where the last entry is
-    current_img itself. Always includes at least current_img (1 image).
+    The list always ends with current_img itself, so the caller can prepend
+    it to the vision message directly. Returns [current_img] when no prior
+    frames exist (1 image, single-frame analysis).
     """
     cur_path = os.path.join(image_dir, current_img)
     try:
@@ -357,7 +358,9 @@ def collect_timeline_images(image_dir, current_img, max_age_minutes=10.0):
     except OSError:
         return [cur_path]
     prior.sort(key=lambda x: x[0])  # oldest first
-    return [p for _, p in prior] + [cur_path]
+    # Keep the most recent `max_images - 1` priors + current = max_images total
+    keep = prior[-(max_images - 1):] if max_images > 1 else []
+    return [p for _, p in keep] + [cur_path]
 
 
 def schema_flag_default(schema, key):
@@ -1727,13 +1730,14 @@ def main(retention_only=False, rescan_days=None):
                         fresh_fp = None if was_partial else fp_results
                         # Multi-image timeline context: prepend prior frames
                         # from the same camera so e2b sees motion across time.
+                        # collect_timeline_images already caps to 3 total
+                        # (2 priors + current) when MULTI_IMAGE_3H is set.
                         timeline_images = None
                         if MULTI_IMAGE_ENABLED and not rescan_mode:
                             timeline_images = collect_timeline_images(
                                 image_dir, img,
-                                max_age_minutes=MULTI_IMAGE_3H)
-                            if len(timeline_images) > 3:
-                                timeline_images = timeline_images[-3:]
+                                max_age_minutes=MULTI_IMAGE_3H,
+                                max_images=3)
                         result, n_scans = run_deep_pass(
                             image_path, img, can_run_chain, api_key,
                             "priority", fp_labels=fresh_fp,
