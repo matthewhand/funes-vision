@@ -943,7 +943,7 @@ def run_deep_pass(image_path, img_name, can_run_chain, api_key, trigger, fp_labe
     LAST_DURATION_S = time.time() - started
     log_inference(img_name, used, started, LAST_DURATION_S,
                   labels, result is not None, trigger,
-                  n_images=(len(timeline_images) + 1) if timeline_images else 1)
+                  n_images=len(timeline_images) if timeline_images else 1)
     return result, n
 
 
