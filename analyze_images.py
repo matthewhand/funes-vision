@@ -41,7 +41,16 @@ DEEP_BACKFILL = False  # idle archive verification; off unless settings enable i
 DEEP_PASSES_ENABLED = True  # master switch for ALL Gemma/LLM work (priority + backfill + bursts);
                             # set false to run detector-only and free CPU/RAM
 BURST_SUMMARIES_ENABLED = False  # multi-image (burst) LLM captions; off by default —
-                                 # e2b 400s on multi-frame chat, and single-frame analysis is enough
+                                  # e2b 400s on multi-frame chat, and single-frame analysis is enough
+# Multi-image timeline context for priority scans. Off by default (memory
+# pressure). When on, prior frames from the same camera are prepended to the
+# vision message so e2b can see motion/context across time:
+#   2 images if a prior frame exists within MULTI_IMAGE_2H minutes
+#   3 images if a prior frame exists within MULTI_IMAGE_3H minutes
+# Always defaults to 1 image (current frame only) when no prior exists.
+MULTI_IMAGE_ENABLED = False
+MULTI_IMAGE_2H = 5.0   # minutes: include 1 prior → 2 total
+MULTI_IMAGE_3H = 10.0  # minutes: include 2 prior → 3 total
 WATCH_DIRS = []  # REQUIRED via settings.json watch_dirs - deployment specific
 # Labels that alone do NOT trigger an urgent deep pass (e.g. a car parked
 # in frame 24/7). Persisted as _llm_skip=no_trigger (not partial — that
@@ -73,6 +82,9 @@ if os.path.exists(_settings_path):
         DEEP_BACKFILL = _s.get("deep_backfill", DEEP_BACKFILL)
         DEEP_PASSES_ENABLED = _s.get("deep_passes_enabled", DEEP_PASSES_ENABLED)
         BURST_SUMMARIES_ENABLED = _s.get("burst_summaries_enabled", BURST_SUMMARIES_ENABLED)
+        MULTI_IMAGE_ENABLED = _s.get("multi_image_enabled", MULTI_IMAGE_ENABLED)
+        MULTI_IMAGE_2H = float(_s.get("multi_image_2h_minutes", MULTI_IMAGE_2H))
+        MULTI_IMAGE_3H = float(_s.get("multi_image_3h_minutes", MULTI_IMAGE_3H))
         try:
             import scans as _scans_mod
             _scans_mod.MAX_SCANS_PER_IMAGE = int(_s.get(
@@ -209,6 +221,18 @@ def encode_image(image_path):
 
 DETECT_PROMPT = "Look at this image and answer the questions."
 
+# Multi-image timeline prompt. {n} is replaced with the number of frames sent
+# (1 for the current frame only, 2 or 3 when prior frames are included).
+# The model still returns the SAME JSON schema — the timeline context only
+# changes what it looks at, not what we ask for.
+TIMELINE_PROMPT = (
+    "These {n} security camera frames were taken in sequence, seconds apart. "
+    "Look at the LAST frame and answer the questions about it. "
+    "Use the earlier frames only to understand motion and context "
+    "(e.g. is a person walking toward the house, or standing still?). "
+    "Do not describe the earlier frames — only answer about the final frame."
+)
+
 # HA front/back schemas — do not replace with person_at_car
 # Structured flags are enforced by the inference API `format` field
 # (Ollama /api/chat JSON Schema). Question text lives in each property
@@ -278,7 +302,7 @@ LLM_TRIGGER_LABELS = ("person", "dog", "cat", "bird", "face", "body")
 YOLO_PRESENCE_KEYS = ("person", "dog", "car", "cat", "bird", "face", "body")
 LLM_META_KEYS = (
     "fast_pass", "_yolo", "description", "_llm", "_llm_skip",
-    "_llm_model", "_llm_ms", "_llm_raw", "_centres",
+    "_llm_model", "_llm_ms", "_llm_raw", "_centres", "_timeline_images",
 )
 FRONT_MAX_TOKENS = 220
 BACK_MAX_TOKENS = 160
@@ -301,6 +325,39 @@ def schema_for_kind(kind):
     if kind not in ("front", "back"):
         kind = camera_kind(kind)
     return BACK_SCHEMA if kind == "back" else FRONT_SCHEMA
+
+
+def collect_timeline_images(image_dir, current_img, max_age_minutes=10.0):
+    """Return prior frames from the same camera taken within max_age_minutes
+    before current_img, newest-first (so the LLM sees the sequence in order).
+
+    Returns a list of full paths [oldest, ..., newest] where the last entry is
+    current_img itself. Always includes at least current_img (1 image).
+    """
+    cur_path = os.path.join(image_dir, current_img)
+    try:
+        cur_mtime = os.path.getmtime(cur_path)
+    except OSError:
+        return [cur_path]
+    cutoff = cur_mtime - (max_age_minutes * 60.0)
+    prior = []
+    try:
+        for f in os.listdir(image_dir):
+            if not f.lower().endswith(('.jpg', '.jpeg', '.png', '.gif')):
+                continue
+            if f == current_img:
+                continue
+            p = os.path.join(image_dir, f)
+            try:
+                t = os.path.getmtime(p)
+            except OSError:
+                continue
+            if cutoff < t < cur_mtime:
+                prior.append((t, p))
+    except OSError:
+        return [cur_path]
+    prior.sort(key=lambda x: x[0])  # oldest first
+    return [p for _, p in prior] + [cur_path]
 
 
 def schema_flag_default(schema, key):
@@ -536,98 +593,8 @@ def local_mem_threshold():
 
 # Home Assistant vision schemas for structured e2b deep-pass analysis
 # (enforced via Ollama API `format` parameter, not in the prompt)
-FRONT_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "postal_delivery": {
-            "type": "boolean",
-            "description": "Is a postal worker or delivery person at the front door?"
-        },
-        "postal_how": {
-            "type": "string",
-            "description": "If postal_delivery is true, describe what they are doing (e.g., 'placing package', 'knocking', 'leaving')"
-        },
-        "dog_walked": {
-            "type": "boolean",
-            "description": "Is someone walking a dog past or near the property?"
-        },
-        "car_access": {
-            "type": "boolean",
-            "description": "Is a vehicle accessing the driveway or parking area?"
-        },
-        "enters_car": {
-            "type": "boolean",
-            "description": "Is someone entering a vehicle?"
-        },
-        "exits_car": {
-            "type": "boolean",
-            "description": "Is someone exiting a vehicle?"
-        },
-        "car_outfit": {
-            "type": "string",
-            "description": "Brief description of clothing worn by person entering/exiting car"
-        },
-        "car_color": {
-            "type": "string",
-            "description": "Color of the vehicle if visible"
-        },
-        "car_make": {
-            "type": "string",
-            "description": "Make/model of the vehicle if identifiable"
-        },
-        "opens_box": {
-            "type": "boolean",
-            "description": "Is someone opening a package or delivery box?"
-        },
-        "porch_access": {
-            "type": "boolean",
-            "description": "Is someone accessing or standing on the porch/entrance?"
-        },
-        "animal_detected": {
-            "type": "boolean",
-            "description": "Is any animal visible in the frame?"
-        },
-        "animal_type": {
-            "type": "string",
-            "description": "Type of animal if animal_detected is true (e.g., 'cat', 'dog', 'bird')"
-        }
-    }
-}
-
-BACK_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "dog_walked": {
-            "type": "boolean",
-            "description": "Is someone walking a dog near the back area?"
-        },
-        "approaching_house": {
-            "type": "boolean",
-            "description": "Is someone approaching the back of the house?"
-        },
-        "leaving_house": {
-            "type": "boolean",
-            "description": "Is someone leaving from the back of the house?"
-        },
-        "weapon_detected": {
-            "type": "boolean",
-            "description": "Is any weapon or weapon-like object visible?"
-        },
-        "clothes_drying": {
-            "type": "boolean",
-            "description": "Are clothes hanging on a line or drying rack?"
-        },
-        "animal_detected": {
-            "type": "boolean",
-            "description": "Is any animal visible in the frame?"
-        },
-        "animal_type": {
-            "type": "string",
-            "description": "Type of animal if animal_detected is true (e.g., 'cat', 'dog', 'bird')"
-        }
-    }
-}
-
+# NOTE: FRONT_SCHEMA / BACK_SCHEMA are defined above (with `required`).
+# This comment block documents the live schema used by scans.py.
 def analyze_image_openrouter(image_path, api_key, schema=None, num_predict=None):
     """Cloud fallback: one JSON schema (full HA or a single scan)."""
     kind = camera_kind(image_path)
@@ -789,15 +756,18 @@ def set_inference_status(payload):
     except OSError:
         pass
 
-def log_inference(image, model, started, duration, labels, ok, trigger):
+def log_inference(image, model, started, duration, labels, ok, trigger, n_images=None):
     with _IO_LOCK:
         try:
             log = json.load(open(INFERENCE_LOG)) if os.path.exists(INFERENCE_LOG) else []
         except (OSError, ValueError):
             log = []
-        log.append({"image": image, "model": model, "trigger": trigger,
-                    "started": started, "duration_s": round(duration, 1),
-                    "labels": labels, "ok": ok})
+        entry = {"image": image, "model": model, "trigger": trigger,
+                 "started": started, "duration_s": round(duration, 1),
+                 "labels": labels, "ok": ok}
+        if n_images is not None:
+            entry["n_images"] = n_images
+        log.append(entry)
         try:
             _atomic_write_json(INFERENCE_LOG, log[-200:], indent=1)
         except OSError:
@@ -896,7 +866,7 @@ def persist_row(analysis_file, analysis_data, img, rec, *, existed):
     return rec
 
 
-def run_deep_pass(image_path, img_name, can_run_chain, api_key, trigger, fp_labels=None):
+def run_deep_pass(image_path, img_name, can_run_chain, api_key, trigger, fp_labels=None, timeline_images=None):
     """YOLO-gated individual e2b scans (not one giant HA schema).
 
     Returns ``(result_or_none, n_calls)``. n_calls counts against
@@ -904,6 +874,9 @@ def run_deep_pass(image_path, img_name, can_run_chain, api_key, trigger, fp_labe
     so the caller can persist ``_llm_skip=no_scan`` without re-queueing.
     fp_labels=None means run the detector fresh. A dict from
     fast_pass_yolo (including ``_centres``) is also accepted.
+
+    ``timeline_images`` is an optional list of prior frame paths (oldest
+    first) to prepend to the vision message so the model sees motion context.
     """
     global LAST_DURATION_S
     import scans
@@ -926,6 +899,8 @@ def run_deep_pass(image_path, img_name, can_run_chain, api_key, trigger, fp_labe
         if seed:
             seed["_yolo"] = list(fp_labels or [])
             seed["_scans"] = ["yolo_animal"] if scans.yolo_animal_seed(fp_labels) else ["porch_gate"]
+            if timeline_images:
+                seed["_timeline_images"] = len(timeline_images)
             return seed, 0
         return None, 0
 
@@ -942,7 +917,8 @@ def run_deep_pass(image_path, img_name, can_run_chain, api_key, trigger, fp_labe
         piece = None
         if can_run_chain:
             piece = analyze_image_with_schema(
-                image_path, spec["schema"], spec.get("num_predict") or scans.SCAN_TOKENS)
+                image_path, spec["schema"], spec.get("num_predict") or scans.SCAN_TOKENS,
+                extra_images=timeline_images)
             if isinstance(piece, dict):
                 used = LAST_MODEL_USED
         if not piece and ALLOW_CLOUD and api_key:
@@ -958,10 +934,13 @@ def run_deep_pass(image_path, img_name, can_run_chain, api_key, trigger, fp_labe
     if isinstance(result, dict):
         result["_yolo"] = list(fp_labels or [])
         result["_scans"] = [s["id"] for s in todo[:n]]
+        if timeline_images:
+            result["_timeline_images"] = len(timeline_images)
     labels = list(fp_labels or [])
     LAST_DURATION_S = time.time() - started
     log_inference(img_name, used, started, LAST_DURATION_S,
-                  labels, result is not None, trigger)
+                  labels, result is not None, trigger,
+                  n_images=(len(timeline_images) + 1) if timeline_images else 1)
     return result, n
 
 
@@ -1127,14 +1106,27 @@ def _ollama_chat_stream(payload, on_delta, timeout):
     raise RateLimited("LLM throttled")  # defensive
 
 
-def analyze_image_with_schema(image_path, schema, num_predict):
-    """One Ollama JSON-schema call. Used by sequential priority scans."""
+def analyze_image_with_schema(image_path, schema, num_predict, extra_images=None):
+    """One Ollama JSON-schema call. Used by sequential priority scans.
+
+    ``extra_images`` is an optional list of prior frame paths (oldest first)
+    taken within a few minutes of ``image_path``. When provided, the vision
+    message includes them so the model sees motion/context across time and
+    the prompt asks for a short timeline instead of a single snapshot.
+    """
     global RATE_LIMITED, LAST_MODEL_USED
+    images = [encode_image(image_path)]
+    if extra_images:
+        images = [encode_image(p) for p in extra_images] + images
+    if len(images) > 1:
+        prompt = TIMELINE_PROMPT.format(n=len(images))
+    else:
+        prompt = DETECT_PROMPT
     base = {
         "messages": [{
             "role": "user",
-            "content": DETECT_PROMPT,
-            "images": [encode_image(image_path)],
+            "content": prompt,
+            "images": images,
         }],
         "stream": False,
         "format": schema,
@@ -1733,9 +1725,19 @@ def main(retention_only=False, rescan_days=None):
                         import scans
                         kind = camera_kind(image_path)
                         fresh_fp = None if was_partial else fp_results
+                        # Multi-image timeline context: prepend prior frames
+                        # from the same camera so e2b sees motion across time.
+                        timeline_images = None
+                        if MULTI_IMAGE_ENABLED and not rescan_mode:
+                            timeline_images = collect_timeline_images(
+                                image_dir, img,
+                                max_age_minutes=MULTI_IMAGE_3H)
+                            if len(timeline_images) > 3:
+                                timeline_images = timeline_images[-3:]
                         result, n_scans = run_deep_pass(
                             image_path, img, can_run_chain, api_key,
-                            "priority", fp_labels=fresh_fp)
+                            "priority", fp_labels=fresh_fp,
+                            timeline_images=timeline_images)
                         deep_pass_count += n_scans
                         labels_for_scans, _centres = labels_and_centres(fp_results)
                         if result and result.get("_yolo"):
