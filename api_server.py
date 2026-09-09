@@ -206,7 +206,6 @@ LASTRUN_MARKER = "/tmp/webcam_analysis.lastrun"
 SWEEP_STALE_S = 3600  # no sweep in 1h (= analysis lock timeout) -> stalled.
                       # A full both-camera catch-up sweep legitimately takes
                       # ~45 min, so a shorter window false-degrades /api/health.
-IMG_EXTS = ('.jpg', '.jpeg', '.png', '.gif')
 
 
 def _inference_metrics(window_s=3600):
@@ -258,27 +257,14 @@ def _camera_stale_s(settings=None):
 
 
 def _camera_stats(max_dir_gb, settings=None):
-    """Per-camera liveness + disk usage (one scandir per dir)."""
+    """Per-camera liveness + disk usage (images + matching thumbs)."""
+    from analyze_images import dir_image_usage
     now = time.time()
     budget = max_dir_gb * 1024 ** 3
     stale_s = _camera_stale_s(settings)
     cams = []
     for d in WATCH_DIRS:
-        newest, count, total = 0.0, 0, 0
-        try:
-            with os.scandir(d) as it:
-                for e in it:
-                    if not (e.is_file() and e.name.lower().endswith(IMG_EXTS)):
-                        continue
-                    try:
-                        st = e.stat()
-                    except OSError:
-                        continue
-                    count += 1
-                    total += st.st_size
-                    newest = max(newest, st.st_mtime)
-        except OSError:
-            pass
+        newest, count, total = dir_image_usage(d)
         cams.append({
             "name": os.path.basename(d.rstrip("/")),
             "images": count,

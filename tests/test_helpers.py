@@ -814,19 +814,51 @@ class TestJsonRecovery(unittest.TestCase):
             self.assertEqual(analyze_images.load_json_file(path, []), [])
 
 
+class TestRetentionKeepDetection(unittest.TestCase):
+    def test_car_only_is_not_keep_worthy(self):
+        self.assertFalse(analyze_images.retention_is_keep_detection(
+            {"car": True, "fast_pass": "partial"}))
+        self.assertFalse(analyze_images.retention_is_keep_detection(
+            {"fast_pass": "negative"}))
+        self.assertFalse(analyze_images.retention_is_keep_detection({}))
+        self.assertFalse(analyze_images.retention_is_keep_detection(None))
+
+    def test_person_or_car_plus_person_is_keep_worthy(self):
+        self.assertTrue(analyze_images.retention_is_keep_detection(
+            {"person": True}))
+        self.assertTrue(analyze_images.retention_is_keep_detection(
+            {"car": True, "person": True}))
+        self.assertTrue(analyze_images.retention_is_keep_detection(
+            {"dog": True, "fast_pass": "partial"}))
+
+    def test_persistable_is_llm_timeline_only(self):
+        self.assertFalse(analyze_images.retention_is_persistable(
+            {"person": True}))
+        self.assertTrue(analyze_images.retention_is_persistable(
+            {"person": True, "_llm": {"porch_access": True}}))
+        self.assertFalse(analyze_images.retention_is_persistable(
+            {"car": True, "_llm": {"car_access": False}}))
+
+
 class TestApplyRetention(unittest.TestCase):
     def setUp(self):
         self._age = analyze_images.MAX_AGE_DAYS
         self._budget = analyze_images.MAX_DIR_GB
+        self._persist = analyze_images.PERSIST_BUDGET_PCT
         self._log = analyze_images.RETENTION_LOG
+        self._ignore = list(analyze_images.GATE_IGNORE_LABELS)
         self.td = tempfile.TemporaryDirectory()
         self.dir = self.td.name
         analyze_images.RETENTION_LOG = os.path.join(self.dir, "retention_log.json")
+        analyze_images.GATE_IGNORE_LABELS = ["car"]
+        analyze_images.PERSIST_BUDGET_PCT = 20.0
 
     def tearDown(self):
         analyze_images.MAX_AGE_DAYS = self._age
         analyze_images.MAX_DIR_GB = self._budget
+        analyze_images.PERSIST_BUDGET_PCT = self._persist
         analyze_images.RETENTION_LOG = self._log
+        analyze_images.GATE_IGNORE_LABELS = self._ignore
         self.td.cleanup()
 
     def _touch(self, name, size, mtime):
@@ -836,23 +868,74 @@ class TestApplyRetention(unittest.TestCase):
         os.utime(path, (mtime, mtime))
         return path
 
-    def test_age_deletes_old_negatives_only(self):
+    def _touch_thumb(self, name, size):
+        thumb_dir = os.path.join(self.dir, "thumbs")
+        os.makedirs(thumb_dir, exist_ok=True)
+        path = os.path.join(thumb_dir, name)
+        with open(path, "wb") as f:
+            f.write(b"t" * size)
+        return path
+
+    def test_age_deletes_old_non_timeline_keeps_llm(self):
         analyze_images.MAX_AGE_DAYS = 1
         analyze_images.MAX_DIR_GB = 100  # no budget pressure
         now = time.time()
         self._touch("old_neg.jpg", 100, now - 3 * 86400)
         self._touch("old_hit.jpg", 100, now - 3 * 86400)
+        self._touch("old_orphan.jpg", 100, now - 3 * 86400)
+        self._touch("old_llm.jpg", 100, now - 3 * 86400)
         self._touch("new_neg.jpg", 100, now - 100)
+        self._touch("new_hit.jpg", 100, now - 100)
         analysis = {
             "old_neg.jpg": {"fast_pass": "negative"},
             "old_hit.jpg": {"person": True},
+            "old_llm.jpg": {"person": True, "_llm": {"porch_access": True}},
             "new_neg.jpg": {"fast_pass": "negative"},
+            "new_hit.jpg": {"dog": True},
         }
         deleted = analyze_images.apply_retention(self.dir, analysis, set())
-        self.assertEqual(deleted, {"old_neg.jpg"})
-        self.assertFalse(os.path.exists(os.path.join(self.dir, "old_neg.jpg")))
-        self.assertTrue(os.path.exists(os.path.join(self.dir, "old_hit.jpg")))
+        self.assertEqual(deleted, {"old_neg.jpg", "old_hit.jpg", "old_orphan.jpg"})
+        self.assertFalse(os.path.exists(os.path.join(self.dir, "old_hit.jpg")))
+        self.assertTrue(os.path.exists(os.path.join(self.dir, "old_llm.jpg")))
         self.assertTrue(os.path.exists(os.path.join(self.dir, "new_neg.jpg")))
+        self.assertTrue(os.path.exists(os.path.join(self.dir, "new_hit.jpg")))
+
+    def test_persist_cap_trims_oldest_llm_archive(self):
+        analyze_images.MAX_AGE_DAYS = 1
+        analyze_images.MAX_DIR_GB = 1000 / (1024 ** 3)
+        analyze_images.PERSIST_BUDGET_PCT = 20  # 200 bytes
+        now = time.time()
+        self._touch("a.jpg", 150, now - 5 * 86400)
+        self._touch("b.jpg", 150, now - 4 * 86400)
+        self._touch("c.jpg", 150, now - 3 * 86400)
+        self._touch("recent.jpg", 100, now - 100)
+        rec = {"person": True, "_llm": {"porch_access": True}}
+        analysis = {n: rec for n in ("a.jpg", "b.jpg", "c.jpg", "recent.jpg")}
+        deleted = analyze_images.apply_retention(self.dir, analysis, set())
+        # archive 450 > 200; drop oldest a+b, keep c (150) and recent
+        self.assertEqual(deleted, {"a.jpg", "b.jpg"})
+        self.assertTrue(os.path.exists(os.path.join(self.dir, "c.jpg")))
+        self.assertTrue(os.path.exists(os.path.join(self.dir, "recent.jpg")))
+
+    def test_persist_archive_yields_to_total_budget(self):
+        analyze_images.MAX_AGE_DAYS = 1
+        analyze_images.MAX_DIR_GB = 500 / (1024 ** 3)
+        analyze_images.PERSIST_BUDGET_PCT = 20  # 100 bytes
+        now = time.time()
+        self._touch("old_llm.jpg", 80, now - 3 * 86400)
+        self._touch("n1.jpg", 400, now - 200)
+        self._touch("n2.jpg", 400, now - 100)
+        analysis = {
+            "old_llm.jpg": {"person": True, "_llm": {"porch_access": True}},
+            "n1.jpg": {"fast_pass": "negative"},
+            "n2.jpg": {"fast_pass": "negative"},
+        }
+        deleted = analyze_images.apply_retention(self.dir, analysis, set())
+        self.assertIn("n1.jpg", deleted)
+        self.assertNotIn("old_llm.jpg", deleted)
+        total = sum(os.path.getsize(os.path.join(self.dir, f))
+                    for f in os.listdir(self.dir) if f.endswith(".jpg"))
+        self.assertLessEqual(total, 500)
 
     def test_budget_prefers_negatives_then_detected(self):
         analyze_images.MAX_AGE_DAYS = 3650
@@ -873,6 +956,38 @@ class TestApplyRetention(unittest.TestCase):
         total = sum(os.path.getsize(os.path.join(self.dir, f))
                     for f in os.listdir(self.dir) if f.endswith(".jpg"))
         self.assertLessEqual(total, 500)
+
+    def test_budget_treats_car_only_as_negative(self):
+        analyze_images.MAX_AGE_DAYS = 3650
+        analyze_images.MAX_DIR_GB = 500 / (1024 ** 3)
+        now = time.time()
+        self._touch("car.jpg", 400, now - 300)
+        self._touch("person.jpg", 400, now - 100)
+        analysis = {
+            "car.jpg": {"car": True, "fast_pass": "partial"},
+            "person.jpg": {"person": True},
+        }
+        deleted = analyze_images.apply_retention(self.dir, analysis, set())
+        self.assertEqual(deleted, {"car.jpg"})
+        self.assertTrue(os.path.exists(os.path.join(self.dir, "person.jpg")))
+
+    def test_budget_counts_thumbs(self):
+        analyze_images.MAX_AGE_DAYS = 3650
+        analyze_images.MAX_DIR_GB = 500 / (1024 ** 3)
+        now = time.time()
+        self._touch("keep.jpg", 200, now - 10)
+        self._touch("old.jpg", 200, now - 300)
+        self._touch_thumb("old.jpg", 200)
+        analysis = {
+            "keep.jpg": {"dog": True},
+            "old.jpg": {"fast_pass": "negative"},
+        }
+        # charged: keep 200 + old 400 = 600 > 500; drop old (image+thumb)
+        deleted = analyze_images.apply_retention(self.dir, analysis, set())
+        self.assertEqual(deleted, {"old.jpg"})
+        self.assertFalse(os.path.exists(os.path.join(self.dir, "old.jpg")))
+        self.assertFalse(os.path.exists(os.path.join(self.dir, "thumbs", "old.jpg")))
+        self.assertTrue(os.path.exists(os.path.join(self.dir, "keep.jpg")))
 
     def test_pins_never_deleted(self):
         analyze_images.MAX_AGE_DAYS = 1
@@ -897,6 +1012,19 @@ class TestApplyRetention(unittest.TestCase):
         self.assertIn("known.jpg", deleted)
         self.assertIn("orphan_old.jpg", deleted)
         self.assertNotIn("orphan_new.jpg", deleted)
+
+    def test_orphan_thumbs_removed(self):
+        analyze_images.MAX_AGE_DAYS = 3650
+        analyze_images.MAX_DIR_GB = 100
+        now = time.time()
+        self._touch("keep.jpg", 100, now - 10)
+        self._touch_thumb("keep.jpg", 50)
+        self._touch_thumb("gone.jpg", 50)
+        analysis = {"keep.jpg": {"person": True}}
+        deleted = analyze_images.apply_retention(self.dir, analysis, set())
+        self.assertEqual(deleted, set())
+        self.assertTrue(os.path.exists(os.path.join(self.dir, "thumbs", "keep.jpg")))
+        self.assertFalse(os.path.exists(os.path.join(self.dir, "thumbs", "gone.jpg")))
 
 
 class TestE2bSchema(unittest.TestCase):
@@ -1152,6 +1280,22 @@ class TestCameraOfflineHours(unittest.TestCase):
                 api_server.WATCH_DIRS = orig
         self.assertFalse(mid[0]["stale"])   # 13h < 24h default (would be stale at 12)
         self.assertTrue(late[0]["stale"])   # 25h > 24h
+
+    def test_status_budget_counts_thumbs(self):
+        with tempfile.TemporaryDirectory() as d:
+            with open(os.path.join(d, "x.jpg"), "wb") as f:
+                f.write(b"x" * 1000)
+            os.makedirs(os.path.join(d, "thumbs"))
+            with open(os.path.join(d, "thumbs", "x.jpg"), "wb") as f:
+                f.write(b"y" * 200)
+            orig = api_server.WATCH_DIRS
+            api_server.WATCH_DIRS = [d]
+            try:
+                cams = api_server._camera_stats(5.0, {})
+            finally:
+                api_server.WATCH_DIRS = orig
+        self.assertEqual(cams[0]["images"], 1)
+        self.assertEqual(cams[0]["bytes"], 1200)
 
 
 class TestNotifyImageMode(unittest.TestCase):

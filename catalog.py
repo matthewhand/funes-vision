@@ -56,6 +56,26 @@ def is_llm_verified(rec):
     return kind(rec) == "verified"
 
 
+def is_timeline_persistable(rec, gate_ignore=GATE_IGNORE_LABELS):
+    """LLM-verified visit that may outlive max_age_days.
+
+    Motion JPEGs and YOLO-only hits do not qualify. Needs a successful
+    `_llm` merge (no skip) plus either a True HA activity flag or a
+    detector label that is not gate-ignored (default: car). Capped later
+    by `persist_budget_pct` so the archive cannot fill the camera dir.
+    """
+    if not is_llm_verified(rec):
+        return False
+    ignore = set(gate_ignore or ())
+    llm = rec.get("_llm") if isinstance(rec.get("_llm"), dict) else {}
+    for src in (rec, llm):
+        for k, v in src.items():
+            if v is True and k not in YOLO_PRESENCE_KEYS and k != "fast_pass" \
+                    and not str(k).startswith("_"):
+                return True
+    return any(k not in ignore for k in detector_true_labels(rec))
+
+
 def is_awaiting_backfill(rec):
     return kind(rec) in ("negative", "no_trigger")
 

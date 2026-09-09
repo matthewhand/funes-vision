@@ -137,36 +137,47 @@ demand via `--retention-only` / the cron watchdog) under the global flock.
 
 | Key | Live default | Meaning |
 |-----|--------------|---------|
-| `max_age_days` | 30 | Age pass: delete **analyzed negatives** older than this |
-| `max_dir_gb` | 5.0 | Per-camera dir budget (sum of image file sizes in that dir) |
+| `max_age_days` | 30 | Age pass: delete unpinned **non-timeline** images older than this |
+| `max_dir_gb` | 5.0 | Per-camera dir budget (sum of image file sizes **plus matching thumbs**) |
+| `persist_budget_pct` | 20 | Ceiling: age-expired **LLM-verified timeline** frames may use at most this % of `max_dir_gb` (1.0 GiB when the dir budget is 5.0). Not a reservation — the rolling window always gets the rest so new detections cannot fill the dir to 100%. |
 | `pins.json` | `[]` | Filenames never deleted by retention |
 
 These knobs are **not** in the UI/`POST /api/settings` allow-list — edit
 `settings.json` on disk (or extend `MUTABLE_SETTINGS` if you want them
 API-writable). Code fallbacks if the keys are missing: `max_age_days=30`,
-`max_dir_gb=5.0`.
+`max_dir_gb=5.0`, `persist_budget_pct=20`.
 
-#### Three passes (`apply_retention`)
+**Persistable** (may outlive `max_age_days`) means `catalog.is_timeline_persistable`:
+a successful LLM merge (`_llm` dict, no skip) **and** either a True HA
+activity flag (`porch_access`, `animal_detected`, `postal_delivery`, …) or
+a detector label that is not gate-ignored (person/dog/cat/bird, not
+car-only). Motion JPEGs and YOLO-only hits are not persistable.
+
+#### Passes (`apply_retention`)
 
 For each path in `watch_dirs`, after listing image files (`.jpg/.jpeg/.png/.gif`):
 
-1. **Age** — delete if mtime &lt; now − `max_age_days` **and** the file is in
-   `analysis.json` **and** `has_detection` is false (no non-`fast_pass` key
-   is `true`) **and** not pinned.
-2. **Disk budget** — if total image bytes in the dir &gt; `max_dir_gb` GiB:
-   delete oldest **negatives** first, then oldest **detected** frames, until
-   under budget (still never pins; still only files present in analysis for
-   this pass).
-3. **Budget escape** — if *still* over budget after pass 2 (typical when a
-   large **unanalyzed** backlog accumulated while the catalog/pipeline was
-   down), delete oldest **unanalyzed** frames next. Pins remain sacred.
+1. **Age** — delete if mtime &lt; now − `max_age_days` **and** not pinned
+   **and** not persistable. YOLO-only parked-car/face shots rotate; LLM
+   timeline visits stay.
+2. **Persist cap** — among remaining persistable frames older than
+   `max_age_days`, if their charged bytes &gt; `persist_budget_pct` of
+   `max_dir_gb`, delete oldest until under that ceiling.
+3. **Disk budget** — if image+thumb bytes still &gt; `max_dir_gb` GiB:
+   delete oldest **negatives** (including car-only), then oldest **YOLO-only**
+   detections, then oldest **persistable**, then oldest **unanalyzed**.
+   Pins remain sacred. Unanalyzed frames newer than `max_age_days` are
+   otherwise kept so they can be reviewed first.
 
-Thumbnails at `<dir>/thumbs/<filename>` are removed with each parent image.
+Thumbnails at `<dir>/thumbs/<filename>` are removed with each parent image
+and **count toward** `max_dir_gb`. Thumbs whose parent image is already
+gone (legacy deletes) are removed as a final sweep.
 
 **Never deleted by retention:** pinned filenames.  
-**Not counted toward `max_dir_gb`:** thumbnails, JSON catalogs, host free
-space on `/` or the whole `/mnt/models` volume (Ollama/models/projects sit
-outside the per-camera budget — see [DEPLOYMENT.md](DEPLOYMENT.md)).
+**Not counted toward `max_dir_gb`:** JSON catalogs, copied gallery HTML/guide
+assets, host free space on `/` or the whole `/mnt/models` volume
+(Ollama/models/projects sit outside the per-camera budget — see
+[DEPLOYMENT.md](DEPLOYMENT.md)).
 
 #### When it runs
 
@@ -481,8 +492,9 @@ move → verify) lives in [ROADMAP.md](ROADMAP.md).
 | `burst_threshold_seconds` | 300 | max gap between burst frames |
 | `idle_sweep_seconds` | 60 | idle re-scan cadence (UI-settable, 15–3600) |
 | `timezone` | Australia/Sydney | display TZ; `WEBCAM_TZ` env overrides (see [Paths & XDG](#paths--xdg)) |
-| `max_age_days` | 30 | retention: age limit for **analyzed no-detection** images (not UI-mutable; edit file) |
-| `max_dir_gb` | 5.0 | retention: per-camera image-byte budget in GiB (code fallback 5.0 if the key is missing; not UI-mutable) |
+| `max_age_days` | 30 | retention: age limit for unpinned **non-timeline** images (not UI-mutable; edit file) |
+| `max_dir_gb` | 5.0 | retention: per-camera image+thumb budget in GiB (code fallback 5.0 if the key is missing; not UI-mutable) |
+| `persist_budget_pct` | 20 | retention: max % of `max_dir_gb` for LLM-verified timeline frames older than `max_age_days` (code fallback 20; not UI-mutable) |
 | `min_mem_for_local_gb` | 6.0 | min free RAM to attempt a **local** model; a `:cloud` model ignores this (see `runnable_chain`) |
 | `allow_cloud` | false | permit OpenRouter fallback (separate from an Ollama `:cloud` primary) |
 | `ollama_url` | http://localhost:11434 | local LLM endpoint |

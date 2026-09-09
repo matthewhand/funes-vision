@@ -142,7 +142,12 @@ AlexeyAB/darknet GitHub releases; path configured as `yolo_dir`.
 ### How retention maps to this disk
 
 - **`max_dir_gb` (live 5.0)** applies **per camera directory** (sum of
-  image files only), not to the whole volume and not to `/`.
+  image files **plus matching thumbnails**), not to the whole volume
+  and not to `/`. JSON/HTML/guide copies in the dir are not counted.
+- **`max_age_days` (live 30)** deletes unpinned **non-timeline** images
+  older than that. LLM-verified timeline visits may outlive this, but
+  only up to **`persist_budget_pct` (live 20)** of `max_dir_gb` so the
+  archive cannot fill the camera dir. Pins in `pins.json` are kept.
 - Two cameras at budget ≈ 10 GB of JPEGs; the rest of `/mnt/models` is
   models and other data. Host ENOSPC can still happen while each camera
   looks “under budget”.

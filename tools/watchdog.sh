@@ -106,7 +106,7 @@ PY
 }
 
 run_retention() {
-  log "retention-only: starting (settings max_age_days / max_dir_gb / pins)"
+  log "retention-only: starting (settings max_age_days / max_dir_gb / persist_budget_pct / pins)"
   export WEBCAM_BASE="$BASE"
 
   _retention_body() {

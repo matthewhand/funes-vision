@@ -95,7 +95,8 @@ Send a Slack test message using the stored config.
 ### `GET /api/status`
 Live pipeline snapshot. Shape (keys may be absent if a source is unavailable):
 - `watch_dirs`, `settings` (full settings.json — includes `max_age_days`,
-  `max_dir_gb`, even though those are not `POST /api/settings`-mutable)
+  `max_dir_gb`, `persist_budget_pct`, even though those are not
+  `POST /api/settings`-mutable)
 - `trigger` → `{inotify_active, idle_sweep_seconds, last_sweep_age_s}`
   (`last_sweep_age_s` is seconds since `/tmp/webcam_analysis.lastrun`, or
   JSON `null` if the marker is missing; the UI treats null as “unknown”.
@@ -116,7 +117,7 @@ Live pipeline snapshot. Shape (keys may be absent if a source is unavailable):
     average seconds (or 40) × priority count. Both `null` when deep
     passes are off. This is wall-clock honesty, not a promise.
 - `cameras[]` → `{name, images, bytes, budget_pct, last_frame_age_s, stale}`
-  (`budget_pct` = image bytes in that camera dir vs `max_dir_gb`; UI warns
+  (`budget_pct` = image+thumb bytes in that camera dir vs `max_dir_gb`; UI warns
   above ~85%; pipeline Slack alert and watchdog `auto` kick at ~90%)
 - `filesystem` → `{free_gb, total_gb, used_pct}` (host volume for the data
   paths — not the per-camera budget), or `null` if `statvfs` failed

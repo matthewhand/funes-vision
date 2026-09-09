@@ -24,8 +24,9 @@ MODEL_PRIMARY = MODEL_LOCAL  # default; overridden by settings `model_primary`
 MODEL_FALLBACK = ""          # optional; settings `model_fallback`
 BURST_THRESHOLD_SECONDS = 300  # Group images within 5 mins
 MIN_MEM_FOR_LOCAL_GB = 6.0
-MAX_AGE_DAYS = 30   # retention: no-detection images older than this are removed
-MAX_DIR_GB = 5.0    # retention: per-camera disk budget
+MAX_AGE_DAYS = 30   # retention: unpinned non-timeline images older than this
+MAX_DIR_GB = 5.0    # retention: per-camera disk budget (images + thumbs)
+PERSIST_BUDGET_PCT = 20.0  # max % of max_dir_gb for LLM timeline frames past max_age_days
 ALLOW_CLOUD = False  # OpenRouter only when settings allow_cloud is true
 OLLAMA_URL = "http://localhost:11434"
 # Idle unload: each /api/chat refreshes this TTL. Ollama's default is 5m.
@@ -69,6 +70,7 @@ if os.path.exists(_settings_path):
         BURST_THRESHOLD_SECONDS = _s.get("burst_threshold_seconds", BURST_THRESHOLD_SECONDS)
         MAX_AGE_DAYS = _s.get("max_age_days", MAX_AGE_DAYS)
         MAX_DIR_GB = _s.get("max_dir_gb", MAX_DIR_GB)
+        PERSIST_BUDGET_PCT = _s.get("persist_budget_pct", PERSIST_BUDGET_PCT)
         MIN_MEM_FOR_LOCAL_GB = _s.get("min_mem_for_local_gb", MIN_MEM_FOR_LOCAL_GB)
         ALLOW_CLOUD = _s.get("allow_cloud", ALLOW_CLOUD)
         OLLAMA_URL = _s.get("ollama_url", OLLAMA_URL)
@@ -1238,6 +1240,78 @@ THUMB_WIDTH = 320
 def has_detection(entry):
     return any(v is True for k, v in entry.items() if k != 'fast_pass')
 
+
+def retention_is_keep_detection(entry):
+    """True if the disk-budget pass should treat this frame as a detection.
+
+    Gate-ignore labels (default: car) do not count — parked-car-only frames
+    evict like negatives when a camera is over max_dir_gb.
+    """
+    if not isinstance(entry, dict):
+        return False
+    ignore = set(GATE_IGNORE_LABELS)
+    ignore.add("fast_pass")
+    return any(v is True and k not in ignore for k, v in entry.items())
+
+
+def retention_is_persistable(entry):
+    """LLM-verified timeline visit. May outlive max_age_days (persist cap)."""
+    import catalog
+    return catalog.is_timeline_persistable(entry, GATE_IGNORE_LABELS)
+
+
+def persist_budget_bytes():
+    """Byte ceiling for age-expired LLM timeline frames (persist_budget_pct)."""
+    try:
+        pct = float(PERSIST_BUDGET_PCT)
+    except (TypeError, ValueError):
+        pct = 20.0
+    pct = max(0.0, min(100.0, pct))
+    return MAX_DIR_GB * 1024 ** 3 * (pct / 100.0)
+
+
+def _thumb_sizes(image_dir):
+    """filename -> size for files in <image_dir>/thumbs/. Missing dir -> {}."""
+    thumbs = {}
+    try:
+        with os.scandir(os.path.join(image_dir, "thumbs")) as it:
+            for e in it:
+                if not e.is_file():
+                    continue
+                try:
+                    thumbs[e.name] = e.stat().st_size
+                except OSError:
+                    continue
+    except OSError:
+        pass
+    return thumbs
+
+
+def dir_image_usage(image_dir):
+    """Newest image mtime, image count, bytes charged to max_dir_gb.
+
+    Charged bytes are each top-level image plus its matching thumbnail.
+    JSON/HTML/guide copies are not counted.
+    """
+    thumbs = _thumb_sizes(image_dir)
+    newest, count, total = 0.0, 0, 0
+    try:
+        with os.scandir(image_dir) as it:
+            for e in it:
+                if not (e.is_file() and e.name.lower().endswith(
+                        ('.jpg', '.jpeg', '.png', '.gif'))):
+                    continue
+                try:
+                    st = e.stat()
+                except OSError:
+                    continue
+                count += 1
+                total += st.st_size + thumbs.get(e.name, 0)
+                newest = max(newest, st.st_mtime)
+    except OSError:
+        pass
+    return newest, count, total
+
 RETENTION_LOG = os.path.join(BASE_DIR, "retention_log.json")
 
 def _log_retention(image_dir, count, bytes_freed):
@@ -1295,21 +1369,8 @@ def alert_next_count(fire_count, identical):
 
 
 def _scan_dir(image_dir):
-    """Newest image mtime and total bytes for a camera dir (one scandir)."""
-    newest, total = 0.0, 0
-    try:
-        with os.scandir(image_dir) as it:
-            for e in it:
-                if not (e.is_file() and e.name.lower().endswith(('.jpg', '.jpeg', '.png', '.gif'))):
-                    continue
-                try:
-                    st = e.stat()
-                except OSError:
-                    continue
-                total += st.st_size
-                newest = max(newest, st.st_mtime)
-    except OSError:
-        pass
+    """Newest image mtime and bytes charged to max_dir_gb (image + thumb)."""
+    newest, _count, total = dir_image_usage(image_dir)
     return newest, total
 
 def _recovery_text(key):
@@ -1490,18 +1551,22 @@ def run_health_checks(watch_dirs, api_key):
         pass
 
 def apply_retention(image_dir, analysis_data, pins):
-    """Delete images to honor the age and disk budgets.
+    """Delete images to honor the age, persist-cap, and disk budgets.
 
     Rules: pinned images are never deleted.
-    Pass 1 (age): analyzed no-detection images older than max_age_days.
-    Pass 2 (budget): if over max_dir_gb, oldest negatives first, then oldest
-    detections.
-    Pass 3 (budget escape): if still over budget (e.g. large unanalyzed
-    backlog while the catalog was down), oldest unanalyzed frames go next.
-    Unanalyzed frames are otherwise kept so they can be reviewed first.
+    Pass 1 (age): unpinned images older than max_age_days, except LLM-verified
+    timeline visits (persistable).
+    Pass 2 (persist cap): age-expired persistable frames may occupy at most
+    persist_budget_pct of max_dir_gb (default 20%). Oldest extra go first.
+    This is a ceiling, not a reservation — the rolling window always has
+    the remaining 80% so new detections cannot be starved.
+    Pass 3 (budget): if images+thumbs still exceed max_dir_gb, delete oldest
+    negatives (including car-only), then YOLO-only detections, then
+    persistable, then unanalyzed. Pins remain sacred.
     Returns the set of deleted filenames."""
     now = time.time()
     deleted = set()
+    thumbs = _thumb_sizes(image_dir)
 
     entries = []
     for f in os.listdir(image_dir):
@@ -1511,7 +1576,8 @@ def apply_retention(image_dir, analysis_data, pins):
             st = os.stat(os.path.join(image_dir, f))
         except OSError:
             continue
-        entries.append((f, st.st_mtime, st.st_size))
+        charged = st.st_size + thumbs.get(f, 0)
+        entries.append((f, st.st_mtime, charged))
 
     def delete(f):
         for path in (os.path.join(image_dir, f), os.path.join(image_dir, "thumbs", f)):
@@ -1521,55 +1587,101 @@ def apply_retention(image_dir, analysis_data, pins):
                 pass
         deleted.add(f)
 
+    def is_persistable(f):
+        return (f not in pins and f in analysis_data
+                and retention_is_persistable(analysis_data[f]))
+
     def is_deletable_negative(f):
         return (f not in pins and f in analysis_data
-                and not has_detection(analysis_data[f]))
+                and not retention_is_keep_detection(analysis_data[f])
+                and not retention_is_persistable(analysis_data[f]))
 
-    # Pass 1: max age - only analyzed images with no identified objects
+    def is_yolo_only(f):
+        return (f not in pins and f in analysis_data
+                and retention_is_keep_detection(analysis_data[f])
+                and not retention_is_persistable(analysis_data[f]))
+
     cutoff = now - MAX_AGE_DAYS * 86400
+    budget = MAX_DIR_GB * 1024 ** 3
+    persist_budget = persist_budget_bytes()
+
+    # Pass 1: max age — motion / YOLO-only / unanalyzed; keep LLM timeline
     for f, mtime, size in entries:
-        if mtime < cutoff and is_deletable_negative(f):
+        if mtime < cutoff and f not in pins and not is_persistable(f):
             delete(f)
 
-    # Pass 2: disk budget - oldest negatives first, then oldest detected
+    remaining = [e for e in entries if e[0] not in deleted]
+
+    # Pass 2: ceiling on age-expired LLM timeline frames
+    archived = sorted(
+        (e for e in remaining if e[1] < cutoff and is_persistable(e[0])),
+        key=lambda e: e[1])
+    archive_bytes = sum(s for _, _, s in archived)
+    if archive_bytes > persist_budget:
+        if persist_budget >= 1024 ** 2:
+            print(f"Retention: persist archive {archive_bytes / 1024 ** 3:.2f}GiB "
+                  f"> {persist_budget / 1024 ** 3:.2f}GiB cap in {image_dir}")
+        for f, mtime, size in archived:
+            if archive_bytes <= persist_budget:
+                break
+            delete(f)
+            archive_bytes -= size
+
     remaining = [e for e in entries if e[0] not in deleted]
     total = sum(s for _, _, s in remaining)
-    budget = MAX_DIR_GB * 1024 ** 3
+
+    # Pass 3: total dir budget — rolling window wins over the persist archive
     if total > budget:
         negatives = sorted((e for e in remaining if is_deletable_negative(e[0])),
                            key=lambda e: e[1])
-        detected = sorted((e for e in remaining
-                           if e[0] not in pins and e[0] in analysis_data
-                           and has_detection(analysis_data[e[0]])),
-                          key=lambda e: e[1])
-        for f, mtime, size in negatives + detected:
-            if total <= budget:
-                break
-            delete(f)
-            total -= size
-
-    # Pass 3: still over budget — unanalyzed frames can pin the dir forever
-    # if the catalog/pipeline was down. Drop oldest unanalyzed (never pins).
-    if total > budget:
+        yolo_only = sorted((e for e in remaining if is_yolo_only(e[0])),
+                           key=lambda e: e[1])
+        persistable = sorted((e for e in remaining if is_persistable(e[0])),
+                             key=lambda e: e[1])
         unanalyzed = sorted(
             (e for e in remaining
-             if e[0] not in deleted and e[0] not in pins
-             and e[0] not in analysis_data),
+             if e[0] not in pins and e[0] not in analysis_data),
             key=lambda e: e[1])
-        if unanalyzed:
-            print(f"Retention: still over budget after analyzed frames; "
-                  f"evicting oldest unanalyzed from {image_dir}")
-        for f, mtime, size in unanalyzed:
+        for f, mtime, size in negatives + yolo_only + persistable:
             if total <= budget:
                 break
+            if f in deleted:
+                continue
             delete(f)
             total -= size
+        if total > budget and unanalyzed:
+            print(f"Retention: still over budget after analyzed frames; "
+                  f"evicting oldest unanalyzed from {image_dir}")
+            for f, mtime, size in unanalyzed:
+                if total <= budget:
+                    break
+                if f in deleted:
+                    continue
+                delete(f)
+                total -= size
 
-    if deleted:
+    # Orphan thumbs: parent image already gone (legacy deletes, API, etc.)
+    orphan_n = 0
+    orphan_bytes = 0
+    parents = {e[0] for e in entries} - deleted
+    for name, tsize in thumbs.items():
+        if name in parents or name in deleted:
+            continue
+        try:
+            os.remove(os.path.join(image_dir, "thumbs", name))
+        except OSError:
+            continue
+        orphan_n += 1
+        orphan_bytes += tsize
+
+    if deleted or orphan_n:
         sizes = {f: s for f, _, s in entries}
-        freed = sum(sizes.get(f, 0) for f in deleted)
-        print(f"Retention: removed {len(deleted)} images from {image_dir}")
-        _log_retention(image_dir, len(deleted), freed)
+        freed = sum(sizes.get(f, 0) for f in deleted) + orphan_bytes
+        if deleted:
+            print(f"Retention: removed {len(deleted)} images from {image_dir}")
+        if orphan_n:
+            print(f"Retention: removed {orphan_n} orphan thumbs from {image_dir}")
+        _log_retention(image_dir, len(deleted) + orphan_n, freed)
     return deleted
 
 def generate_thumbnails(image_dir, images):

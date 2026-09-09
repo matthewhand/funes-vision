@@ -131,6 +131,7 @@ opened). These are **not** the import-time fallbacks in `analyze_images.py`.
 | `burst_summaries_enabled` | **false** |
 | `allow_cloud` | false |
 | `max_dir_gb` | **5.0** |
+| `persist_budget_pct` | **20** (LLM timeline archive ceiling) |
 | `max_deep_passes` | 30 |
 
 Slack is enabled with `notify_mode: context`; with burst summaries off, those

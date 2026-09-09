@@ -55,6 +55,32 @@ class TestKind(unittest.TestCase):
         self.assertEqual(catalog.kind(rec), "empty")
 
 
+class TestTimelinePersistable(unittest.TestCase):
+    def test_yolo_only_and_motion_are_not_persistable(self):
+        self.assertFalse(catalog.is_timeline_persistable({"person": True}))
+        self.assertFalse(catalog.is_timeline_persistable(
+            {"fast_pass": "negative"}))
+        self.assertFalse(catalog.is_timeline_persistable(
+            {"person": True, "fast_pass": "partial", "_llm_skip": "budget"}))
+        self.assertFalse(catalog.is_timeline_persistable(None))
+
+    def test_llm_person_visit_is_persistable(self):
+        rec = {"person": True, "_llm": {"porch_access": False}}
+        self.assertTrue(catalog.is_timeline_persistable(rec))
+
+    def test_ha_flag_without_yolo_is_persistable(self):
+        rec = {"_llm": {"animal_detected": True, "animal_type": "cat"}}
+        self.assertTrue(catalog.is_timeline_persistable(rec))
+
+    def test_car_only_verified_is_not_persistable(self):
+        rec = {"car": True, "_llm": {"car_access": False}}
+        self.assertFalse(catalog.is_timeline_persistable(rec))
+
+    def test_llm_car_access_is_persistable(self):
+        rec = {"car": True, "_llm": {"car_access": True}}
+        self.assertTrue(catalog.is_timeline_persistable(rec))
+
+
 class TestStamp(unittest.TestCase):
     def test_stamp_adds_schema_and_yolo(self):
         rec = {"person": True, "car": True}
