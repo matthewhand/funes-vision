@@ -11,7 +11,6 @@ import os
 import re
 import socket
 import struct
-import time
 from datetime import datetime
 
 ROOT = os.path.dirname(os.path.abspath(__file__))

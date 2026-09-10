@@ -114,7 +114,8 @@ def fast_pass(image_path):
         if face_cascade is None or body_cascade is None or cat_cascade is None:
             return {}
         img = cv2.imread(image_path)
-        if img is None: return {}
+        if img is None:
+            return {}
         h, w = img.shape[:2]
         scale = 400.0 / w
         small = cv2.resize(img, (400, int(h * scale)), interpolation=cv2.INTER_AREA)
@@ -123,13 +124,16 @@ def fast_pass(image_path):
         results = {}
         # Increased sensitivity: lower minNeighbors, smaller minSize
         faces = face_cascade.detectMultiScale(gray, 1.1, 3, minSize=(20, 20))
-        if len(faces) > 0: results["face"] = True
+        if len(faces) > 0:
+            results["face"] = True
             
         bodies = body_cascade.detectMultiScale(gray, 1.1, 2, minSize=(40, 80))
-        if len(bodies) > 0: results["body"] = True
+        if len(bodies) > 0:
+            results["body"] = True
             
         cats = cat_cascade.detectMultiScale(gray, 1.1, 2, minSize=(20, 20))
-        if len(cats) > 0: results["cat"] = True
+        if len(cats) > 0:
+            results["cat"] = True
             
         return results
     except Exception as e:
@@ -505,8 +509,8 @@ def rec_is_urgent_detection(rec):
         return True
     yolo = rec.get("_yolo") or []
     return any(
-        l in LLM_TRIGGER_LABELS and l not in GATE_IGNORE_LABELS
-        for l in yolo
+        lbl in LLM_TRIGGER_LABELS and lbl not in GATE_IGNORE_LABELS
+        for lbl in yolo
     )
 
 
@@ -1223,16 +1227,16 @@ def analyze_burst_openrouter(image_paths, api_key):
         headers = { "Authorization": f"Bearer {api_key}", "Content-Type": "application/json" }
         response = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, data=json.dumps(payload), timeout=90)
         return response.json()['choices'][0]['message']['content'].strip()
-    except:
+    except Exception:
         return "Failed to analyze sequence."
 
 def get_free_mem_gb():
     try:
         with open('/proc/meminfo', 'r') as f:
             lines = f.readlines()
-            free = [l for l in lines if l.startswith('MemAvailable')][0]
+            free = [line for line in lines if line.startswith('MemAvailable')][0]
             return int(free.split()[1]) / (1024 * 1024)
-    except:
+    except Exception:
         return 0
 
 THUMB_WIDTH = 320
@@ -1749,7 +1753,8 @@ def main(retention_only=False, rescan_days=None):
           f"{'ON' if BURST_SUMMARIES_ENABLED else 'OFF'}")
 
     for image_dir in watch_dirs:
-        if not os.path.exists(image_dir): continue
+        if not os.path.exists(image_dir):
+            continue
         print(f"Scanning {image_dir}...")
         
         if not rescan_days:
@@ -1771,7 +1776,9 @@ def main(retention_only=False, rescan_days=None):
         if not rescan_days:
             generate_thumbnails(image_dir, images)
 
-        _mtime = lambda x: os.path.getmtime(os.path.join(image_dir, x))
+        def _mtime(x):
+            return os.path.getmtime(os.path.join(image_dir, x))
+
         rescan_mode = bool(rescan_days)
         if rescan_mode:
             # Detections only (person/dog/cat/bird). Empties and car-only stay put.
@@ -1939,7 +1946,9 @@ def main(retention_only=False, rescan_days=None):
             # Prioritize frames near existing detections: appear/disappear
             # boundaries live there, so verifying them first sharpens the
             # Timeline fast instead of grinding empty frames newest-first.
-            mtime = lambda x: os.path.getmtime(os.path.join(image_dir, x))
+            def mtime(x):
+                return os.path.getmtime(os.path.join(image_dir, x))
+
             detection_times = sorted(
                 mtime(i) for i in images
                 if i in analysis_data
@@ -2011,9 +2020,11 @@ def main(retention_only=False, rescan_days=None):
                 if t2 - t1 < BURST_THRESHOLD_SECONDS:
                     current_burst.append(images[i])
                 else:
-                    if len(current_burst) >= 2: bursts.append(current_burst)
+                    if len(current_burst) >= 2:
+                        bursts.append(current_burst)
                     current_burst = [images[i]]
-            if len(current_burst) >= 2: bursts.append(current_burst)
+            if len(current_burst) >= 2:
+                bursts.append(current_burst)
 
         # 3. Burst Analysis (capped per sweep - each summary is minutes
         # of CPU inference; uncapped this can hold the lock for hours)
@@ -2022,7 +2033,8 @@ def main(retention_only=False, rescan_days=None):
             if burst_analyses >= 2:
                 break
             burst_id = burst[-1] # Use last image as ID
-            if burst_id in burst_data: continue
+            if burst_id in burst_data:
+                continue
             
             # Only analyze burst if at least one image has a detection
             has_detection = any(img in analysis_data and any(v is True for k, v in analysis_data[img].items() if k != 'fast_pass') for img in burst)
@@ -2078,7 +2090,7 @@ def main(retention_only=False, rescan_days=None):
             flush_analysis(analysis_file, analysis_data, force=True)
             try:
                 _atomic_write_json(burst_file, burst_data, indent=2)
-                print(f"Updated data files.")
+                print("Updated data files.")
             except OSError as e:
                 print(f"Failed to write bursts (disk full?): {e}")
 

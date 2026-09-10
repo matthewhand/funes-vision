@@ -176,7 +176,7 @@ def ignore_regions_valid(value):
         labels = region.get("labels", ["car"])
         if not isinstance(labels, list) or not labels:
             return False
-        if not all(isinstance(l, str) and l.strip() for l in labels):
+        if not all(isinstance(lbl, str) and lbl.strip() for lbl in labels):
             return False
         poly = region.get("polygon")
         if not isinstance(poly, list) or len(poly) < 3 or len(poly) > 8:
