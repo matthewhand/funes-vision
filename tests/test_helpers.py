@@ -277,12 +277,22 @@ class TestAtomicIO(unittest.TestCase):
             p = os.path.join(d, "x.json")
             ai._atomic_write_json(p, {"a": 1}, indent=1)
             self.assertEqual(json.load(open(p)), {"a": 1})
-            self.assertEqual(stat.S_IMODE(os.stat(p).st_mode), 0o600)
+            # Default mode is group/world-readable: the gallery is served by
+            # nginx as www-data while the pipeline writes as its own user, so a
+            # 0o600 catalog file 403s the whole AI layer of the grid.
+            self.assertEqual(stat.S_IMODE(os.stat(p).st_mode), 0o644)
             ai._atomic_write_json(p, {"b": 2})        # overwrite
             self.assertEqual(json.load(open(p)), {"b": 2})
-            self.assertEqual(stat.S_IMODE(os.stat(p).st_mode), 0o600)
+            self.assertEqual(stat.S_IMODE(os.stat(p).st_mode), 0o644)
             # no leftover temp files beside it
             self.assertEqual([f for f in os.listdir(d) if ".tmp." in f], [])
+
+    def test_atomic_write_secret_mode(self):
+        ai = analyze_images
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "secret.json")
+            ai._atomic_write_json(p, {"token": "x"}, mode=0o600)
+            self.assertEqual(stat.S_IMODE(os.stat(p).st_mode), 0o600)
 
     def test_concurrent_status_writes_always_valid(self):
         ai = analyze_images

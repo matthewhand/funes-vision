@@ -658,17 +658,24 @@ INFERENCE_STATUS = os.path.join(BASE_DIR, "inference_status.json")
 _IO_LOCK = threading.Lock()
 
 
-def _atomic_write_json(path, data, indent=None):
+def _atomic_write_json(path, data, indent=None, mode=0o644):
     """Write JSON to `path` via temp-file + os.replace so a reader never
     observes a partially written file, and a crash mid-write can't truncate
-    the real one. Caller holds _IO_LOCK when ordering vs other writers matters."""
+    the real one. Caller holds _IO_LOCK when ordering vs other writers matters.
+
+    `mode` is the final perms of the destination file. Default 0o644 so the
+    web server (nginx, running as www-data) can read catalog files the
+    pipeline writes as its own user — a 0o600 analysis.json 403s the whole
+    AI layer of the gallery. Callers that hold secrets (integrations.json)
+    should pass mode=0o600.
+    """
     tmp = f"{path}.tmp.{os.getpid()}.{threading.get_ident()}"
     try:
         with open(tmp, "w") as f:
             json.dump(data, f, indent=indent)
             f.flush()
             os.fsync(f.fileno())
-        os.chmod(tmp, 0o600)
+        os.chmod(tmp, mode)
         os.replace(tmp, path)
     except Exception:
         try:
