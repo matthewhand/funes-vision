@@ -111,7 +111,7 @@
   <table>
     <tr><th>Knob</th><th>This box</th></tr>
     <tr><td>Front camera</td><td><code>http://&lt;host&gt;:8180</code> — header <b>Webcam Live Feed</b></td></tr>
-    <tr><td>Back camera</td><td><code>http://&lt;host&gt;:8280</code> — header <b>Dogcam Live Feed</b></td></tr>
+    <tr><td>Back camera</td><td>the same URL, under <code>/Webcam22/</code> — header <b>Dogcam Live Feed</b></td></tr>
     <tr><td>Vision model</td><td><code>gemma4:e2b</code> via local Ollama (~40 s/frame when busy)</td></tr>
     <tr><td>Cloud fallback</td><td><strong>off</strong></td></tr>
     <tr><td>Vision deep passes</td><td><strong>on</strong> (person/dog/cat/bird jump the queue)</td></tr>
@@ -130,7 +130,7 @@
   <table>
     <tr><th>Camera</th><th>Address</th></tr>
     <tr><td>Front (driveway / gate)</td><td><code>http://&lt;host&gt;:8180</code></td></tr>
-    <tr><td>Back (yard / dogcam)</td><td><code>http://&lt;host&gt;:8280</code></td></tr>
+    <tr><td>Back (yard / dogcam)</td><td>the same URL, under <code>/Webcam22/</code></td></tr>
   </table>
   <p>Each camera is its own site. They do not share one URL or one filter state. On a phone, Add to Home Screen — there is no service worker, so you will not get a stale offline copy.</p>
   <p>Title is <strong>Webcam Live Feed</strong> or <strong>Dogcam Live Feed</strong>. Subtitle is <em>Monitoring front gate area · AEST</em> or <em>Monitoring backyard and dog area · AEST</em> — not a LAN address. First paint on :8180 is already those front-camera strings. <strong>Switch to Dogcam Feed</strong> jumps cameras. On a phone, <strong>Panels</strong> hides or shows the date list, charts, and saved searches.</p>

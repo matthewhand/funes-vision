@@ -8,7 +8,8 @@ application/json`) except the SSE stream. CORS is open (`Access-Control-Allow-Or
 
 In production the UI reaches this **same-origin at `/api/`** via the reverse
 proxy (basic-auth, TLS); it falls back to `http://<host>:8190` only when a page
-is opened directly on a camera container (`:8180` / `:8280`). See
+is opened directly on the camera container (`:8180`, which serves both the
+front feed at `/` and the dogcam feed at `/Webcam22/`). See
 [DEPLOYMENT.md](DEPLOYMENT.md).
 
 Facts here are verified against `api_server.py`. If they drift, the code wins —

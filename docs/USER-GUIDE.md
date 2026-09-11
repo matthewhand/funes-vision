@@ -33,9 +33,12 @@ you should expect:
   person the vision model has not finished)
 
 **The fixture catalog mixes both cameras** so one walkthrough can show a
-dog visit *and* a postal visit. Live, `:8180` is only the front camera
-and `:8280` is only the back — they do not share one URL. The header
-still first-paints **Webcam Live Feed** (front) the way `:8180` does.
+dog visit *and* a postal visit. Live, both cameras are served from **one**
+nginx container: the front feed at the root and the dogcam feed under
+`/Webcam22/` — they share one URL, and the header still first-paints
+**Webcam Live Feed** (front). The two cameras are also reachable on their
+own subdomains behind basic-auth (`webcam.` / `dogcam.…`), which proxy
+`/api/` to the write API.
 
 The on-still OSD clock is stamped to match the filename date
 (**18 June 2026**). The header, tabs, Settings labels, Live badge, and
@@ -51,7 +54,7 @@ fresh clone behaves the same if `settings.json` is missing.
 | Knob | This box |
 |------|----------|
 | Front camera | `http://<host>:8180` — header **Webcam Live Feed** |
-| Back camera | `http://<host>:8280` — header **Dogcam Live Feed** |
+| Back camera | the same URL, under `/Webcam22/` — header **Dogcam Live Feed** |
 | Vision model | `gemma4:e2b` via local Ollama (~40 s/frame when busy) |
 | Cloud fallback | **off** |
 | Vision deep passes | **on** (person/dog/cat/bird jump the queue) |
@@ -72,10 +75,11 @@ fresh clone behaves the same if `settings.json` is missing.
 | Camera | Address |
 |--------|---------|
 | Front (driveway / gate) | `http://<host>:8180` |
-| Back (yard / dogcam) | `http://<host>:8280` |
+| Back (yard / dogcam) | the same URL, under `/Webcam22/` |
 
-Each camera is its **own site**. They do not share one URL or one
-filter state.
+Each camera is its **own site** — they do not share one URL or one
+filter state. Switch feeds with the **Switch to Dogcam Feed** link in the
+header, or open `/Webcam22/` directly.
 
 On a phone, **Add to Home Screen**. There is no service worker, so you
 will not get a stale offline copy.
