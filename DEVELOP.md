@@ -8,7 +8,7 @@ and [README.md](README.md).
 
 ```
 Hikvision cameras ──FTP──> /mnt/models/Webcam21 (webcam)   nginx :8180 (ro)
-                           /mnt/models/Webcam22 (dogcam)   nginx :8280 (ro)
+                           /mnt/models/Webcam22 (dogcam)   nginx :8180 /Webcam22/ (ro)
                                 │
                   inotifywait (create-index.sh, one per camera, systemd)
                                 │  + 60s idle loop
@@ -31,7 +31,9 @@ Hikvision cameras ──FTP──> /mnt/models/Webcam21 (webcam)   nginx :8180 (
                        index.html (single-file SPA)
 ```
 
-Hosting: two stock-nginx docker containers (`docker-compose.yml`) with
+**Host note (follow-up):** Live gallery is nginx `:8180` with Webcam21 at `/` and Webcam22 at `/Webcam22/` (repo `nginx.conf` + `docker-compose.yml` publish only `8180:80`). Host `/etc/nginx/sites-enabled/dogcam.conf` still `proxy_pass`es to `localhost:8280` where nothing listens — document-only mismatch for a later host fix. Do not commit host secrets or `.htpasswd`.
+
+Hosting: one stock-nginx docker service (`docker-compose.yml`) with
 read-only bind mounts. Deploying UI changes = copy `index.html` into both
 web roots (see Deployment). The host paths are owned by the `hikvision`
 FTP user but world-writable, so the pipeline (user `user`) can write.
@@ -350,7 +352,7 @@ API origin: the UI calls the API **same-origin at `/api/`** so there's no
 second port to expose publicly — the reverse proxy maps `/api/` to
 `localhost:8190` behind its basic-auth (see Deployment), falling back to
 `http://<host>:8190` only when a page is opened **directly** on a camera
-container (`:8180`/`:8280`, i.e. LAN/dev). Restart after editing:
+container (`:8180`, i.e. LAN/dev; legacy `:8280` unused). Restart after editing:
 `sudo systemctl restart webcam-api`.
 
 ### index.html (single-file SPA)
@@ -743,7 +745,7 @@ cp docs/guide/img/*.png /mnt/models/Webcam22/guide/img/
 
 **Public access / write API.** A host reverse proxy (nginx, Certbot TLS)
 fronts each camera on its own subdomain with basic-auth (`.htpasswd`):
-`webcam.…→localhost:8180`, `dogcam.…→localhost:8280`. To make the write
+`webcam.…→localhost:8180`. The host `dogcam.…` vhost still targets legacy `localhost:8280` (nothing listening); live dogcam/Webcam22 gallery is `:8180/Webcam22/` until that host proxy is updated. To make the write
 API work over the public URL **without exposing a second port**, each
 vhost also proxies `/api/` to the API, behind the same basic-auth:
 

@@ -173,3 +173,8 @@ AlexeyAB/darknet GitHub releases; path configured as `yolo_dir`.
 - `/etc/cron.d/server-maintenance` still runs a monthly
   `docker system prune -af` (1st, 3:30am) and a weekly disk `df` report —
   neither should touch camera JPEGs.
+
+## Host proxy note (dogcam :8280 mismatch)
+
+Live compose gallery listens on `:8180` only (`/` = Webcam21, `/Webcam22/` = dogcam). If the host nginx `dogcam.*` site still `proxy_pass`es to `:8280`, that is a **host follow-up** (nothing listens there). Do not commit live proxy secrets or `.htpasswd` into this repo.
+
