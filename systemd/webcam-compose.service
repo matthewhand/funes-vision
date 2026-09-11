@@ -1,0 +1,21 @@
+[Unit]
+Description=Webcam nginx gallery (docker compose)
+# docker.service must be up and the data-root mount (/mnt/models) present
+# before compose can start the bind-mounted gallery container. The daemon
+# was historically 1.7 min late on boot because it had no ordering on the
+# ext3 mount — without this the container dies on every reboot and nothing
+# restarts it (restart: unless-stopped does not survive a daemon restart).
+After=docker.service docker.socket network-online.target local-fs.target
+Wants=docker.service docker.socket network-online.target
+
+[Service]
+Type=simple
+# Idempotent: `docker compose up -d` is a no-op if the container is already
+# running, so a healthy container is never clobbered on daemon restart.
+# Restart=always re-runs it if the daemon itself goes down.
+ExecStart=/usr/bin/docker compose -f /home/user/webcam/docker-compose.yml up -d webcam
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
