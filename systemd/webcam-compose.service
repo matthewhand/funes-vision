@@ -9,13 +9,16 @@ After=docker.service docker.socket network-online.target local-fs.target
 Wants=docker.service docker.socket network-online.target
 
 [Service]
-Type=simple
-# Idempotent: `docker compose up -d` is a no-op if the container is already
-# running, so a healthy container is never clobbered on daemon restart.
-# Restart=always re-runs it if the daemon itself goes down.
-ExecStart=/usr/bin/docker compose -f /home/user/webcam/docker-compose.yml up -d webcam
-Restart=always
+# oneshot + RemainAfterExit: `docker compose up -d` returns immediately in
+# detached mode, so a Type=simple unit would never reach "active" and
+# Restart=always would re-run it every few seconds. oneshot reports active
+# after the single successful start; Restart=on-failure only re-runs it if
+# the command itself fails (e.g. daemon down), which is the reboot case.
+Type=oneshot
+RemainAfterExit=yes
+Restart=on-failure
 RestartSec=5
+ExecStart=/usr/bin/docker compose -f /home/user/webcam/docker-compose.yml up -d webcam
 
 [Install]
 WantedBy=multi-user.target
