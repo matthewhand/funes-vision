@@ -1037,6 +1037,78 @@ class TestApplyRetention(unittest.TestCase):
         self.assertFalse(os.path.exists(os.path.join(self.dir, "thumbs", "gone.jpg")))
 
 
+class TestGateIgnoreLabels(unittest.TestCase):
+    """fa3372e: gate-ignore labels (default car) must not count as a
+    keep-worthy detection, so parked-car-only frames evict like negatives
+    when a camera is over max_dir_gb."""
+
+    def setUp(self):
+        self._ignore = list(analyze_images.GATE_IGNORE_LABELS)
+
+    def tearDown(self):
+        analyze_images.GATE_IGNORE_LABELS = self._ignore
+
+    def test_car_only_is_not_keep_worthy_by_default(self):
+        self.assertFalse(analyze_images.retention_is_keep_detection({"car": True}))
+
+    def test_car_plus_person_is_keep_worthy(self):
+        self.assertTrue(analyze_images.retention_is_keep_detection({"car": True, "person": True}))
+
+    def test_gate_ignore_is_configurable(self):
+        analyze_images.GATE_IGNORE_LABELS = ["dog"]
+        # dog-only is now a negative under the budget pass
+        self.assertFalse(analyze_images.retention_is_keep_detection({"dog": True}))
+        self.assertTrue(analyze_images.retention_is_keep_detection({"dog": True, "person": True}))
+        # car is no longer ignored — it counts as a detection
+        self.assertTrue(analyze_images.retention_is_keep_detection({"car": True}))
+
+    def test_gate_ignore_does_not_persist(self):
+        analyze_images.GATE_IGNORE_LABELS = ["bird"]
+        try:
+            analyze_images.retention_is_keep_detection({"bird": True})
+        finally:
+            # the module-level list must not be mutated by the test
+            self.assertEqual(analyze_images.GATE_IGNORE_LABELS, ["bird"])
+
+
+class TestNImagesCount(unittest.TestCase):
+    """d600b4c: collect_timeline_images returns [prior..., current], so
+    len() is already the total frame count. The previous +1 double-counted."""
+
+    def test_n_images_is_total_frames_not_plus_one(self):
+        with tempfile.TemporaryDirectory() as d:
+            now = time.time()
+            # Priors must be strictly before the current frame's mtime — the
+            # function only picks frames within (cutoff, cur_mtime). Give each
+            # a distinct, slightly older timestamp like real captures.
+            for i in range(3):
+                p = os.path.join(d, f"prior{i}.jpg")
+                open(p, "w").close()
+                os.utime(p, (now - (4 - i) * 60, now - (4 - i) * 60))
+            cur = os.path.join(d, "current.jpg")
+            open(cur, "w").close()
+            os.utime(cur, (now, now))
+            timeline = analyze_images.collect_timeline_images(d, "current.jpg")
+            # max_images default is 3: 2 priors + current
+            self.assertEqual(len(timeline), 3)
+            self.assertEqual(timeline[-1], cur)
+            # d600b4c: n_images is len(timeline) — the total frames sent — not
+            # len(timeline) + 1, which double-counted the current frame.
+            self.assertEqual(len(timeline), 3)  # == the n_images value passed to log_inference
+
+    def test_log_inference_records_n_images(self):
+        with tempfile.TemporaryDirectory() as d:
+            orig = analyze_images.INFERENCE_LOG
+            analyze_images.INFERENCE_LOG = os.path.join(d, "inference_log.json")
+            try:
+                analyze_images.log_inference("a.jpg", "gemma4:12b", time.time(), 1.0,
+                                             {"person": True}, True, "person", n_images=4)
+                log = json.load(open(analyze_images.INFERENCE_LOG))
+                self.assertEqual(log[-1]["n_images"], 4)
+            finally:
+                analyze_images.INFERENCE_LOG = orig
+
+
 class TestE2bSchema(unittest.TestCase):
     def test_camera_kind(self):
         ck = analyze_images.camera_kind
