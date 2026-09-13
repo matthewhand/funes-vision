@@ -27,7 +27,8 @@ MIN_MEM_FOR_LOCAL_GB = 6.0
 MAX_AGE_DAYS = 30   # retention: unpinned non-timeline images older than this
 MAX_DIR_GB = 5.0    # retention: per-camera disk budget (images + thumbs)
 PERSIST_BUDGET_PCT = 20.0  # max % of max_dir_gb for LLM timeline frames past max_age_days
-ALLOW_CLOUD = False  # OpenRouter only when settings allow_cloud is true
+ALLOW_CLOUD = False  # kill switch for ALL cloud inference: OpenRouter fallback
+                     # AND Ollama ':cloud' models (both ship frames off-box)
 OLLAMA_URL = "http://localhost:11434"
 # Idle unload: each /api/chat refreshes this TTL. Ollama's default is 5m.
 OLLAMA_KEEP_ALIVE = "24h"
@@ -1062,13 +1063,15 @@ def model_is_cloud(tag):
     return isinstance(tag, str) and tag.strip().endswith(":cloud")
 
 
-def runnable_chain(primary, fallback, free_gb, min_local_gb):
+def runnable_chain(primary, fallback, free_gb, min_local_gb, allow_cloud):
     """model_chain() filtered to the models THIS host can actually serve:
-    cloud models always; a local model only when free_gb >= min_local_gb.
-    Pure. Without this, a low-RAM box silently does zero deep passes even
-    though its configured cloud primary needs no local memory."""
+    cloud models only when allow_cloud (an Ollama ':cloud' tag ships frames to
+    Ollama's servers, so the `allow_cloud` kill switch must gate it exactly
+    like OpenRouter); a local model only when free_gb >= min_local_gb.
+    Pure. Without the cloud branch, a low-RAM box silently does zero deep
+    passes even though its configured cloud primary needs no local memory."""
     return [m for m in model_chain(primary, fallback)
-            if model_is_cloud(m) or free_gb >= min_local_gb]
+            if (allow_cloud if model_is_cloud(m) else free_gb >= min_local_gb)]
 
 
 def concurrency_workers(requested, n_targets):
@@ -1150,7 +1153,7 @@ def analyze_image_with_schema(image_path, schema, num_predict, extra_images=None
         "options": {"num_predict": int(num_predict), "temperature": 0},
     }
     rate_limited_all, tried = True, 0
-    for model in runnable_chain(MODEL_PRIMARY, MODEL_FALLBACK, get_free_mem_gb(), local_mem_threshold()):
+    for model in runnable_chain(MODEL_PRIMARY, MODEL_FALLBACK, get_free_mem_gb(), local_mem_threshold(), ALLOW_CLOUD):
         tried += 1
         try:
             response = _ollama_chat({**base, "model": model}, timeout=600)
@@ -1195,7 +1198,7 @@ def analyze_burst_local(image_paths, on_progress=None):
     }
     cb = (lambda delta, acc: on_progress(acc)) if on_progress else None
     rate_limited_all, tried = True, 0
-    for model in runnable_chain(MODEL_PRIMARY, MODEL_FALLBACK, get_free_mem_gb(), local_mem_threshold()):
+    for model in runnable_chain(MODEL_PRIMARY, MODEL_FALLBACK, get_free_mem_gb(), local_mem_threshold(), ALLOW_CLOUD):
         tried += 1
         try:
             full = _ollama_chat_stream({**base, "model": model}, cb, timeout=900)
@@ -1746,16 +1749,17 @@ def main(retention_only=False, rescan_days=None):
 
     free_mem = get_free_mem_gb()
     ollama_up = ollama_available()
-    # The models THIS host can serve right now: cloud models need no RAM, local
-    # models need free_mem >= threshold. A cloud primary works on a low-RAM box.
-    serve_chain = runnable_chain(MODEL_PRIMARY, MODEL_FALLBACK, free_mem, local_mem_threshold())
+# The models THIS host can serve right now: cloud models need no RAM but
+    # are only allowed when the allow_cloud kill switch is on; local models
+    # need free_mem >= threshold. A cloud primary works on a low-RAM box.
+    serve_chain = runnable_chain(MODEL_PRIMARY, MODEL_FALLBACK, free_mem, local_mem_threshold(), ALLOW_CLOUD)
     can_run_chain = ollama_up and bool(serve_chain)
     # Master gate for any LLM deep-pass/burst work this sweep
     llm_ready = DEEP_PASSES_ENABLED and (can_run_chain or (ALLOW_CLOUD and api_key))
     mode = "retention-only" if retention_only else (
         "ON" if DEEP_PASSES_ENABLED else "OFF (detector-only)")
     print(f"System Check: Free Memory = {free_mem:.1f}GB. Ollama up: {ollama_up}. "
-          f"Runnable chain: {serve_chain or '[]'}. OpenRouter cloud: {ALLOW_CLOUD}. "
+          f"Runnable chain: {serve_chain or '[]'}. Cloud allowed: {ALLOW_CLOUD}. "
           f"Deep passes: {mode}. Burst summaries: "
           f"{'ON' if BURST_SUMMARIES_ENABLED else 'OFF'}")
 

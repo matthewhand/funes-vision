@@ -84,8 +84,9 @@ no restarts needed). Per camera dir, in order:
    detector labels** (`person`/`car`/`dog`/…). There is no free-text
    `description` field.
    - *Which models run here* (`runnable_chain`): the primary→fallback chain is
-     filtered to what THIS host can serve — a `:cloud` model always (it runs on
-     Ollama's servers, no local RAM), a local model only when free RAM ≥
+     filtered to what THIS host can serve — a `:cloud` model only when
+     `allow_cloud` is true (it runs on Ollama's servers, no local RAM, but
+     ships frames off-box), a local model only when free RAM ≥
      `min_mem_for_local_gb`. This is why a low-RAM box still runs its cloud
      primary instead of silently doing zero deep passes (the gate used to key on
      a local-RAM threshold alone). `model_is_cloud(tag)` = `:cloud` suffix.
@@ -498,7 +499,7 @@ move → verify) lives in [ROADMAP.md](ROADMAP.md).
 | `max_dir_gb` | 5.0 | retention: per-camera image+thumb budget in GiB (code fallback 5.0 if the key is missing; not UI-mutable) |
 | `persist_budget_pct` | 20 | retention: max % of `max_dir_gb` for LLM-verified timeline frames older than `max_age_days` (code fallback 20; not UI-mutable) |
 | `min_mem_for_local_gb` | 6.0 | min free RAM to attempt a **local** model; a `:cloud` model ignores this (see `runnable_chain`) |
-| `allow_cloud` | false | permit OpenRouter fallback (separate from an Ollama `:cloud` primary) |
+| `allow_cloud` | false | kill switch for ALL cloud inference: gates the OpenRouter fallback AND any Ollama `:cloud` model in the chain |
 | `ollama_url` | http://localhost:11434 | local LLM endpoint |
 | `ollama_keep_alive` | 24h | sent on every `/api/chat`; activity refreshes the unload timer (Ollama default is 5m). Also `OLLAMA_KEEP_ALIVE` on the ollama unit |
 | `model_local` | gemma4:e2b | Ollama model tag (back-compat default for `model_primary`; import-time fallback in code is also `gemma4:e2b`) |

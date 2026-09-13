@@ -124,6 +124,7 @@ class TestModelFallback(unittest.TestCase):
         ai = analyze_images
         ai.MODEL_PRIMARY, ai.MODEL_FALLBACK = "primary:cloud", "local:e4b"
         ai.MIN_MEM_FOR_LOCAL_GB = 0.0   # keep the local fallback in the runnable chain here
+        ai.ALLOW_CLOUD = True           # keep the cloud primary in the runnable chain here
         ai.encode_image = lambda p: "x"
         calls = []
 
@@ -170,7 +171,9 @@ class TestRunnableChain(unittest.TestCase):
     """The host may lack the RAM to run a local model, but a cloud (':cloud')
     model rides Ollama's endpoint and needs none. runnable_chain() filters
     model_chain() to what THIS box can actually serve, so a low-RAM box still
-    runs its cloud primary instead of silently doing zero deep passes."""
+    runs its cloud primary instead of silently doing zero deep passes.
+    A ':cloud' model ships frames to Ollama's servers, so it is only servable
+    when the allow_cloud kill switch is on."""
 
     def test_model_is_cloud(self):
         ic = analyze_images.model_is_cloud
@@ -184,25 +187,44 @@ class TestRunnableChain(unittest.TestCase):
     def test_low_ram_keeps_cloud_drops_local(self):
         rc = analyze_images.runnable_chain
         # 5.6GB free, local model needs 16 -> cloud stays, local filtered out
-        self.assertEqual(rc("minimax-m3:cloud", "gemma4:e2b", 5.6, 16.0), ["minimax-m3:cloud"])
+        self.assertEqual(rc("minimax-m3:cloud", "gemma4:e2b", 5.6, 16.0, True),
+                         ["minimax-m3:cloud"])
 
     def test_enough_ram_keeps_both(self):
         rc = analyze_images.runnable_chain
-        self.assertEqual(rc("minimax-m3:cloud", "gemma4:e2b", 32.0, 16.0),
+        self.assertEqual(rc("minimax-m3:cloud", "gemma4:e2b", 32.0, 16.0, True),
                          ["minimax-m3:cloud", "gemma4:e2b"])
 
     def test_local_only_low_ram_is_empty(self):
         rc = analyze_images.runnable_chain
         # no cloud model and not enough RAM -> nothing this box can serve
-        self.assertEqual(rc("gemma4:e2b", "", 5.6, 16.0), [])
+        self.assertEqual(rc("gemma4:e2b", "", 5.6, 16.0, True), [])
 
     def test_local_only_enough_ram(self):
         rc = analyze_images.runnable_chain
-        self.assertEqual(rc("gemma4:e2b", "", 32.0, 16.0), ["gemma4:e2b"])
+        self.assertEqual(rc("gemma4:e2b", "", 32.0, 16.0, True), ["gemma4:e2b"])
 
     def test_preserves_chain_dedup_and_order(self):
         rc = analyze_images.runnable_chain
-        self.assertEqual(rc("x:cloud", "x:cloud", 0.0, 16.0), ["x:cloud"])  # dedup via model_chain
+        self.assertEqual(rc("x:cloud", "x:cloud", 0.0, 16.0, True), ["x:cloud"])  # dedup via model_chain
+
+    def test_allow_cloud_false_drops_cloud_keeps_local(self):
+        rc = analyze_images.runnable_chain
+        # kill switch off -> the cloud primary must never be servable, but a
+        # runnable local fallback stays
+        self.assertEqual(rc("minimax-m3:cloud", "gemma4:e2b", 32.0, 16.0, False),
+                         ["gemma4:e2b"])
+
+    def test_allow_cloud_false_low_ram_is_empty(self):
+        """The shipped-settings case: model_primary is 'minimax-m3:cloud' with
+        allow_cloud=false. On a low-RAM box NOTHING must be servable — before
+        the fix the cloud primary slipped through and frames left the box."""
+        rc = analyze_images.runnable_chain
+        self.assertEqual(rc("minimax-m3:cloud", "gemma4:e2b", 5.6, 16.0, False), [])
+
+    def test_allow_cloud_false_local_unaffected(self):
+        rc = analyze_images.runnable_chain
+        self.assertEqual(rc("gemma4:e2b", "", 32.0, 16.0, False), ["gemma4:e2b"])
 
     def test_low_ram_cloud_primary_still_serves(self):
         """The integration bug this fixes: cloud primary + low RAM used to do
@@ -210,6 +232,7 @@ class TestRunnableChain(unittest.TestCase):
         ai = analyze_images
         ai.MODEL_PRIMARY, ai.MODEL_FALLBACK = "minimax-m3:cloud", "gemma4:e2b"
         ai.MIN_MEM_FOR_LOCAL_GB = 16.0
+        ai.ALLOW_CLOUD = True
         orig_mem, ai.get_free_mem_gb = ai.get_free_mem_gb, (lambda: 5.6)
         ai.encode_image = lambda p: "x"
         calls = []
@@ -231,6 +254,43 @@ class TestRunnableChain(unittest.TestCase):
         self.assertEqual(res, {"person": True})
         self.assertEqual(calls, ["minimax-m3:cloud"])  # cloud served; local never attempted
         self.assertEqual(ai.LAST_MODEL_USED, "minimax-m3:cloud")
+
+    def test_allow_cloud_false_never_calls_cloud_model(self):
+        """The consultant finding: allow_cloud=false must gate Ollama ':cloud'
+        models too, not just OpenRouter. With the shipped settings (cloud
+        primary, allow_cloud off) a deep pass must make NO cloud call — the
+        local fallback serves if RAM allows, else nothing runs."""
+        ai = analyze_images
+        ai.MODEL_PRIMARY, ai.MODEL_FALLBACK = "minimax-m3:cloud", "gemma4:e2b"
+        ai.MIN_MEM_FOR_LOCAL_GB = 16.0
+        ai.ALLOW_CLOUD = False
+        ai.encode_image = lambda p: "x"
+        calls = []
+
+        class OK:
+            def json(self): return {"message": {"content": '{"person": true}'}}
+
+        def fake_chat(payload, timeout):
+            calls.append(payload["model"])
+            return OK()
+
+        orig_chat, ai._ollama_chat = ai._ollama_chat, fake_chat
+        orig_mem, ai.get_free_mem_gb = ai.get_free_mem_gb, (lambda: 32.0)
+        ai.RATE_LIMITED = False
+        try:
+            res = ai.analyze_image_local("x.jpg")   # enough RAM: local fallback serves
+            self.assertEqual(res, {"person": True})
+            self.assertEqual(calls, ["gemma4:e2b"])  # cloud model never contacted
+
+            calls.clear()
+            ai.get_free_mem_gb = lambda: 5.6         # low RAM: nothing servable
+            self.assertIsNone(ai.analyze_image_local("x.jpg"))
+            self.assertEqual(calls, [])              # no frame left the box
+            self.assertFalse(ai.RATE_LIMITED)        # empty chain isn't a throttle
+        finally:
+            ai._ollama_chat = orig_chat
+            ai.get_free_mem_gb = orig_mem
+            ai.ALLOW_CLOUD = True
 
 
 class TestConcurrencyWorkers(unittest.TestCase):
