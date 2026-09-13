@@ -28,3 +28,7 @@ analysis.json.tmp.*
 # index.html is the file ON THE MOUNT, not the repo working copy. Sync them
 # with tools/deploy-webroot.sh; the pre-push hook verifies they match HEAD.
 /mnt/models/
+
+# Tooling and subagent artifacts — never commit.
+.kilo/          # tool config dir (has its own .gitignore for node_modules)
+logs/           # subagent rollcall/debug logs
