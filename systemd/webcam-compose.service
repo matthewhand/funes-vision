@@ -12,8 +12,14 @@ Wants=docker.service docker.socket network-online.target
 # oneshot + RemainAfterExit: `docker compose up -d` returns immediately in
 # detached mode, so a Type=simple unit would never reach "active" and
 # Restart=always would re-run it every few seconds. oneshot reports active
-# after the single successful start; Restart=on-failure only re-runs it if
-# the command itself fails (e.g. daemon down), which is the reboot case.
+# after the single successful start.
+#
+# Restart=on-failure covers the case where the command itself fails (daemon
+# down, mount absent) — but NOT a container that dies after this unit has
+# already exited cleanly. That gap is what took the gallery down for 2 hours:
+# the unit kept reporting "active (exited)" while the container was dead.
+# systemd/webcam-healthcheck.timer + tools/webcam-healthcheck.sh are the
+# watchdog that actually notices a dead container and restarts it.
 Type=oneshot
 RemainAfterExit=yes
 Restart=on-failure

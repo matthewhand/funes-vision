@@ -1,0 +1,10 @@
+[Unit]
+Description=Health check for the webcam nginx gallery
+# One-shot wrapper for tools/webcam-healthcheck.sh. The timer fires it every
+# 60s; the script exits 0 if the container is up and serving, and restarts
+# it otherwise.
+After=webcam-compose.service docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/webcam-healthcheck.sh
