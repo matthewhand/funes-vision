@@ -42,6 +42,76 @@ except (OSError, ValueError):
     WATCH_DIRS = []
 PORT = 8190
 
+# --- Camera registry -------------------------------------------------------
+# Single source of truth for camera dirs / labels / ids. Derived from
+# `watch_dirs` so there is no second config to drift: the pipeline, the API,
+# and the SPA all read the same list. Backward compatible — the registry is
+# built from what is already configured, and every `?camera=` param below
+# falls back to the first camera when absent (existing callers keep working).
+def cameras():
+    """[{id, label, source_dir}] for every configured watch dir, in order.
+
+    The id is positional — the first watch dir is `front`, every other is
+    `back`. Deriving it from the path string (camera_kind) is not safe: any dir
+    that is not literally Webcam21/Webcam22 or 10.0.0.21/22 collapses to
+    `front`, so two cameras would share one id and every `?camera=` call
+    would be ambiguous. Positional ids are also what
+    settings.json's `ignore_regions[].camera` keys already use.
+    """
+    out = []
+    for i, d in enumerate(WATCH_DIRS):
+        out.append({
+            "id": "front" if i == 0 else "back",
+            "label": "Front" if i == 0 else "Back",
+            "source_dir": d,
+            "index": i,
+        })
+    return out
+
+
+def camera_id_for_dir(directory):
+    """id of the camera whose source_dir == directory, else None."""
+    for c in cameras():
+        if c["source_dir"] == directory:
+            return c["id"]
+    return None
+
+
+def default_camera_id():
+    """Kept for callers that still assume a single camera. Prefer
+    `resolve_camera(query)` — it returns None for "all cameras" rather than
+    silently picking one, which is what made the old single-camera default
+    leak one camera's data into the other's view."""
+    cs = cameras()
+    return cs[0]["id"] if cs else None
+
+
+def resolve_camera(query):
+    """`?camera=<id>` -> that camera's id, or None for "all cameras".
+
+    An unknown id is a 400, not a silent fallback: a client that thinks it is
+    talking to camera X must not silently get camera Y's data. Absent means
+    "all cameras" — the read endpoints used to return everything anyway, so
+    this is backward compatible. The write endpoints (pin/delete) require an
+    explicit id, because writing to all cameras at once is not a thing.
+    """
+    cs = cameras()
+    if not cs:
+        return None
+    if query in (None, "", "all"):
+        return None
+    for c in cs:
+        if c["id"] == query:
+            return c["id"]
+    raise ValueError(f"unknown camera {query!r}; known: {[c['id'] for c in cs]}")
+
+
+def camera_dir(camera_id):
+    for c in cameras():
+        if c["id"] == camera_id:
+            return c["source_dir"]
+    return None
+
 # Settings keys the UI may change: either enumerated choices or a
 # numeric range
 MUTABLE_SETTINGS = {
@@ -170,28 +240,79 @@ def save_slack_settings(changes):
     os.chmod(INTEGRATIONS_FILE, 0o600)
 
 
-def load_pins():
+def _pins_path(camera_id):
+    """Per-camera pins file. One camera's pins never leak into another's
+    web root — the old single PINS_FILE was synced to every root, so a pin on
+    camera A showed up in camera B's gallery too."""
+    d = camera_dir(camera_id)
+    if not d:
+        return PINS_FILE
+    return os.path.join(d, "pins.json")
+
+
+def load_pins(camera_id=None):
+    """Pins for one camera, or the union of every camera's pins.
+
+    `camera_id=None` (the default, and what `/api/pins` with no `?camera=`
+    sends) returns every camera's pins merged — the old single-file behaviour
+    for callers that don't care which camera. An explicit id returns only
+    that camera's pins, which is what the per-camera UI needs.
+    """
+    if camera_id is None:
+        out = set()
+        for c in cameras():
+            p = _pins_path(c["id"])
+            if os.path.exists(p):
+                try:
+                    out.update(json.load(open(p)))
+                except (OSError, ValueError):
+                    pass
+        if not out and os.path.exists(PINS_FILE):
+            try:
+                return set(json.load(open(PINS_FILE)))
+            except (OSError, ValueError):
+                pass
+        return out
+    path = _pins_path(camera_id)
+    if os.path.exists(path):
+        try:
+            return set(json.load(open(path)))
+        except (OSError, ValueError):
+            return set()
+    # Legacy: fall back to the repo-wide pins file (pre-camera-scoping).
     if os.path.exists(PINS_FILE):
-        return set(json.load(open(PINS_FILE)))
+        try:
+            return set(json.load(open(PINS_FILE)))
+        except (OSError, ValueError):
+            return set()
     return set()
 
 
-def save_pins(pins):
+def save_pins(pins, camera_id):
+    """Write one camera's pins. `camera_id` is mandatory — saving "all cameras"
+    as one set is exactly the leak this module exists to prevent."""
     data = json.dumps(sorted(pins), indent=2)
-    with open(PINS_FILE, "w") as f:
+    path = _pins_path(camera_id)
+    with open(path, "w") as f:
         f.write(data)
-    # Sync to web roots so the UI sees pins on next load
-    for d in WATCH_DIRS:
-        try:
-            with open(os.path.join(d, "pins.json"), "w") as f:
-                f.write(data)
-        except OSError:
-            pass
+    os.chmod(path, 0o644)   # nginx serves these read-only as www-data
 
 
-def find_image(filename):
-    """Return the directory containing filename, or None. Rejects paths."""
+def find_image(filename, camera_id=None):
+    """Return the directory containing filename, or None. Rejects paths.
+
+    With `camera_id` the search is restricted to that camera's dir — a file
+    that exists in more than one camera is ambiguous until you say which
+    camera you mean, and pin/delete are per-camera operations. Without it
+    the search covers every watch dir, which is what the clip path and the
+    SSE bridge need (they don't care which camera a frame came from).
+    """
     if filename != os.path.basename(filename) or filename.startswith("."):
+        return None
+    if camera_id:
+        d = camera_dir(camera_id)
+        if d and os.path.isfile(os.path.join(d, filename)):
+            return d
         return None
     for d in WATCH_DIRS:
         if os.path.isfile(os.path.join(d, filename)):
@@ -299,8 +420,15 @@ def queue_from_analysis(analysis):
     }
 
 
-def pipeline_status():
-    """Read-only snapshot of how the pipeline is configured and doing."""
+def pipeline_status(camera_id=None):
+    """Read-only snapshot of how the pipeline is configured and doing.
+
+    `camera_id` scopes the per-camera fields (cameras list, images on disk,
+    queue counts) to one camera. Global fields (settings, LLM, trigger,
+    filesystem, timezone, inference metrics) are never scoped — they describe
+    the box, not a camera. With no camera_id the status covers everything
+    (backward compatible with existing callers).
+    """
     try:
         settings = json.load(open(SETTINGS_FILE))
     except (OSError, ValueError):
@@ -325,12 +453,13 @@ def pipeline_status():
     except Exception:
         pass
 
+    # Per-camera fields: which dirs to look at for this request.
     try:
         analysis = json.load(open(os.path.join(BASE_DIR, "analysis.json")))
     except (OSError, ValueError):
         analysis = {}
     files = set()
-    for d in WATCH_DIRS:
+    for d in ([camera_dir(camera_id)] if camera_id else WATCH_DIRS):
         try:
             files.update(f for f in os.listdir(d)
                          if f.lower().endswith(('.jpg', '.jpeg', '.png', '.gif')))
@@ -364,7 +493,13 @@ def pipeline_status():
         status["trigger"]["last_sweep_age_s"] = round(time.time() - os.path.getmtime(LASTRUN_MARKER))
     except OSError:
         status["trigger"]["last_sweep_age_s"] = None
-    status["cameras"] = _camera_stats(settings.get("max_dir_gb", 5.0), settings)
+    all_cameras = _camera_stats(settings.get("max_dir_gb", 5.0), settings)
+    if camera_id:
+        scoped = camera_dir(camera_id)
+        status["cameras"] = [c for c in all_cameras
+                             if scoped and c["name"] == os.path.basename(scoped.rstrip("/"))]
+    else:
+        status["cameras"] = all_cameras
     status["filesystem"] = _fs_stats()
     status["timezone"] = resolve_timezone(os.getenv("WEBCAM_TZ"), settings.get("timezone"))
     status["metrics"] = _inference_metrics()
@@ -422,20 +557,48 @@ class Handler(BaseHTTPRequestHandler):
     def do_OPTIONS(self):
         self._send(204, {})
 
+    _BAD_CAMERA = object()
+
+    def _camera_param(self):
+        """`?camera=<id>` from the query string.
+
+        Returns the camera id, `_BAD_CAMERA` on an unknown id (a client that
+        thinks it is talking to camera X must not silently get camera Y's
+        data), or None when the param is absent — meaning "all cameras" for
+        the read endpoints. The write endpoints reject None themselves.
+        """
+        from urllib.parse import urlparse, parse_qs
+        q = parse_qs(urlparse(self.path).query)
+        raw = (q.get("camera") or [None])[0]
+        try:
+            return resolve_camera(raw)
+        except ValueError as e:
+            self._send(400, {"error": str(e)})
+            return self._BAD_CAMERA
+
     def do_GET(self):
+        # Parse `?camera=<id>` off the path first, then dispatch on the bare
+        # path — otherwise every scoped request falls through to 404 because
+        # "/api/pins?camera=back" != "/api/pins".
+        camera_id = self._camera_param()
+        self.path = self.path.split("?", 1)[0]
+        if camera_id is self._BAD_CAMERA:
+            return
         if self.path == "/api/pins":
-            self._send(200, sorted(load_pins()))
+            self._send(200, sorted(load_pins(camera_id)))
         elif self.path == "/api/settings":
             try:
                 settings = json.load(open(SETTINGS_FILE))
             except (OSError, ValueError):
                 settings = {}
-            self._send(200, {k: settings.get(k) for k in MUTABLE_SETTINGS})
+            out = {k: settings.get(k) for k in MUTABLE_SETTINGS}
+            out["cameras"] = cameras()
+            self._send(200, out)
         elif self.path == "/api/integrations":
             code, body = integrations_get_response()
             self._send(code, body)
         elif self.path == "/api/status":
-            self._send(200, pipeline_status())
+            self._send(200, pipeline_status(camera_id))
         elif self.path == "/api/health":
             h = health_summary()
             self._send(200 if h["status"] == "ok" else 503, h)
@@ -454,6 +617,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(500, {"error": f"Failed to load schemas: {e}"})
         elif self.path == "/api/events":
             self.stream_events()
+        elif self.path == "/api/cameras":
+            self._send(200, cameras())
         else:
             self._send(404, {"error": "not found"})
 
@@ -695,6 +860,12 @@ class Handler(BaseHTTPRequestHandler):
             return  # client went away
 
     def do_POST(self):
+        # Parse `?camera=<id>` off the path first, then dispatch on the bare
+        # path — otherwise every scoped request falls through to 404 because
+        # "/api/pin?camera=back" != "/api/pin". The write endpoints re-read
+        # the param with require=True inside their branch.
+        camera_id = self._camera_param()
+        self.path = self.path.split("?", 1)[0]
         try:
             length = int(self.headers.get("Content-Length", 0))
             payload = json.loads(self.rfile.read(length) or b"{}")
@@ -783,19 +954,33 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200 if ok else 400, {"ok": ok, "detail": detail})
 
         elif self.path == "/api/pin":
-            if find_image(filename) is None:
+            # A pin is per-camera. `?camera=` is mandatory — pinning "all
+            # cameras" as one set is exactly the leak this module exists to
+            # prevent (the old single pins.json was synced to every web root).
+            if camera_id is None:
+                self._send(400, {"error": "camera is required for this endpoint "
+                                            "(known: " +
+                                            ", ".join(c["id"] for c in cameras()) + ")"})
+                return
+            image_dir = find_image(filename, camera_id)
+            if image_dir is None:
                 self._send(404, {"error": "image not found"})
                 return
-            pins = load_pins()
+            pins = load_pins(camera_id)
             if payload.get("pinned"):
                 pins.add(filename)
             else:
                 pins.discard(filename)
-            save_pins(pins)
+            save_pins(pins, camera_id)
             self._send(200, {"ok": True, "pinned": filename in pins})
 
         elif self.path == "/api/delete":
-            image_dir = find_image(filename)
+            if camera_id is None:
+                self._send(400, {"error": "camera is required for this endpoint "
+                                            "(known: " +
+                                            ", ".join(c["id"] for c in cameras()) + ")"})
+                return
+            image_dir = find_image(filename, camera_id)
             if image_dir is None:
                 self._send(404, {"error": "image not found"})
                 return
@@ -805,10 +990,10 @@ class Handler(BaseHTTPRequestHandler):
                     os.remove(path)
                 except OSError:
                     pass
-            pins = load_pins()
+            pins = load_pins(camera_id)
             if filename in pins:
                 pins.discard(filename)
-                save_pins(pins)
+                save_pins(pins, camera_id)
             print(f"Deleted {filename} from {image_dir}")
             self._send(200, {"ok": True})
 
