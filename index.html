@@ -421,6 +421,12 @@
       flex-direction: column;
       gap: 20px;
       flex-shrink: 0;
+      /* Constrain the panel to the viewport so a long date list (34+ days) or
+         the activity chart can't push the whole page taller than the window.
+         Without this the aside is sized by its content and the workspace
+         flex-row layout happily overflows vertically on every tab switch. */
+      max-height: calc(100vh - 120px);
+      overflow-y: auto;
     }
     /* Collapsible sidebar: toggled via #sidebar-toggle. Collapsed by default on
        small screens (where the sidebar otherwise stacks on top and buries the
@@ -1745,6 +1751,8 @@
         width: 100%;
         min-width: 0;      /* shrink to the column, don't be sized by content */
         max-width: 100%;
+        max-height: none;  /* stacked layout: let it size naturally */
+        overflow-y: visible;
       }
       aside > * { min-width: 0; max-width: 100%; }
       .date-list {
