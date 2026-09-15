@@ -2125,6 +2125,7 @@
                 <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
                   <strong style="font-size:0.85rem;">Slack</strong>
                   <span id="slack-status" style="font-size:0.68rem; color:var(--text-secondary);">checking&hellip;</span>
+                  <span id="slack-will-post" style="font-size:0.62rem; color:var(--text-secondary); margin-left:6px;"></span>
                 </div>
                 <div style="font-size:0.68rem; color:var(--text-secondary); margin-bottom:8px; line-height:1.5;">
                   Optional. <b>context</b> posts a visit only after a multi-image summary (off by default — silent). <b>objects</b> pings each new person/dog/cat/bird hit. <b>all</b> uses that same urgent path today (empties and parked cars do not post).
@@ -4293,6 +4294,16 @@
       if (a.exits_car === true) push('Someone getting out of a car');
       if (a.approaching_house === true) push('Someone approaching the house');
       if (a.leaving_house === true) push('Someone leaving the house');
+      // YOLO-only visits (person/car/dog with no HA flags yet) returned '' above,
+      // so Timeline cards rendered with no sentence at all. Fall back to the
+      // detector labels the fast pass actually saw — a visit is *something*,
+      // even before the deep pass runs. HA flags stay the primary source.
+      if (!facts.length) {
+        const yolo = (a._yolo || a);
+        const seen = Object.keys(yolo).filter(k => yolo[k] === true
+          && k !== 'fast_pass' && !k.startsWith('_'));
+        if (seen.length) push(seen.join(', '));
+      }
       return facts.join('. ');
     }
     // === /pure:entryCaption ===
@@ -6217,6 +6228,19 @@
           statusEl.textContent = !s.has_bot_token ? 'not configured'
             : (s.enabled ? 'enabled' : 'configured (off)');
           statusEl.style.color = s.has_bot_token && s.enabled ? '#10b981' : 'var(--text-secondary)';
+          // "Enabled" alone implies Slack posts something. It does not: context
+          // mode only fires from burst summaries, which are off on this box, so
+          // an enabled Slack can be silent. Say what will actually fire.
+          const willPost = s.enabled && s.has_bot_token && (
+            s.notify_mode === 'objects' || s.notify_mode === 'all' ||
+            (s.notify_mode === 'context' && s.burst_summaries_enabled));
+          const willEl = document.getElementById('slack-will-post');
+          if (willEl) {
+            willEl.textContent = willPost ? 'will post on new detections'
+              : (s.enabled ? 'enabled but silent with the current mode'
+                       : 'disabled — nothing will post');
+            willEl.style.color = willPost ? '#10b981' : 'var(--text-secondary)';
+          }
           // Delivery observability: when did the last post actually go out?
           const delEl = document.getElementById('slack-last-delivery');
           if (delEl) {

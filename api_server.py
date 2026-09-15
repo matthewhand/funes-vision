@@ -204,6 +204,15 @@ def _integration_state():
 def redacted_integrations():
     """Public-safe view: presence of tokens, never their values."""
     slack = load_integrations().get("slack") or {}
+    # Whether Slack has anything to post depends on the pipeline toggle in
+    # settings.json (context mode only fires from burst summaries), so the UI
+    # needs it — otherwise "enabled" reads as "will post" when the summaries
+    # switch is off and the integration is silent.
+    try:
+        with open(SETTINGS_FILE) as f:
+            summaries = bool(json.load(f).get("burst_summaries_enabled"))
+    except (OSError, ValueError):
+        summaries = False
     return {
         "slack": {
             "enabled": bool(slack.get("enabled")),
@@ -212,6 +221,7 @@ def redacted_integrations():
             "channel_id": slack.get("channel_id", ""),
             "public_base_url": slack.get("public_base_url", ""),
             "notify_mode": slack.get("notify_mode", "context"),
+            "burst_summaries_enabled": summaries,
             "last_delivery": (_integration_state().get("slack") or {}).get("last_delivery"),
         }
     }

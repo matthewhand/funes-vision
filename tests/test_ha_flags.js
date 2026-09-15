@@ -100,7 +100,17 @@ assert.strictEqual(entryCaption({
 }), 'Person walking a dog');
 
 // animal_type none → generic, not "None in the yard".
-assert.strictEqual(entryCaption({ animal_detected: true, animal_type: 'none' }),
-  'Animal in the yard');
+  assert.strictEqual(entryCaption({ animal_detected: true, animal_type: 'none' }),
+    'Animal in the yard');
+
+  // YOLO-only visits (no HA flags, no description) used to render no
+  // sentence at all. Fall back to the detector labels the fast pass saw.
+  assert.strictEqual(entryCaption({ person: true }), 'person');
+  assert.strictEqual(entryCaption({ car: true, person: true }), 'car, person');
+  assert.strictEqual(entryCaption({ _yolo: { dog: true } }), 'dog');
+  assert.strictEqual(entryCaption({ _yolo: { person: true }, porch_access: true }),
+    'Someone at the porch');  // HA facts still win
+  assert.strictEqual(entryCaption({ fast_pass: 'negative', person: true }),
+    'person');  // fast_pass is not a label
 
 console.log('haFlags/entryCaption: all assertions passed');
