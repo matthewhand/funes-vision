@@ -50,20 +50,31 @@ PORT = 8190
 # built from what is already configured, and every `?camera=` param below
 # falls back to the first camera when absent (existing callers keep working).
 def cameras():
-    """[{id, label, source_dir}] for every configured watch dir, in order.
+    """[{id, kind, label, source_dir}] for every configured watch dir.
 
-    The id is positional — the first watch dir is `front`, every other is
-    `back`. Deriving it from the path string (camera_kind) is not safe: any dir
-    that is not literally Webcam21/Webcam22 or 10.0.0.21/22 collapses to
-    `front`, so two cameras would share one id and every `?camera=` call
-    would be ambiguous. Positional ids are also what
-    settings.json's `ignore_regions[].camera` keys already use.
+    Two fields, because they answer different questions:
+    - `id` is the folder basename (Webcam21, Webcam22) — what the SPA uses
+      for routing and what ?camera=<id> resolves against. Naming a camera
+      after its folder means renaming the folder renames the camera, which
+      is the intuitive behaviour and avoids the SPA hardcoding names the
+      API doesn't know.
+    - `kind` is front/back, from camera_kind() — what settings.json's
+      ignore_regions[].camera keys use (zones.py:70) and what the pipeline
+      uses for HA schema rows. Kept separate so renaming a folder does not
+      silently break parked-car mute zones.
     """
     out = []
     for i, d in enumerate(WATCH_DIRS):
+        base = os.path.basename(d.rstrip("/")) or d
+        try:
+            from analyze_images import camera_kind
+            kind = camera_kind(d)
+        except Exception:
+            kind = "front" if i == 0 else "back"
         out.append({
-            "id": "front" if i == 0 else "back",
-            "label": "Front" if i == 0 else "Back",
+            "id": base,
+            "kind": kind,
+            "label": base,
             "source_dir": d,
             "index": i,
         })
@@ -75,6 +86,14 @@ def camera_id_for_dir(directory):
     for c in cameras():
         if c["source_dir"] == directory:
             return c["id"]
+    return None
+
+
+def camera_kind_for_id(camera_id):
+    """kind (front/back) of a camera id, or None."""
+    for c in cameras():
+        if c["id"] == camera_id:
+            return c["kind"]
     return None
 
 

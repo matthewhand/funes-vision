@@ -2338,8 +2338,8 @@
       const path = location.pathname.replace(/\/+$/, '') || '/';
       // Legacy camera roots (/Webcam21/, /Webcam22/) are gallery pages —
       // they predate the router and must keep working unchanged.
-      if (path === '/Webcam21') return { view: ROUTE_GALLERY, cameraId: 'front' };
-      if (path === '/Webcam22') return { view: ROUTE_GALLERY, cameraId: 'back' };
+      if (path === '/Webcam21') return { view: ROUTE_GALLERY, cameraId: 'Webcam21' };
+      if (path === '/Webcam22') return { view: ROUTE_GALLERY, cameraId: 'Webcam22' };
       // /cameras/<id>/... -> gallery for that camera
       const m = path.match(/^\/cameras\/([^/]+)(?:\/|$)/);
       if (m) return { view: ROUTE_GALLERY, cameraId: m[1] };
@@ -2388,25 +2388,41 @@
 
     // Which camera id this page is showing, if any. A page served from a
     // camera's web root is showing that camera; a dashboard page shows none.
+    // The id is the folder basename, which is what the API now uses.
     function servedCameraId() {
-      return location.pathname.includes('/Webcam22/') ? 'back'
-           : location.pathname.includes('/Webcam21/') ? 'front'
-           : null;
+      const m = location.pathname.match(/\/(Webcam21|Webcam22)\//);
+      return m ? m[1] : null;
     }
 
-    // Client-side mirror of api_server.cameras(): the first watch dir is
-    // `front`, every other is `back`. Kept in sync deliberately — the SPA
-    // cannot import the backend module, and the id convention is what
-    // settings.json's ignore_regions[].camera keys already use.
-    function cameras() {
-      return [
-        { id: 'front', label: 'Front', source_dir: '/mnt/models/Webcam21' },
-        { id: 'back', label: 'Back', source_dir: '/mnt/models/Webcam22' },
+    // Camera registry, fetched from the API rather than hardcoded. The backend
+    // derives ids from settings.json watch_dirs — the folder basename — with a
+    // separate `kind` field (front/back) for ignore_regions and HA schema.
+    // A renamed watch dir or a third camera would silently desync a hardcoded
+    // list, so the SPA asks the API and caches the result. Falls back to the
+    // folder-basename convention if the call fails, so the dashboard still
+    // renders offline.
+    let camerasCache = null;
+    async function cameras() {
+      if (camerasCache) return camerasCache;
+      try {
+        const list = await apiFetch('/api/cameras', {}, false);
+        if (Array.isArray(list) && list.length) {
+          camerasCache = list;
+          return list;
+        }
+      } catch (_) { /* fall through to the fallback */ }
+      // Fallback: folder basenames, matching api_server.cameras() when the API
+      // call fails. The ids are the watch-dir names, not front/back — front/
+      // back is the separate `kind` field used by ignore_regions and HA schema.
+      camerasCache = [
+        { id: 'Webcam21', label: 'Webcam21', source_dir: '/mnt/models/Webcam21', kind: 'front' },
+        { id: 'Webcam22', label: 'Webcam22', source_dir: '/mnt/models/Webcam22', kind: 'back' },
       ];
+      return camerasCache;
     }
 
     function cameraDisplayName(id) {
-      return (cameras().find(c => c.id === id) || {}).label || id;
+      return (camerasCache ? camerasCache.find(c => c.id === id) : null) || { label: id };
     }
 
     // System-wide states
@@ -4875,10 +4891,11 @@
 
     // Which camera this page is showing. The catalog loads are scoped by
     // which web root served them; the write API needs the same scoping, so
-    // derive it from the path the same way getFeedProfile does instead of
-    // hardcoding it. Unknown paths default to front (the root camera).
+    // derive it from the path. The id is the folder basename — the API now
+    // resolves ?camera=<id> against those, not against front/back.
     function currentCameraId() {
-      return location.pathname.startsWith('/Webcam22/') ? 'back' : 'front';
+      const m = location.pathname.match(/\/(Webcam21|Webcam22)\//);
+      return m ? m[1] : 'Webcam21';
     }
 
     function withCamera(path) {
@@ -5860,11 +5877,20 @@
       document.getElementById('switch-feed-label').textContent = profile.switchLabel;
       btnSwitch.addEventListener('click', () => {
         // On the dashboard, switch cameras client-side instead of navigating
-        // to a root that doesn't exist for the other camera.
+        // to a root that doesn't exist for the other camera. Pick the other
+        // camera from the cached registry rather than hardcoding names: the
+        // ids are folder basenames and could be anything once settings.json
+        // changes. cameras() is async; by click time the dashboard has loaded
+        // and camerasCache is populated, so read it synchronously here.
         if (document.getElementById('dashboard-view').style.display !== 'none') {
-          const next = (servedCameraId() === 'front' ? 'back' : 'front');
-          pushRoute({ view: ROUTE_GALLERY, cameraId: next });
-          loadGalleryForCamera(next);
+          const list = camerasCache || [];
+          const current = servedCameraId();
+          const others = list.filter(c => c.id !== current);
+          const next = (others[0] || list[0]);
+          if (next) {
+            pushRoute({ view: ROUTE_GALLERY, cameraId: next.id });
+            loadGalleryForCamera(next.id);
+          }
           return;
         }
         window.location.href = profile.switchUrl;
