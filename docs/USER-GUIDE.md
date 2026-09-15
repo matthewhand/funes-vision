@@ -529,11 +529,11 @@ This guide’s screenshots are generated fiction. They are not your house.
 | Images vanished | 5 GB budget or 30-day empty-frame rule. Pins survive |
 | Pin / delete / settings / GIF do nothing | Write API (`webcam-api` on `:8190`) is down |
 | “AI is looking…” never finishes | Ollama not loaded, or free RAM below ~6 GB |
-| Slack never pings | Mode is **context** and summaries are off. Switch to **objects** (person/dog/cat/bird, not car) |
+| Slack never pings | Mode is **context** and summaries are off. The card says **enabled but silent** — switch to **objects** (person/dog/cat/bird, not car) |
 | Slack save says unreadable | `integrations.json` is corrupt. Do not keep hitting Save |
 | Live is Polling / Stale | SSE dropped. Refresh, or the API is down |
 | Night slider looks broken | Use the **Night** pill. Do not drag the thumbs to wrap |
-| Caption missing on a visit | Normal. e2b does not write sentences |
+| Caption missing on a visit | e2b does not write sentences, but a YOLO-only visit still gets one ("person", "car") from the detector labels. A visit with no detection at all (empty/CLEAR) has none — that is correct |
 | Status says Front / Back | Correct. Those are the two cameras |
 | Charts do not move when you search | They should. If they do not, refresh — that was a fixed bug |
 
