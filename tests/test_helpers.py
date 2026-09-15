@@ -265,6 +265,11 @@ class TestRunnableChain(unittest.TestCase):
         ai.MIN_MEM_FOR_LOCAL_GB = 16.0
         ai.ALLOW_CLOUD = False
         ai.encode_image = lambda p: "x"
+        # local_mem_threshold() drops to LLM_RAM_FLOOR_LOADED_GB when a model
+        # is already resident in Ollama, which on this box it is — so without
+        # this stub the "low RAM" branch passes and the local model serves
+        # anyway. The test is about the gate, not the host's live state.
+        ai.ollama_model_loaded = lambda tag: False
         calls = []
 
         class OK:
