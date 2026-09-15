@@ -9,22 +9,22 @@ After=docker.service docker.socket network-online.target local-fs.target
 Wants=docker.service docker.socket network-online.target
 
 [Service]
-# oneshot + RemainAfterExit: `docker compose up -d` returns immediately in
-# detached mode, so a Type=simple unit would never reach "active" and
-# Restart=always would re-run it every few seconds. oneshot reports active
-# after the single successful start.
+# Type=simple + Restart=always, owned by tools/webcam-compose-run.sh:
+#   1. `docker compose up -d webcam` ensures the container exists (idempotent)
+#   2. `exec docker wait webcam` blocks until it exits
+#   3. on exit, Restart=always brings the whole thing back.
 #
-# Restart=on-failure covers the case where the command itself fails (daemon
-# down, mount absent) — but NOT a container that dies after this unit has
-# already exited cleanly. That gap is what took the gallery down for 2 hours:
-# the unit kept reporting "active (exited)" while the container was dead.
-# systemd/webcam-healthcheck.timer + tools/webcam-healthcheck.sh are the
-# watchdog that actually notices a dead container and restarts it.
-Type=oneshot
-RemainAfterExit=yes
-Restart=on-failure
+# The old unit was Type=oneshot: `compose up -d` returned immediately in
+# detached mode, the unit reported "active (exited)", and a container that
+# died an hour later was never noticed — the gallery was down for two hours
+# while systemd thought the service was fine. A separate 60s healthcheck
+# timer still catches that case, but it should not be the only thing
+# standing between the gallery and downtime.
+Type=simple
+Restart=always
 RestartSec=5
-ExecStart=/usr/bin/docker compose -f /home/user/webcam/docker-compose.yml up -d webcam
+TimeoutStartSec=120
+ExecStart=/usr/bin/bash /home/user/webcam/tools/webcam-compose-run.sh
 
 [Install]
 WantedBy=multi-user.target

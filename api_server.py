@@ -576,6 +576,32 @@ class Handler(BaseHTTPRequestHandler):
             self._send(400, {"error": str(e)})
             return self._BAD_CAMERA
 
+    @staticmethod
+    def _load_catalog(camera_id):
+        """One camera's four catalogs as a single payload.
+
+        The SPA fetches these as relative URLs (images.json, analysis.json,
+        bursts.json, pins.json), which nginx scopes by whichever web root served
+        the page. A dashboard at `/` has no such root, so it cannot reach a
+        camera's catalog without this endpoint. Returns {} for any missing file
+        rather than erroring — a camera that has never been swept is a valid
+        state, not a failure.
+        """
+        d = camera_dir(camera_id)
+        if not d:
+            return {}
+        out = {}
+        for key, name in (("images", "images.json"),
+                          ("analysis", "analysis.json"),
+                          ("bursts", "bursts.json"),
+                          ("pins", "pins.json")):
+            try:
+                with open(os.path.join(d, name)) as f:
+                    out[key] = json.load(f)
+            except (OSError, ValueError):
+                out[key] = [] if key in ("images", "pins") else {}
+        return out
+
     def do_GET(self):
         # Parse `?camera=<id>` off the path first, then dispatch on the bare
         # path — otherwise every scoped request falls through to 404 because
@@ -619,6 +645,17 @@ class Handler(BaseHTTPRequestHandler):
             self.stream_events()
         elif self.path == "/api/cameras":
             self._send(200, cameras())
+        elif self.path == "/api/catalogs":
+            # One camera's images/analysis/bursts/pins as a single payload.
+            # The SPA fetches these as relative URLs, which nginx scopes by
+            # web root — a dashboard at / has no such root, so it cannot reach
+            # a camera's catalog without this endpoint. No ?camera= means
+            # every camera's catalog (small, and lets a dashboard enumerate).
+            if camera_id is None:
+                self._send(200, {c["id"]: self._load_catalog(c["id"])
+                                 for c in cameras()})
+            else:
+                self._send(200, self._load_catalog(camera_id))
         else:
             self._send(404, {"error": "not found"})
 
