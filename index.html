@@ -4647,16 +4647,35 @@
       ? `${location.protocol}//${location.hostname}:8190`
       : '';
 
+    // Which camera this page is showing. The catalog loads are scoped by
+    // which web root served them; the write API needs the same scoping, so
+    // derive it from the path the same way getFeedProfile does instead of
+    // hardcoding it. Unknown paths default to front (the root camera).
+    function currentCameraId() {
+      return location.pathname.startsWith('/Webcam22/') ? 'back' : 'front';
+    }
+
+    function withCamera(path) {
+      const sep = path.includes('?') ? '&' : '?';
+      return `${path}${sep}camera=${currentCameraId()}`;
+    }
+
     // All write-API calls go through here: a hard timeout (via AbortController)
     // so an unreachable API fails fast with a clear error instead of hanging
     // the panel indefinitely. Throws Error('timeout') or Error(`API <code>`).
+    //
+    // `scope` is true for the per-camera endpoints (pin / delete / status):
+    // the API now requires ?camera=<id> on those, and without it a pin would
+    // silently 400. Box-level endpoints (settings, integrations, clip) pass
+    // scope=false — they describe the box, not a camera.
     const API_TIMEOUT_MS = 6000;
-    async function apiFetch(path, options = {}) {
+    async function apiFetch(path, options = {}, scope = false) {
       const ctrl = new AbortController();
       const t = setTimeout(() => ctrl.abort(), options.timeout || API_TIMEOUT_MS);
+      const url = scope ? withCamera(path) : path;
       let resp;
       try {
-        resp = await fetch(`${API_BASE}${path}`, { ...options, signal: ctrl.signal });
+        resp = await fetch(`${API_BASE}${url}`, { ...options, signal: ctrl.signal });
       } catch (e) {
         throw new Error(e.name === 'AbortError' ? 'timeout' : 'unreachable');
       } finally {
@@ -4682,18 +4701,18 @@
       }
     }
 
-    function apiPost(path, payload) {
+    function apiPost(path, payload, scope = false) {
       return apiFetch(path, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
-      });
+      }, scope);
     }
 
     async function togglePin(filename, card) {
       const pinned = !state.pins.has(filename);
       try {
-        await apiPost('/api/pin', { filename, pinned });
+        await apiPost('/api/pin', { filename, pinned }, true);
         if (pinned) state.pins.add(filename); else state.pins.delete(filename);
         card.querySelector('.pin-btn').classList.toggle('pinned', pinned);
         showToast(pinned ? 'Pinned - excluded from auto-cleanup' : 'Unpinned');
@@ -4776,7 +4795,7 @@
     // timeline has already rendered, re-render so times reflect the new TZ.
     (async () => {
       try {
-        const st = await apiFetch('/api/status', { timeout: 4000 });
+        const st = await apiFetch('/api/status', { timeout: 4000 }, true);
         const tz = resolveDisplayTz(st && st.timezone);
         if (tz !== DISPLAY_TZ) {
           DISPLAY_TZ = tz;
@@ -4979,7 +4998,7 @@
         : '';
       if (!confirm(deleteConfirmText(meta, label))) return;
       try {
-        await apiPost('/api/delete', { filename });
+        await apiPost('/api/delete', { filename }, true);
         state.allImages = state.allImages.filter(f => f !== filename);
         delete state.analysis[filename];
         state.pins.delete(filename);
@@ -6091,7 +6110,7 @@
         }
         try {
           const [s, log] = await Promise.all([
-            apiFetch('/api/status'),
+            apiFetch('/api/status', {}, true),
             apiFetch('/api/inference_log')
           ]);
           const ok = v => v ? '<span style="color:#10b981;">&#10003;</span>' : '<span style="color:#ef4444;">&#10007;</span>';
@@ -6288,7 +6307,7 @@ html += `<div style="margin-top:6px;padding:4px 6px;background:var(--accent-10);
         const dot = document.getElementById('ai-live-dot');
         const label = document.getElementById('ai-live-label');
         try {
-          const s = await apiFetch('/api/status', { timeout: 4000 });
+          const s = await apiFetch('/api/status', { timeout: 4000 }, true);
           if (s.inference && s.inference.started) {
             dot.className = 'inferring';
             label.textContent = `AI ${fmtDur(s.inference.running_for_s)}`;
