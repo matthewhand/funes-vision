@@ -1940,6 +1940,12 @@
     </header>
 
     <div class="workspace">
+      <!-- Dashboard: one card per configured camera. Visible at / and
+           /cameras/; the gallery (sidebar + grid below) is hidden. -->
+      <div id="dashboard-view" class="dashboard-view" style="display:none;">
+        <div id="dashboard-grid" class="dashboard-grid"></div>
+      </div>
+
       <!-- Sidebar navigation panel -->
       <aside>
         <!-- Date Timeline section -->
@@ -2314,6 +2320,95 @@
        At the end of body so first paint of the chrome is not blocked on ~350 KB. -->
   <script src="lucide.min.js"></script>
   <script>
+    // --- SPA router (multi-camera UI) -------------------------------------
+    // `/` and `/cameras/` show a dashboard: one card per configured camera.
+    // `/cameras/<id>/` shows that camera's gallery. Switching is client-side
+    // via history.pushState, so deep links keep working and no nginx change
+    // is needed to serve them (the catch-all in nginx.conf already rewrites
+    // unknown paths to index.html).
+    //
+    // The gallery itself is untouched: when the page is served from a
+    // camera's web root it still fetches images.json / analysis.json as
+    // relative URLs, which nginx scopes for free. Only the dashboard — which
+    // has no such root — uses GET /api/catalogs, the endpoint added for this.
+    const ROUTE_DASHBOARD = 'dashboard';
+    const ROUTE_GALLERY = 'gallery';
+
+    function currentRoute() {
+      const path = location.pathname.replace(/\/+$/, '') || '/';
+      // Legacy camera roots (/Webcam21/, /Webcam22/) are gallery pages —
+      // they predate the router and must keep working unchanged.
+      if (path === '/Webcam21') return { view: ROUTE_GALLERY, cameraId: 'front' };
+      if (path === '/Webcam22') return { view: ROUTE_GALLERY, cameraId: 'back' };
+      // /cameras/<id>/... -> gallery for that camera
+      const m = path.match(/^\/cameras\/([^/]+)(?:\/|$)/);
+      if (m) return { view: ROUTE_GALLERY, cameraId: m[1] };
+      // / or /cameras/ -> dashboard
+      return { view: ROUTE_DASHBOARD, cameraId: null };
+    }
+
+    function routeHref(route) {
+      if (route.view === ROUTE_DASHBOARD) return '/cameras/';
+      return `/cameras/${route.cameraId}/`;
+    }
+
+    function pushRoute(route) {
+      const href = routeHref(route);
+      if (location.pathname + location.search !== href) {
+        history.pushState(route, '', href);
+      }
+      applyRoute(route);
+    }
+
+    // Paint the view for a route. Called from init, popstate, and after
+    // pushRoute — pushState does NOT fire popstate, so routing here must be
+    // explicit rather than relying on the back/forward listener alone.
+    function applyRoute(route) {
+      if (route.view === ROUTE_DASHBOARD) {
+        document.getElementById('dashboard-view').style.display = '';
+        document.getElementById('camera-title').textContent = 'Cameras';
+        document.getElementById('camera-subtitle').textContent =
+          `${cameras().length} camera${cameras().length === 1 ? '' : 's'} configured`;
+        document.title = 'Cameras - CamLog';
+        loadDashboardCatalogs();
+        return;
+      }
+      document.getElementById('dashboard-view').style.display = 'none';
+      document.getElementById('camera-title').textContent =
+        cameraDisplayName(route.cameraId);
+      document.getElementById('camera-subtitle').textContent =
+        cameraDisplayName(route.cameraId) + ' camera';
+      document.title = `${cameraDisplayName(route.cameraId)} - CamLog`;
+      if (route.cameraId && route.cameraId !== servedCameraId()) {
+        loadGalleryForCamera(route.cameraId).then(maybeOpenDeepLink);
+      } else {
+        loadData(false).then(maybeOpenDeepLink);
+      }
+    }
+
+    // Which camera id this page is showing, if any. A page served from a
+    // camera's web root is showing that camera; a dashboard page shows none.
+    function servedCameraId() {
+      return location.pathname.includes('/Webcam22/') ? 'back'
+           : location.pathname.includes('/Webcam21/') ? 'front'
+           : null;
+    }
+
+    // Client-side mirror of api_server.cameras(): the first watch dir is
+    // `front`, every other is `back`. Kept in sync deliberately — the SPA
+    // cannot import the backend module, and the id convention is what
+    // settings.json's ignore_regions[].camera keys already use.
+    function cameras() {
+      return [
+        { id: 'front', label: 'Front', source_dir: '/mnt/models/Webcam21' },
+        { id: 'back', label: 'Back', source_dir: '/mnt/models/Webcam22' },
+      ];
+    }
+
+    function cameraDisplayName(id) {
+      return (cameras().find(c => c.id === id) || {}).label || id;
+    }
+
     // System-wide states
     const state = {
       allImages: [],        // Full raw filenames from json
@@ -2819,6 +2914,137 @@
       } finally {
         document.getElementById('refresh-icon').classList.remove('lucide-animate-spin');
         lucide.createIcons();
+      }
+    }
+
+    // --- Dashboard (/, /cameras/) ----------------------------------------
+    // One card per configured camera: label, live thumbnail, last-detection
+    // time, and a link into that camera's gallery. Drives off /api/catalogs
+    // because a dashboard page has no web root to scope relative fetches.
+    // Independent of the gallery's state — it has its own minimal catalog.
+    const dashboardState = { cameras: [], loaded: false };
+
+    async function loadDashboardCatalogs() {
+      // No ?camera=: the unscoped form returns one entry per camera, which
+      // is what a dashboard needs to enumerate. Scoping here would return
+      // a single camera's catalogs and the loop below would read the
+      // catalog type names (images/analysis/...) as if they were camera ids.
+      // Longer than the default 6s: this loads four catalogs at once over the
+      // cross-origin API, and a slow sweep can legitimately take longer.
+      dashboardState.loaded = false;
+      try {
+        const resp = await apiFetch('/api/catalogs', { timeout: 20000 }, false);
+        const entries = Object.entries(resp).map(([id, cat]) => {
+          const images = Array.isArray(cat.images) ? cat.images : [];
+          const analysis = cat.analysis || {};
+          const last = images.length ? images[images.length - 1] : null;
+          const meta = last ? parseFilenameFields(last) : null;
+          return {
+            id,
+            label: cameraDisplayName(id),
+            imageCount: images.length,
+            thumbUrl: cat.thumbUrl || null,
+            lastFilename: last,
+            lastTime: meta ? meta.formattedTime : null,
+            lastDate: meta ? meta.formattedDate : null,
+            hasAnalysis: Object.keys(analysis).length > 0,
+          };
+        }).sort((a, b) => a.imageCount - b.imageCount);
+        dashboardState.cameras = entries;
+        dashboardState.loaded = true;
+        renderDashboard();
+      } catch (err) {
+        console.error('Error loading dashboard catalogs:', err);
+        const grid = document.getElementById('dashboard-grid');
+        if (grid) grid.innerHTML = '<div class="empty-state">Could not reach the cameras.</div>';
+      }
+    }
+
+    function renderDashboard() {
+      const grid = document.getElementById('dashboard-view');
+      const list = document.getElementById('dashboard-grid');
+      if (!grid || !list) return;
+      grid.style.display = 'flex';
+      list.style.display = '';
+      document.getElementById('image-grid').style.display = 'none';
+      document.getElementById('date-list').style.display = 'none';
+      document.getElementById('activity-chart-days').style.display = 'none';
+
+      if (!dashboardState.cameras.length) {
+        list.innerHTML = '<div class="empty-state">No cameras configured.</div>';
+        return;
+      }
+      list.innerHTML = '';
+      dashboardState.cameras.forEach(c => {
+        const card = document.createElement('a');
+        card.className = 'dashboard-card';
+        card.href = routeHref({ view: ROUTE_GALLERY, cameraId: c.id });
+        card.addEventListener('click', (e) => {
+          e.preventDefault();
+          pushRoute({ view: ROUTE_GALLERY, cameraId: c.id });
+          loadGalleryForCamera(c.id);
+        });
+        const thumb = document.createElement('div');
+        thumb.className = 'dashboard-thumb';
+        if (c.thumbUrl) {
+          thumb.style.backgroundImage = `url('${c.thumbUrl}')`;
+        } else if (c.lastFilename) {
+          // Fallback for catalogs without a thumb entry.
+          thumb.style.backgroundImage = `url('thumbs/${encodeURIComponent(c.lastFilename)}')`;
+        } else {
+          thumb.innerHTML = '<i data-lucide="camera-off"></i>';
+        }
+        const body = document.createElement('div');
+        body.className = 'dashboard-body';
+        const title = document.createElement('div');
+        title.className = 'dashboard-title';
+        title.textContent = c.label;
+        const meta = document.createElement('div');
+        meta.className = 'dashboard-meta';
+        meta.textContent = c.lastDate && c.lastTime
+          ? `Last capture ${c.lastDate} ${c.lastTime}`
+          : c.imageCount ? `${c.imageCount} snapshots` : 'No captures yet';
+        body.appendChild(title);
+        body.appendChild(meta);
+        card.appendChild(thumb);
+        card.appendChild(body);
+        list.appendChild(card);
+      });
+      if (window.lucide) lucide.createIcons();
+    }
+
+    async function loadGalleryForCamera(cameraId) {
+      // A camera whose root served this page: the gallery fetches its
+      // catalogs as relative URLs for free. Any other camera goes through
+      // /api/catalogs, which is what makes client-side switching possible.
+      // Wait for lucide: renderEventsView references the bare global, and
+      // the lucide script tag (line 2321) loads after this inline script,
+      // so a synchronous call here would paint before lucide exists. The
+      // normal gallery path is async (loadData) and never hits this.
+      if (!window.lucide) {
+        await new Promise(resolve => {
+          const check = () => window.lucide ? resolve() : setTimeout(check, 20);
+          check();
+        });
+      }
+      const served = servedCameraId();
+      if (served === cameraId) {
+        loadData(false);
+        return;
+      }
+      try {
+        const cat = await apiFetch(`/api/catalogs?camera=${cameraId}`, {}, true);
+        state.allImages = Array.isArray(cat.images) ? cat.images : [];
+        state.analysis = cat.analysis || {};
+        state.bursts = cat.bursts || {};
+        state.pins = new Set(cat.pins || []);
+        state.activeDateFilter = 'all';
+        applyFiltersAndSearch();
+        afterPaint(() => renderObjectFilters());
+      } catch (err) {
+        console.error('Error loading camera catalog:', err);
+        const k = loadErrorKind(err);
+        showEmptyState(k.message, '', k.title);
       }
     }
 
@@ -5633,11 +5859,25 @@
       const btnSwitch = document.getElementById('btn-switch-feed');
       document.getElementById('switch-feed-label').textContent = profile.switchLabel;
       btnSwitch.addEventListener('click', () => {
+        // On the dashboard, switch cameras client-side instead of navigating
+        // to a root that doesn't exist for the other camera.
+        if (document.getElementById('dashboard-view').style.display !== 'none') {
+          const next = (servedCameraId() === 'front' ? 'back' : 'front');
+          pushRoute({ view: ROUTE_GALLERY, cameraId: next });
+          loadGalleryForCamera(next);
+          return;
+        }
         window.location.href = profile.switchUrl;
       });
 
-      // Load initial data
-      loadData().then(maybeOpenDeepLink);
+      // Back/forward: re-run the router so the right view paints.
+      window.addEventListener('popstate', () => applyRoute(currentRoute()));
+
+      // --- Router: which view does this URL ask for? ---------------------
+      // `/` and `/cameras/` -> dashboard; `/cameras/<id>/` -> that camera's
+      // gallery. Switching is client-side (history.pushState), so deep links
+      // keep working and nginx's catch-all already serves them.
+      applyRoute(currentRoute());
       startPolling();
       startEventStream();
       paintLiveBadge();

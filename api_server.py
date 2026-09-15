@@ -25,6 +25,7 @@ import re
 import subprocess
 import time
 import urllib.request
+from urllib.parse import quote
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -586,6 +587,12 @@ class Handler(BaseHTTPRequestHandler):
         camera's catalog without this endpoint. Returns {} for any missing file
         rather than erroring — a camera that has never been swept is a valid
         state, not a failure.
+
+        `thumbUrl` is the relative path to the camera's latest thumbnail. The
+        dashboard lives at `/`, which maps to the front camera's root, so a
+        back-camera card would otherwise try to load its thumb from the front
+        root and show nothing. The API knows each camera's dir, so it hands
+        back a path that resolves correctly wherever the SPA is served.
         """
         d = camera_dir(camera_id)
         if not d:
@@ -600,6 +607,12 @@ class Handler(BaseHTTPRequestHandler):
                     out[key] = json.load(f)
             except (OSError, ValueError):
                 out[key] = [] if key in ("images", "pins") else {}
+        images = out.get("images") or []
+        if images:
+            latest = images[-1]
+            out["thumbUrl"] = f"/cameras/{camera_id}/thumbs/{quote(str(latest))}"
+        else:
+            out["thumbUrl"] = None
         return out
 
     def do_GET(self):
