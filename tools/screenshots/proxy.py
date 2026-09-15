@@ -32,8 +32,7 @@ PORT = int(os.environ.get("SCREENSHOT_PORT", "8899"))
 IMG_EXT = (".jpg", ".jpeg", ".gif", ".png", ".webp")
 # SPA treats a dead EventSource as Stale after ~15s. Immediate first ping,
 # then keep the stub stream open. Cap so a forgotten curl cannot last forever.
-SSE_STUB_INTERVAL = 2.0
-SSE_STUB_MAX_SEC = 120.0
+SSE_STUB_INTERVAL = 2.0  # seconds between stub `ping` events
 
 
 def _is_forbidden(path):
@@ -93,22 +92,22 @@ class H(SimpleHTTPRequestHandler):
             # Never mutate production. Pretend success.
             return self._send(200, b'{"ok":true,"fixture":true}', "application/json")
         if path == "/api/events":
+            # A real EventSource keeps the socket open until the browser
+            # closes it. This stub closed after SSE_STUB_MAX_SEC, so the SPA
+            # saw a dead stream and fell back to "Polling" — every published
+            # screenshot showed Polling while the guide copy advertised Live.
+            # Hold the connection open instead; the HTTP server closes it
+            # when the client disconnects.
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
             self.send_header("Cache-Control", "no-cache")
             self.send_header("X-Accel-Buffering", "no")
-            self.send_header("Connection", "close")
             self.end_headers()
-            self.close_connection = True
-            deadline = time.monotonic() + SSE_STUB_MAX_SEC
             try:
                 while True:
                     self.wfile.write(b"event: ping\ndata: {}\n\n")
                     self.wfile.flush()
-                    remaining = deadline - time.monotonic()
-                    if remaining <= 0:
-                        break
-                    time.sleep(min(SSE_STUB_INTERVAL, remaining))
+                    time.sleep(SSE_STUB_INTERVAL)
             except (BrokenPipeError, ConnectionResetError):
                 pass
             except Exception:

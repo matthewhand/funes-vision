@@ -87,11 +87,10 @@ class TestScreenshotProxy(unittest.TestCase):
             self.assertEqual(r.returncode, 2, r.stderr.decode())
             self.assertIn(b"REFUSING", r.stderr)
 
-    def test_stub_sse_first_ping_then_cap(self):
+    def test_stub_sse_first_ping_then_open(self):
         p = load_proxy()
         self.assertEqual(p.API_MODE, "stub")
-        p.SSE_STUB_INTERVAL = 2.0
-        p.SSE_STUB_MAX_SEC = 0.25
+        p.SSE_STUB_INTERVAL = 0.06
         srv = _serve(p)
         try:
             host, port = srv.server_address
@@ -101,17 +100,23 @@ class TestScreenshotProxy(unittest.TestCase):
             self.assertIn(b"text/event-stream", buf)
             self.assertIn(b"event: ping", buf)
             self.assertLess(time.monotonic() - t0, 0.3)
-            _, closed = _recv_until(sock, lambda b: False, 1.2)
+            # A real EventSource keeps the socket open until the browser
+            # closes it. The stub used to cap after SSE_STUB_MAX_SEC, which
+            # made the SPA fall back to "Polling" in every published shot
+            # while the guide copy advertised Live. It now loops, so the
+            # only thing that closes the connection is the client. Keep
+            # reading into the same buffer so the repeat count is real.
+            buf2, closed = _recv_until(sock, lambda b: False, 1.2)
+            buf += buf2
+            self.assertFalse(closed)
+            self.assertGreaterEqual(buf.count(b"event: ping"), 2)
             sock.close()
-            self.assertTrue(closed)
-            self.assertLess(time.monotonic() - t0, 1.0)
         finally:
             _stop(srv)
 
     def test_stub_sse_repeats_pings(self):
         p = load_proxy()
         p.SSE_STUB_INTERVAL = 0.06
-        p.SSE_STUB_MAX_SEC = 0.28
         srv = _serve(p)
         try:
             host, port = srv.server_address
@@ -119,14 +124,13 @@ class TestScreenshotProxy(unittest.TestCase):
             buf, closed = _recv_until(sock, lambda b: False, 1.2)
             sock.close()
             self.assertGreaterEqual(buf.count(b"event: ping"), 3)
-            self.assertTrue(closed)
+            self.assertFalse(closed)
         finally:
             _stop(srv)
 
     def test_stub_sse_client_disconnect(self):
         p = load_proxy()
         p.SSE_STUB_INTERVAL = 0.05
-        p.SSE_STUB_MAX_SEC = 30
         srv = _serve(p)
         try:
             host, port = srv.server_address
