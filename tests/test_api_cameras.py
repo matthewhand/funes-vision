@@ -6,7 +6,7 @@ import sys
 import tempfile
 import unittest
 
-sys.path.insert(0, "/home/user/webcam")
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import api_server
 
 
@@ -55,7 +55,8 @@ class TestCameraAPI(unittest.TestCase):
         for d, tag in ((cls.front, "front"), (cls.back, "back")):
             os.makedirs(d)
             for i in range(3):
-                open(os.path.join(d, f"{tag}_{i}.jpg"), "w").write("x")
+                with open(os.path.join(d, f"{tag}_{i}.jpg"), "w") as fh:
+                    fh.write("x")
         cls._orig_dirs = api_server.WATCH_DIRS
         api_server.WATCH_DIRS = [cls.front, cls.back]
 
@@ -105,7 +106,8 @@ class TestCameraAPI(unittest.TestCase):
         # must have no pins.json at all — the old single-file API synced one
         # pins.json into every web root, which is the leak this fixes.
         self.assertTrue(os.path.exists(os.path.join(self.back, "pins.json")))
-        back_pins = json.load(open(os.path.join(self.back, "pins.json")))
+        with open(os.path.join(self.back, "pins.json")) as fh:
+            back_pins = json.load(fh)
         self.assertIn(target, back_pins)
         self.assertFalse(os.path.exists(os.path.join(self.front, "pins.json")))
 
@@ -127,6 +129,46 @@ class TestCameraAPI(unittest.TestCase):
         self.assertEqual(code, 200)
         self.assertEqual(len(scoped["cameras"]), 1)
         self.assertEqual(scoped["cameras"][0]["name"], "back")
+
+    def test_status_scopes_queue(self):
+        orig = api_server.BASE_DIR
+        td = tempfile.mkdtemp(prefix="webcam_status_q_")
+        try:
+            api_server.BASE_DIR = td
+            with open(os.path.join(td, "analysis.json"), "w") as fh:
+                json.dump({
+                    "front_0.jpg": {"person": True, "_llm": {"ok": True}},
+                    "back_0.jpg": {"dog": True, "_llm": {"ok": True}},
+                }, fh)
+            code, scoped = self.h.run("GET", "/api/status?camera=back")
+            self.assertEqual(code, 200)
+            self.assertEqual(scoped["queue"]["images_on_disk"], 3)
+            self.assertEqual(scoped["queue"]["llm_verified"], 1)
+            code, all_status = self.h.run("GET", "/api/status")
+            self.assertEqual(code, 200)
+            self.assertEqual(all_status["queue"]["llm_verified"], 2)
+        finally:
+            api_server.BASE_DIR = orig
+            shutil.rmtree(td, ignore_errors=True)
+
+    def test_settings_post_refuses_corrupt(self):
+        orig = api_server.SETTINGS_FILE
+        td = tempfile.mkdtemp(prefix="webcam_settings_")
+        path = os.path.join(td, "settings.json")
+        with open(path, "w") as fh:
+            fh.write("{not json")
+        api_server.SETTINGS_FILE = path
+        try:
+            code, body = self.h.run(
+                "POST", "/api/settings",
+                json.dumps({"idle_sweep_seconds": 60}).encode())
+            self.assertEqual(code, 409)
+            with open(path) as fh:
+                self.assertEqual(fh.read(), "{not json")
+            self.assertIn("unreadable", body.get("error", ""))
+        finally:
+            api_server.SETTINGS_FILE = orig
+            shutil.rmtree(td, ignore_errors=True)
 
     def test_settings_lists_cameras(self):
         code, body = self.h.run("GET", "/api/settings")

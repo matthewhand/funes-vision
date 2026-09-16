@@ -3,8 +3,12 @@ import requests
 import json
 import base64
 import sys
-import cv2
-import numpy as np
+try:
+    import cv2
+    import numpy as np
+except ImportError:
+    cv2 = None
+    np = None
 import time
 import random
 import bisect
@@ -101,14 +105,32 @@ if os.path.exists(_settings_path):
     except (ValueError, OSError) as e:
         print(f"Warning: could not read settings.json ({e}); using defaults")
 
-# Haar is legacy fallback only; do not fail import if the wheel lacks it.
+# Haar is legacy fallback only; do not fail import if OpenCV is missing.
 face_cascade = body_cascade = cat_cascade = None
-try:
-    face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
-    body_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_fullbody.xml')
-    cat_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalcatface.xml')
-except Exception as e:
-    print(f"Haar cascades unavailable ({e}); YOLO-only fast pass")
+if cv2 is not None:
+    try:
+        face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+        body_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_fullbody.xml')
+        cat_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalcatface.xml')
+    except Exception as e:
+        print(f"Haar cascades unavailable ({e}); YOLO-only fast pass")
+
+# Distinct from {} (no detections). Falsy so the persist path does not treat
+# it as a hit. Truncated/in-flight JPEGs must not become fast_pass=negative.
+class _FastPassUnread:
+    __slots__ = ()
+    def __bool__(self):
+        return False
+
+FAST_PASS_UNREADABLE = _FastPassUnread()
+
+
+def negative_fast_pass_row(fp_results):
+    """Catalog row for empty detector, or None to skip persist (imread failed)."""
+    if fp_results is FAST_PASS_UNREADABLE:
+        return None
+    return {"fast_pass": "negative"}
+
 
 def fast_pass(image_path):
     try:
@@ -116,7 +138,7 @@ def fast_pass(image_path):
             return {}
         img = cv2.imread(image_path)
         if img is None:
-            return {}
+            return FAST_PASS_UNREADABLE
         h, w = img.shape[:2]
         scale = 400.0 / w
         small = cv2.resize(img, (400, int(h * scale)), interpolation=cv2.INTER_AREA)
@@ -159,10 +181,12 @@ def _load_yolo():
 def fast_pass_yolo(image_path):
     """Returns detected labels dict, or None if YOLO itself is unavailable
     (caller falls back to Haar cascades)."""
+    if cv2 is None:
+        return FAST_PASS_UNREADABLE
     try:
         img = cv2.imread(image_path)
         if img is None:
-            return {}
+            return FAST_PASS_UNREADABLE
         h, w = img.shape[:2]
         ids, confs, boxes = _load_yolo().detect(img, confThreshold=YOLO_CONF, nmsThreshold=0.4)
         results = {}
@@ -1700,6 +1724,8 @@ def apply_retention(image_dir, analysis_data, pins):
 
 def generate_thumbnails(image_dir, images):
     """Create missing thumbnails under <image_dir>/thumbs/ for grid view."""
+    if cv2 is None:
+        return
     thumb_dir = os.path.join(image_dir, "thumbs")
     os.makedirs(thumb_dir, exist_ok=True)
     made = 0
@@ -1834,6 +1860,8 @@ def main(retention_only=False, rescan_days=None):
                 else:
                     fp_results = fast_pass_dispatch(image_path)
 
+            if negative_fast_pass_row(fp_results) is None:
+                continue
             if fp_results:
                 if rescan_mode:
                     needs_deep = True
@@ -1931,9 +1959,10 @@ def main(retention_only=False, rescan_days=None):
                                     existed=img in analysis_data)
                         new_analysis = True
             else:
-                # Negative fast pass
-                persist_row(analysis_file, analysis_data, img,
-                            {"fast_pass": "negative"},
+                rec = negative_fast_pass_row(fp_results)
+                if rec is None:
+                    continue
+                persist_row(analysis_file, analysis_data, img, rec,
                             existed=img in analysis_data)
                 new_analysis = True
 

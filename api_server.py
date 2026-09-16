@@ -7,8 +7,8 @@ user as the analysis pipeline.
 
 Endpoints (JSON unless noted):
   GET  /api/pins                  -> ["file1.jpg", ...]
-  POST /api/pin    {"filename": f, "pinned": true|false}
-  POST /api/delete {"filename": f}
+  POST /api/pin    ?camera=<id>  {"filename": f, "pinned": true|false}
+  POST /api/delete ?camera=<id>  {"filename": f}
   GET/POST /api/settings          -> MUTABLE_SETTINGS only (validated)
   GET/POST /api/integrations      -> redacted integration config
   POST /api/integrations/test     -> send a Slack test message
@@ -512,10 +512,15 @@ def pipeline_status(camera_id=None):
             inference["running_for_s"] = age
     status["inference"] = inference
 
+    if not isinstance(analysis, dict):
+        analysis = {}
+    scoped = analysis if not camera_id else {
+        k: v for k, v in analysis.items() if k in files
+    }
     status["queue"] = {
         "images_on_disk": len(files),
-        "unanalyzed": max(0, len(files - set(analysis))),
-        **queue_from_analysis(analysis),
+        "unanalyzed": max(0, len(files - set(scoped))),
+        **queue_from_analysis(scoped),
     }
 
     # Liveness + observability
@@ -638,7 +643,7 @@ class Handler(BaseHTTPRequestHandler):
                 out[key] = [] if key in ("images", "pins") else {}
         images = out.get("images") or []
         if images:
-            latest = images[-1]
+            latest = images[0]
             out["thumbUrl"] = f"/cameras/{camera_id}/thumbs/{quote(str(latest))}"
         else:
             out["thumbUrl"] = None
@@ -975,12 +980,26 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(400, {"error": "no recognized settings in payload"})
                 return
             try:
-                settings = json.load(open(SETTINGS_FILE))
-            except (OSError, ValueError):
+                with open(SETTINGS_FILE) as f:
+                    settings = json.load(f)
+            except FileNotFoundError:
                 settings = {}
+            except (OSError, ValueError) as e:
+                self._send(409, {"error": (
+                    f"settings.json is unreadable; refusing to overwrite ({e})"
+                )})
+                return
+            if not isinstance(settings, dict):
+                self._send(409, {"error":
+                    "settings.json is unreadable; refusing to overwrite"})
+                return
             settings.update(changed)
-            with open(SETTINGS_FILE, "w") as f:
-                json.dump(settings, f, indent=2)
+            try:
+                from analyze_images import _atomic_write_json
+                _atomic_write_json(SETTINGS_FILE, settings, indent=2)
+            except OSError as e:
+                self._send(500, {"error": f"could not write settings: {e}"})
+                return
             print(f"Settings updated: {changed}")
             self._send(200, {"ok": True, **changed})
 

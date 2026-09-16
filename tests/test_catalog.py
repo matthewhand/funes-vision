@@ -154,6 +154,30 @@ class TestImportLight(unittest.TestCase):
         )
         self.assertEqual(proc.returncode, 0, proc.stderr)
 
+    def test_analyze_images_imports_without_opencv(self):
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        script = (
+            "import sys\n"
+            "sys.path.insert(0, %r)\n"
+            "sys.modules['cv2'] = None\n"
+            "class _Block:\n"
+            "    def find_spec(self, name, path, target=None):\n"
+            "        if name in ('cv2', 'numpy') or (name or '').startswith('cv2.') or (name or '').startswith('numpy.'):\n"
+            "            raise ImportError('blocked')\n"
+            "        return None\n"
+            "sys.meta_path.insert(0, _Block())\n"
+            "import analyze_images as ai\n"
+            "assert ai.cv2 is None\n"
+            "assert ai.camera_kind('/mnt/models/Webcam21/x.jpg') == 'front'\n"
+        ) % root
+        proc = subprocess.run(
+            [sys.executable, "-c", script],
+            cwd=root,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()
