@@ -108,8 +108,11 @@ assert.strictEqual(entryCaption({
   assert.strictEqual(entryCaption({ person: true }), 'person');
   assert.strictEqual(entryCaption({ car: true, person: true }), 'car, person');
   assert.strictEqual(entryCaption({ _yolo: { dog: true } }), 'dog');
+  assert.strictEqual(entryCaption({ _yolo: ['person', 'car'] }), 'person, car');
   assert.strictEqual(entryCaption({ _yolo: { person: true }, porch_access: true }),
     'Someone at the porch');  // HA facts still win
+  assert.strictEqual(entryCaption({ _yolo: ['person'], porch_access: true }),
+    'Someone at the porch');
   assert.strictEqual(entryCaption({ fast_pass: 'negative', person: true }),
     'person');  // fast_pass is not a label
 

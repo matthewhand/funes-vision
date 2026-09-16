@@ -52,9 +52,9 @@ assert.ok(/\.blacklist-dropdown,\s*#filters-dropdown/.test(html),
   '#filters-dropdown must share the mobile blacklist-dropdown sheet rules');
 
 // First paint matches the front camera (JS overwrites on Dogcam).
-assert.ok(/>Webcam Live Feed</.test(html), 'title first-paints Webcam Live Feed');
-assert.ok(/Monitoring front gate area/.test(html), 'subtitle first-paints front gate');
-assert.ok(/Switch to Dogcam Feed/.test(html), 'switch first-paints Dogcam target');
+assert.ok(/>Front</.test(html), 'title first-paints Front');
+assert.ok(/Front gate/.test(html), 'subtitle first-paints front gate');
+assert.ok(/id="switch-feed-label">Back</.test(html), 'switch first-paints Back target');
 assert.ok(/person\/dog\/cat\/bird/.test(html), 'Slack objects copy includes cat/bird');
 assert.ok(!/every new analyzed frame/.test(html), 'Slack all must not claim every analyzed frame');
 
