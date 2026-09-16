@@ -198,30 +198,48 @@
       backdrop-filter: blur(16px);
       -webkit-backdrop-filter: blur(16px);
       border-bottom: 1px solid var(--border-color);
-      padding: 14px 24px;
+      padding: 10px 20px;
     }
 
     .header-content {
       max-width: 1600px;
       margin: 0 auto;
       display: flex;
-      justify-content: space-between;
+      justify-content: flex-start;
       align-items: center;
-      gap: 16px;
-      flex-wrap: wrap;
+      gap: 10px;
+      flex-wrap: nowrap;
     }
+    .header-content .tab-cluster {
+      display: flex; align-items: center; gap: var(--space-2);
+      flex: 0 1 auto; min-width: 0;
+    }
+    .header-content #toolbar-actions { margin-left: 0; }
+    .header-content .controls-wrapper { margin-left: auto; gap: 8px; }
+    .logo-text p { display: none; }
+    #stats-label.stats-info {
+      max-width: 14ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    aside details.sidebar-section > summary {
+      cursor: pointer; list-style: none; display: flex; align-items: center;
+    }
+    aside details.sidebar-section > summary::-webkit-details-marker { display: none; }
+    aside details.sidebar-section > summary h3 { margin: 0; }
+    aside details.sidebar-section[open] > summary h3::after { content: ''; }
+    .view-toggles-wrap { display: none; }
 
     .logo-area {
       display: flex;
       align-items: center;
       gap: 12px;
     }
+    .logo-area #sidebar-toggle { padding: 6px; height: 32px; }
 
     .logo-icon {
       background: linear-gradient(135deg, #3b82f6, #6366f1);
-      width: 42px;
-      height: 42px;
-      border-radius: 12px;
+      width: 32px;
+      height: 32px;
+      border-radius: 9px;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -230,19 +248,27 @@
     }
 
     .logo-text h1 {
-      font-size: 1.25rem;
-      font-weight: 700;
-      letter-spacing: -0.02em;
-      background: linear-gradient(to right, #60a5fa, #a5b4fc);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
+      font-size: 1.05rem;
+      font-weight: 650;
+      letter-spacing: -0.03em;
+      color: var(--text-primary);
+      background: none;
+      -webkit-text-fill-color: unset;
     }
 
     .logo-text p {
-      font-size: 0.75rem;
+      font-size: 0.7rem;
       color: var(--text-secondary);
-      margin-top: 1px;
+      margin-top: 0;
     }
+    .cam-chip {
+      margin-left: 4px;
+      height: 28px;
+      padding: 0 10px;
+      font-size: 0.75rem;
+      border-radius: var(--radius-pill);
+    }
+    .cam-chip #switch-feed-label { font-weight: 600; }
 
     /* Top Action controls */
     .controls-wrapper {
@@ -410,16 +436,16 @@
       max-width: 1600px;
       width: 100%;
       margin: 0 auto;
-      padding: 24px;
-      gap: 24px;
+      padding: 16px 20px;
+      gap: 16px;
     }
 
     /* Sidebar Panel (Collapsible/Drawer on mobile) */
     aside {
-      width: 280px;
+      width: 232px;
       display: flex;
       flex-direction: column;
-      gap: 20px;
+      gap: 12px;
       flex-shrink: 0;
       /* Constrain the panel to the viewport so a long date list (34+ days) or
          the activity chart can't push the whole page taller than the window.
@@ -610,6 +636,7 @@
 
     /* Filter Stats Panel */
     .toolbar-bar {
+      min-height: 0;
       display: flex;
       justify-content: space-between;
       align-items: center;
@@ -680,7 +707,14 @@
        secondary action labels collapse to icons; the AI status keeps its text. */
     /* nowrap: the cluster stays one row or fully collapses to icons via
        .compact (actionsOverflow) — no ragged 1.5-row wrap state. */
-    .toolbar-actions { display: flex; gap: var(--space-2); align-items: center; flex-wrap: nowrap; }
+    .toolbar-actions { display: flex; gap: var(--space-1); align-items: center; flex-wrap: nowrap; }
+    /* Quiet chrome: operator actions are icons. Names stay on aria-label/title. */
+    #btn-refresh span,
+    #btn-filters > span:not(.filters-count),
+    #btn-manage-blacklist span,
+    #btn-integrations span,
+    #btn-help span,
+    .sidebar-toggle-label { display: none; }
     .toolbar-actions.compact #btn-manage-blacklist span,
     .toolbar-actions.compact #btn-integrations span { display: none; }
 
@@ -844,19 +878,25 @@
       max-width: 100%;
     }
 
-    .badge-ai,
-    .badge-ha {
+    .badge-ai {
       display: inline-flex;
       align-items: center;
       gap: 4px;
-      font-size: 0.7rem;
-      padding: 3px 8px;
-      border-radius: 4px;
+      font-size: 0.68rem;
+      padding: 2px 7px;
+      border-radius: var(--radius-pill);
       font-weight: 600;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
     }
-    /* HA scene flags: same chip chrome, quieter so they are not object-filter peers. */
-    .badge-ha { font-weight: 500; }
+    /* HA flags are scene facts, not object chips — one muted line. */
+    .scene-line {
+      display: block;
+      width: 100%;
+      font-size: 0.68rem;
+      font-weight: 500;
+      color: #c4b5fd;
+      text-shadow: 0 1px 2px rgba(0,0,0,0.7);
+      text-transform: capitalize;
+    }
 
     /* Verified-detection tags: a calm tinted recipe (tinted bg + light-hue text
        + subtle border) consistent with the disputed/potential tags below,
@@ -1039,14 +1079,22 @@
       height: 14px;
       color: var(--text-secondary);
       transition: transform 0.2s;
+      display: block;
+    }
+    .slider-caret-btn {
       display: none;
+      background: none;
+      border: none;
+      padding: 0;
+      cursor: pointer;
+      line-height: 0;
     }
 
     /* At the all-day default the Reset button is a no-op, so swap it for a caret
        that expands/collapses the slider; clicking the header toggles it. */
     .time-slider-wrapper.range-default .slider-header { cursor: pointer; }
     .time-slider-wrapper.range-default .time-reset-btn { display: none; }
-    .time-slider-wrapper.range-default .slider-caret { display: block; }
+    .time-slider-wrapper.range-default .slider-caret-btn { display: flex; }
     .time-slider-wrapper.range-default:not(.range-collapsed) .slider-caret {
       transform: rotate(180deg);
     }
@@ -1893,6 +1941,10 @@
       .time-slider::-moz-range-thumb { width: 24px; height: 24px; }
       .dual-range-container { height: 28px; }
     }
+    @media (max-width: 960px) {
+      .header-content { flex-wrap: wrap; }
+      .header-content .tab-cluster { order: 3; flex: 1 1 100%; }
+    }
   </style>
 </head>
 <body>
@@ -1905,17 +1957,16 @@
             <i data-lucide="camera"></i>
           </div>
           <div class="logo-text">
-            <h1 id="camera-title">Webcam Live Feed</h1>
-            <p id="camera-subtitle">Monitoring front gate area</p>
+            <h1 id="camera-title">Front</h1>
+            <p id="camera-subtitle">Front gate</p>
           </div>
+          <button id="btn-switch-feed" class="btn btn-switch cam-chip" title="Switch camera" aria-label="Switch camera">
+            <i data-lucide="arrow-left-right"></i>
+            <span id="switch-feed-label">Back</span>
+          </button>
         </div>
 
         <div class="controls-wrapper">
-          <!-- Switch endpoint button -->
-          <button id="btn-switch-feed" class="btn btn-switch" title="Switch to the other camera">
-            <i data-lucide="arrow-left-right"></i>
-            <span id="switch-feed-label">Switch to Dogcam Feed</span>
-          </button>
 
           <div class="search-box">
             <i data-lucide="search"></i>
@@ -1950,25 +2001,21 @@
       <aside>
         <!-- Date Timeline section -->
         <div class="sidebar-section">
-          <h3><i data-lucide="calendar"></i> Date Timeline</h3>
+          <h3><i data-lucide="calendar"></i> Dates</h3>
           <div class="date-list" id="date-list">
             <div class="sidebar-item active"><span>Loading...</span></div>
           </div>
         </div>
 
         <!-- Activity Chart section -->
-        <div class="sidebar-section activity-chart-container">
-          <h3><i data-lucide="activity"></i> Motion Activity</h3>
-          <!-- Day planner: one bar per day, red marks at time-of-day -->
+        <details class="sidebar-section activity-chart-container">
+          <summary><h3><i data-lucide="activity"></i> Motion</h3></summary>
           <div class="chart-sublabel">By day</div>
           <div class="chart-viewport chart-days" id="activity-chart-days">
-            <!-- Dynamic bars inserted here -->
           </div>
           <div class="chart-x-axis" id="chart-x-axis-days"></div>
-          <!-- Hour histogram over the selected date range -->
           <div class="chart-sublabel">By hour</div>
           <div class="chart-viewport" id="activity-chart">
-            <!-- Dynamic bars inserted here -->
           </div>
           <div class="chart-x-axis">
             <span>12 AM</span>
@@ -1977,16 +2024,15 @@
             <span>6 PM</span>
             <span>11 PM</span>
           </div>
-        </div>
+        </details>
 
-        <!-- Saved searches: named snapshots of the current filters -->
-        <div class="sidebar-section">
-          <h3><i data-lucide="bookmark"></i> Saved Searches</h3>
+        <details class="sidebar-section">
+          <summary><h3><i data-lucide="bookmark"></i> Saved</h3></summary>
           <div class="saved-list" id="saved-list"></div>
           <button id="btn-save-search" class="saved-add" title="Save the current filters as a named view">
             <i data-lucide="plus"></i> Save current view
           </button>
-        </div>
+        </details>
       </aside>
 
       <!-- Main feeds area -->
@@ -2019,7 +2065,7 @@
               <span id="filter-active-banner-text"></span>
               <button type="button" id="filter-active-clear" class="chip__x" title="Clear all filters" aria-label="Clear all filters">✕</button>
             </span>
-            <div class="menu" id="filters-dropdown">
+            <div class="menu" id="filters-dropdown" role="dialog" aria-label="Filter by object">
               <div class="menu-section-title">Filter by object</div>
               <div id="object-filter-panel" style="display: none; flex-direction: column; gap: 4px; align-items: flex-start;">
                 <button type="button" id="sticky-toggle" class="filter-meta-btn" title="When on, toggle several object filters at once (match any). When off, one at a time."></button>
@@ -2036,7 +2082,7 @@
               <i data-lucide="settings-2"></i>
               <span>Settings</span>
             </button>
-            <div class="blacklist-dropdown" id="blacklist-dropdown">
+            <div class="blacklist-dropdown" id="blacklist-dropdown" role="dialog" aria-label="Detection settings">
               <div class="menu-section-title">
                 Hide / Show Labels
               </div>
@@ -2054,10 +2100,10 @@
                 <span>Show unconfirmed detections</span>
                 <div class="blacklist-status"></div>
               </div>
-              <div class="menu-section-title with-gap">
+              <div class="menu-section-title with-gap" id="detector-heading">
                 Fast Detector
               </div>
-              <select id="detector-select" class="menu-field" title="Fast detector that decides who jumps the vision-model queue" style="width: 100%;">
+              <select id="detector-select" class="menu-field" aria-labelledby="detector-heading" title="Fast detector that decides who jumps the vision-model queue" style="width: 100%;">
                 <option value="yolo">YOLO (recommended)</option>
                 <option value="haar">Haar cascades (legacy)</option>
               </select>
@@ -2112,7 +2158,7 @@
               <i data-lucide="share-2"></i>
               <span>Integrations</span>
             </button>
-            <div class="blacklist-dropdown" id="integrations-dropdown" style="width: 300px;">
+            <div class="blacklist-dropdown" id="integrations-dropdown" role="dialog" aria-label="Integrations" style="width: 300px;">
               <div class="menu-section-title">
                 Integrations
               </div>
@@ -2172,11 +2218,11 @@
           </a>
 
           <div class="blacklist-menu">
-            <button class="btn" id="btn-system-status" aria-haspopup="true" aria-expanded="false" title="Pipeline status">
+            <button class="btn" id="btn-system-status" aria-haspopup="true" aria-expanded="false" aria-label="Pipeline status" title="Pipeline status">
               <span id="ai-live-dot" class="status-dot"></span>
               <span id="ai-live-label">AI</span>
             </button>
-            <div class="blacklist-dropdown" id="system-dropdown">
+            <div class="blacklist-dropdown" id="system-dropdown" role="dialog" aria-label="Pipeline status">
               <div class="menu-section-title">
                 Pipeline Status
               </div>
@@ -2190,7 +2236,9 @@
               <span class="slider-label"><i data-lucide="clock" style="width:14px;height:14px;"></i> Time Range: <span id="time-range-display">All day</span></span>
               <span class="slider-header-actions">
                 <button class="time-reset-btn" id="btn-reset-time">Reset</button>
-                <i data-lucide="chevron-down" class="slider-caret"></i>
+                <button type="button" class="slider-caret-btn" id="btn-expand-time" aria-expanded="false" aria-controls="time-pills" aria-label="Show time-of-day filters">
+                  <i data-lucide="chevron-down" class="slider-caret" aria-hidden="true"></i>
+                </button>
               </span>
             </div>
             <div class="time-pills" id="time-pills" role="group" aria-label="Quick time-of-day filter">
@@ -2223,6 +2271,31 @@
             </div>
           </div>
         </div>
+        <script>
+        (function hoistChrome() {
+          var hc = document.querySelector('.header-content');
+          var controls = hc && hc.querySelector('.controls-wrapper');
+          var logo = hc && hc.querySelector('.logo-area');
+          if (!hc || !controls || !logo) return;
+          var tabs = document.querySelector('.tab-cluster');
+          var actions = document.getElementById('toolbar-actions');
+          var side = document.getElementById('sidebar-toggle');
+          var dens = document.getElementById('view-toggles');
+          var settings = document.getElementById('blacklist-dropdown');
+          var refresh = document.getElementById('btn-refresh');
+          if (side && side.parentNode !== logo) logo.insertBefore(side, logo.firstChild);
+          if (tabs && tabs.parentNode !== hc) hc.insertBefore(tabs, controls);
+          if (actions && refresh) controls.insertBefore(actions, refresh);
+          if (dens && settings && dens.parentNode !== settings) {
+            var title = document.createElement('div');
+            title.className = 'menu-section-title';
+            title.textContent = 'Grid size';
+            settings.insertBefore(dens, settings.firstChild);
+            settings.insertBefore(title, dens);
+            dens.style.display = '';
+          }
+        })();
+        </script>
 
         <!-- Image Grid -->
         <div class="image-grid medium" id="image-grid">
@@ -2344,8 +2417,10 @@
       // /cameras/<id>/... -> gallery for that camera
       const m = path.match(/^\/cameras\/([^/]+)(?:\/|$)/);
       if (m) return { view: ROUTE_GALLERY, cameraId: m[1] };
-      // / or /cameras/ -> dashboard
-      return { view: ROUTE_DASHBOARD, cameraId: null };
+      // /cameras -> dashboard. `/` is the nginx Front gallery (relative
+      // images.json), not the dashboard.
+      if (path === '/cameras') return { view: ROUTE_DASHBOARD, cameraId: null };
+      return { view: ROUTE_GALLERY, cameraId: null };
     }
 
     function routeHref(route) {
@@ -2364,22 +2439,25 @@
     // Paint the view for a route. Called from init, popstate, and after
     // pushRoute — pushState does NOT fire popstate, so routing here must be
     // explicit rather than relying on the back/forward listener alone.
-    function applyRoute(route) {
+    async function applyRoute(route) {
       if (route.view === ROUTE_DASHBOARD) {
         document.getElementById('dashboard-view').style.display = '';
         document.getElementById('camera-title').textContent = 'Cameras';
-        document.getElementById('camera-subtitle').textContent =
-          `${cameras().length} camera${cameras().length === 1 ? '' : 's'} configured`;
         document.title = 'Cameras - CamLog';
+        const list = await cameras();
+        const n = (list || []).length;
+        document.getElementById('camera-subtitle').textContent =
+          `${n} camera${n === 1 ? '' : 's'} configured`;
         loadDashboardCatalogs();
         return;
       }
       document.getElementById('dashboard-view').style.display = 'none';
+      const galleryId = route.cameraId || servedCameraId() || 'Webcam21';
       document.getElementById('camera-title').textContent =
-        cameraDisplayName(route.cameraId);
+        cameraDisplayName(galleryId);
       document.getElementById('camera-subtitle').textContent =
-        cameraDisplayName(route.cameraId) + ' camera';
-      document.title = `${cameraDisplayName(route.cameraId)} - CamLog`;
+        cameraDisplayName(galleryId) + ' camera';
+      document.title = `${cameraDisplayName(galleryId)} - CamLog`;
       if (route.cameraId && route.cameraId !== servedCameraId()) {
         loadGalleryForCamera(route.cameraId).then(maybeOpenDeepLink);
       } else {
@@ -2480,10 +2558,10 @@
       const isDog = path.includes('Webcam22') || host.includes('dogcam');
       return {
         isDog,
-        title: isDog ? 'Dogcam Live Feed' : 'Webcam Live Feed',
-        subtitle: isDog ? 'Monitoring backyard and dog area' : 'Monitoring front gate area',
+        title: isDog ? 'Back' : 'Front',
+        subtitle: isDog ? 'Yard' : 'Front gate',
         ip: isDog ? '10.0.0.22' : '10.0.0.21',
-        switchLabel: isDog ? 'Switch to Webcam Feed' : 'Switch to Dogcam Feed',
+        switchLabel: isDog ? 'Front' : 'Back',
         switchUrl: peerFeedUrl(isDog, host, window.location.protocol),
       };
     };
@@ -2497,7 +2575,7 @@
       const proto = protocol || 'https:';
       if (h.includes('dogcam')) return proto + '//' + h.replace('dogcam', 'webcam') + '/';
       if (h.includes('webcam')) return proto + '//' + h.replace('webcam', 'dogcam') + '/';
-      return isDog ? '/Webcam22/' : '/';
+      return isDog ? '/' : '/Webcam22/';
     }
     // === /pure:peerFeedUrl ===
 
@@ -2934,7 +3012,7 @@
       }
     }
 
-    // --- Dashboard (/, /cameras/) ----------------------------------------
+    // --- Dashboard (/cameras/) ----------------------------------------
     // One card per configured camera: label, live thumbnail, last-detection
     // time, and a link into that camera's gallery. Drives off /api/catalogs
     // because a dashboard page has no web root to scope relative fetches.
@@ -2954,8 +3032,9 @@
         const entries = Object.entries(resp).map(([id, cat]) => {
           const images = Array.isArray(cat.images) ? cat.images : [];
           const analysis = cat.analysis || {};
-          const last = images.length ? images[images.length - 1] : null;
-          const meta = last ? parseFilenameFields(last) : null;
+          // catalogs are newest-first (create-index.sh `ls -t`, api images[0])
+          const last = images.length ? images[0] : null;
+          const meta = last ? parseFilename(last) : null;
           return {
             id,
             label: cameraDisplayName(id),
@@ -4097,7 +4176,7 @@
       const scoped = filenamesOnDate(state.allImages, state.activeDateFilter);
       if (state.activeFilter === 'events') {
         const viewToggles = document.getElementById('view-toggles');
-        if (viewToggles) viewToggles.style.display = 'none';
+        if (viewToggles && !viewToggles.closest('#blacklist-dropdown')) viewToggles.style.display = 'none';
         if (typeof updateFilterActiveBanner === 'function') updateFilterActiveBanner();
         renderEventsView(scoped);
         afterPaint(() => renderActivityChart());
@@ -4144,7 +4223,7 @@
       // image grid; the Timeline tab is a bespoke visit list that ignores
       // them, so hide them there to avoid dead buttons.
       const viewToggles = document.getElementById('view-toggles');
-      if (viewToggles) viewToggles.style.display =
+      if (viewToggles && !viewToggles.closest('#blacklist-dropdown')) viewToggles.style.display =
         state.activeFilter === 'events' ? 'none' : '';
 
       // Timeline tab renders state-change events instead of the grid
@@ -4299,9 +4378,14 @@
       // detector labels the fast pass actually saw — a visit is *something*,
       // even before the deep pass runs. HA flags stay the primary source.
       if (!facts.length) {
-        const yolo = (a._yolo || a);
-        const seen = Object.keys(yolo).filter(k => yolo[k] === true
-          && k !== 'fast_pass' && !k.startsWith('_'));
+        let seen = [];
+        if (Array.isArray(a._yolo)) {
+          seen = a._yolo.filter(k => typeof k === 'string' && k && k !== 'fast_pass' && !String(k).startsWith('_'));
+        } else {
+          const yolo = (a._yolo && typeof a._yolo === 'object') ? a._yolo : a;
+          seen = Object.keys(yolo).filter(k => yolo[k] === true
+            && k !== 'fast_pass' && !k.startsWith('_'));
+        }
         if (seen.length) push(seen.join(', '));
       }
       return facts.join('. ');
@@ -4546,6 +4630,10 @@
         const kind = emptyStateKind({ filtersActive });
         let msg = es.message;
         let actions = es.showReset ? '<button class="btn" id="empty-reset">Clear all filters</button>' : '';
+        if (!filtersActive && dates.length > 1) {
+          msg = 'No object visits on this day.';
+          actions += '<button class="btn" id="empty-all-dates">All dates</button>';
+        }
         if (state.blacklist.length) {
           msg += ` (${state.blacklist.length} label${state.blacklist.length !== 1 ? 's are' : ' is'} hidden via Settings.)`;
           actions += '<button class="btn" id="empty-unhide">Unhide all labels</button>';
@@ -4771,7 +4859,7 @@
       const img = params.get('image');
       if (img) {
         if (state.allImages.includes(img)) {
-          openEventPlayer({ label: 'Frame', type: '', frames: [img] });
+          openEventPlayer({ label: 'Frame', type: '', caption: entryCaption(state.analysis[img]), frames: [img] });
         } else {
           showToast('That image is no longer available.');
         }
@@ -4818,22 +4906,17 @@
             </span>`;
         });
 
-        // Home Assistant flags from e2b deep-pass (after YOLO/Gemma labels)
+        // Home Assistant flags: one scene line, not a stack of purple chips.
         if (analysis._llm || analysis._llm_skip) {
           const haFlags = getHAFlags(analysis);
-          haFlags.forEach(({ label, value, isString }) => {
-            const icon = 'zap';
-            const cls = isString ? 'tag-ha-string' : 'tag-ha';
-            const displayLabel = label.replace(/_/g, ' ');
-            const displayValue = isString ? `: ${value}` : '';
-            detectionsHtml += `
-              <span class="badge badge-ha ${cls}" aria-label="${escapeHtml('HA ' + displayLabel + displayValue)}">
-                <i data-lucide="${icon}" aria-hidden="true"></i>
-                <span style="text-transform: capitalize;" aria-hidden="true">${escapeHtml(displayLabel)}${escapeHtml(displayValue)}</span>
-              </span>`;
-          });
+          if (haFlags.length) {
+            const scene = haFlags.map(({ label, value, isString }) => {
+              const name = label.replace(/_/g, ' ');
+              return isString ? `${name}: ${value}` : name;
+            }).join(' · ');
+            detectionsHtml += `<span class="scene-line">${escapeHtml(scene)}</span>`;
+          }
         }
-
         if (detectionsHtml === '') {
           // No object badges -> show a calm state instead of an empty middle,
           // including explicit negatives (the common case).
@@ -4863,7 +4946,7 @@
             <span class="row-ago">${escapeHtml(ago)}</span>
           </div>
           <div class="card-actions" onclick="event.stopPropagation()">
-            <button type="button" class="action-icon-btn pin-btn ${state.pins.has(filename) ? 'pinned' : ''}" title="Pin (never auto-delete)" aria-label="Pin (never auto-delete)">
+            <button type="button" class="action-icon-btn pin-btn ${state.pins.has(filename) ? 'pinned' : ''}" title="${state.pins.has(filename) ? 'Unpin (allow auto-delete)' : 'Pin (never auto-delete)'}" aria-label="${state.pins.has(filename) ? 'Unpin (allow auto-delete)' : 'Pin (never auto-delete)'}">
               <i data-lucide="pin"></i>
             </button>
             <button type="button" class="action-icon-btn del-btn" title="Delete image" aria-label="Delete image">
@@ -4968,7 +5051,11 @@
       try {
         await apiPost('/api/pin', { filename, pinned }, true);
         if (pinned) state.pins.add(filename); else state.pins.delete(filename);
-        card.querySelector('.pin-btn').classList.toggle('pinned', pinned);
+        const pinBtn = card.querySelector('.pin-btn');
+        pinBtn.classList.toggle('pinned', pinned);
+        const pinName = pinned ? 'Unpin (allow auto-delete)' : 'Pin (never auto-delete)';
+        pinBtn.title = pinName;
+        pinBtn.setAttribute('aria-label', pinName);
         showToast(pinned ? 'Pinned - excluded from auto-cleanup' : 'Unpinned');
       } catch (e) {
         showToast('Pin failed - is the API service running?');
@@ -4989,8 +5076,12 @@
     const parkedMaskToggle = document.getElementById('parked-mask-toggle');
     const porchMaskToggle = document.getElementById('porch-mask-toggle');
     const thisCameraKind = () => {
+      const id = (currentRoute().cameraId || servedCameraId() || '');
+      const cached = camerasCache && camerasCache.find(c => c.id === id);
+      if (cached && cached.kind) return cached.kind;
       const t = (document.getElementById('camera-title') || {}).textContent || '';
-      return /dogcam/i.test(t) ? 'back' : 'front';
+      if (/back/i.test(t) || /webcam22/i.test(id)) return 'back';
+      return 'front';
     };
     const regionIdOf = (r) => {
       if (r && r.id) return r.id;
@@ -5152,6 +5243,7 @@
     const zoneSave = document.getElementById('zone-editor-save');
     let zoneClicks = [];
     let zoneEditId = 'parked_car';
+    let zoneRelease = null;
     const zoneNeed = () => zoneEditId === 'porch' ? 4 : 3;
     function zoneSetPoly(pts) {
       zonePoly.setAttribute('points', pts.map(p => p[0] + ',' + p[1]).join(' '));
@@ -5166,6 +5258,9 @@
     function closeZoneEditor() {
       zoneEditor.hidden = true;
       zoneClicks = [];
+      if (zoneRelease) { zoneRelease(); zoneRelease = null; }
+      const settingsBtn = document.getElementById('btn-manage-blacklist');
+      if (settingsBtn && typeof settingsBtn.focus === 'function') settingsBtn.focus();
     }
     function openZoneEditor(id) {
       const file = (state.allImages || [])[0];
@@ -5191,7 +5286,11 @@
           ? 'Click four corners of the grey tiled porch. Path and street stay outside.'
           : 'Click three corners around the parked car. Keep the street outside.');
       zoneEditor.hidden = false;
-      document.getElementById('blacklist-dropdown').classList.remove('active');
+      const settingsBtn = document.getElementById('btn-manage-blacklist');
+      const settingsMenu = document.getElementById('blacklist-dropdown');
+      if (settingsMenu) setPopoverOpen('blacklist', settingsMenu, settingsBtn, false);
+      if (zoneRelease) zoneRelease();
+      zoneRelease = trapFocus(zoneEditor);
     }
     zoneImg.addEventListener('click', (ev) => {
       const need = zoneNeed();
@@ -5311,6 +5410,12 @@
         wrapper.classList.toggle('range-default', isDefault);
         wrapper.classList.toggle('range-collapsed',
           timeRangeCollapsed(state.timeStart, state.timeEnd, state.timeRangeExpanded));
+        const expandBtn = document.getElementById('btn-expand-time');
+        if (expandBtn) {
+          const open = !wrapper.classList.contains('range-collapsed');
+          expandBtn.setAttribute('aria-expanded', String(open));
+          expandBtn.setAttribute('aria-label', open ? 'Hide time-of-day filters' : 'Show time-of-day filters');
+        }
       }
     }
 
@@ -5374,6 +5479,12 @@
       };
       const resetBtn = document.getElementById('empty-reset');
       if (resetBtn) resetBtn.onclick = () => resetAllFilters();
+      const allDatesBtn = document.getElementById('empty-all-dates');
+      if (allDatesBtn) allDatesBtn.onclick = () => {
+        state.activeDateFilter = 'all';
+        if (typeof renderDateSidebar === 'function') renderDateSidebar();
+        applyFiltersAndSearch();
+      };
 
       lucide.createIcons();
     }
@@ -5455,7 +5566,8 @@
       // only on a fresh open, not when arrow-nav re-enters with the dialog open.
       // Also stash the filename: the grid can re-render (auto-refresh) while the
       // dialog is open, replacing the card node, so we re-find it by filename.
-      if (!lightbox.classList.contains('active')) {
+      const alreadyOpen = lightbox.classList.contains('active');
+      if (!alreadyOpen) {
         lightboxOpener = document.activeElement;
         lightboxOpenerFilename = filename;
       }
@@ -5524,7 +5636,7 @@
 
       lightbox.classList.add('active');
       document.body.style.overflow = 'hidden';
-      lightboxRelease = trapFocus(lightbox);  // focus in + trap Tab; restored on close
+      if (!alreadyOpen) lightboxRelease = trapFocus(lightbox);  // first open only
 
       if (state.isSlideshowPlaying) {
         pauseSlideshow();
@@ -5911,9 +6023,9 @@
       window.addEventListener('popstate', () => applyRoute(currentRoute()));
 
       // --- Router: which view does this URL ask for? ---------------------
-      // `/` and `/cameras/` -> dashboard; `/cameras/<id>/` -> that camera's
-      // gallery. Switching is client-side (history.pushState), so deep links
-      // keep working and nginx's catch-all already serves them.
+      // `/cameras/` -> dashboard; `/` and `/cameras/<id>/` -> gallery.
+      // `/` is the nginx Front gallery (relative images.json). Switching is
+      // client-side (history.pushState), so deep links keep working.
       applyRoute(currentRoute());
       startPolling();
       startEventStream();
@@ -6043,10 +6155,6 @@
 
       sliderStart.addEventListener('input', (e) => {
         state.timeStart = parseInt(e.target.value);
-        if (state.timeStart > state.timeEnd) {
-          state.timeEnd = state.timeStart;
-          sliderEnd.value = state.timeEnd;
-        }
         updateSliderLabel();
         if (window.syncTimePills) window.syncTimePills();
         applyFiltersAndSearch();
@@ -6054,10 +6162,6 @@
 
       sliderEnd.addEventListener('input', (e) => {
         state.timeEnd = parseInt(e.target.value);
-        if (state.timeEnd < state.timeStart) {
-          state.timeStart = state.timeEnd;
-          sliderStart.value = state.timeStart;
-        }
         updateSliderLabel();
         if (window.syncTimePills) window.syncTimePills();
         applyFiltersAndSearch();
@@ -6076,12 +6180,22 @@
       // At the all-day default, clicking the header folds/unfolds the pills +
       // dual-range (the Reset button is hidden then — it'd be a no-op anyway).
       const sliderHeader = document.querySelector('.time-slider-wrapper .slider-header');
+      const expandTime = () => {
+        if (!timeRangeIsDefault(state.timeStart, state.timeEnd)) return;
+        state.timeRangeExpanded = !state.timeRangeExpanded;
+        updateSliderLabel();
+      };
       if (sliderHeader) {
         sliderHeader.addEventListener('click', (e) => {
           if (e.target.closest('#btn-reset-time')) return;
-          if (!timeRangeIsDefault(state.timeStart, state.timeEnd)) return;
-          state.timeRangeExpanded = !state.timeRangeExpanded;
-          updateSliderLabel();
+          expandTime();
+        });
+      }
+      const expandBtn = document.getElementById('btn-expand-time');
+      if (expandBtn) {
+        expandBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          expandTime();
         });
       }
 

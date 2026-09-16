@@ -11,8 +11,8 @@ assert.strictEqual(peerFeedUrl(true, 'dogcam.example.org', 'https:'),
   'https://webcam.example.org/');
 assert.strictEqual(peerFeedUrl(false, 'webcam.example.org', 'http:'),
   'http://dogcam.example.org/');
-assert.strictEqual(peerFeedUrl(true, '192.168.1.8', 'http:'), '/Webcam22/');
-assert.strictEqual(peerFeedUrl(false, 'localhost', 'http:'), '/');
+assert.strictEqual(peerFeedUrl(true, '192.168.1.8', 'http:'), '/');
+assert.strictEqual(peerFeedUrl(false, 'localhost', 'http:'), '/Webcam22/');
 assert.ok(!html.includes('example.duckdns.org'),
   'index.html must not hardcode example.duckdns.org');
 
