@@ -116,8 +116,9 @@ idle_sweep &
 # Initial run on startup
 run_analysis &
 
-# Watch for new image creations
-nice -n 10 inotifywait -m -e create --format '%w%f' "$IMAGE_DIR" | while read new_image
+# Watch close_write/moved_to: Hikvision FTP STOR creates then writes; CREATE
+# fires on a truncated JPEG. Prefer close of a complete file (or atomic rename).
+nice -n 10 inotifywait -m -e close_write,moved_to --format '%w%f' "$IMAGE_DIR" | while read new_image
 do
     if [[ $new_image =~ \.(jpg|jpeg|png|gif)$ ]]; then
         echo "New image detected: $new_image. Triggering analysis..."

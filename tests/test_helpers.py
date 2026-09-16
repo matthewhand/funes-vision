@@ -331,6 +331,13 @@ class TestPersistRow(unittest.TestCase):
             finally:
                 pipeline_events.EVENTS_FILE = orig_ev
 
+    def test_imread_none_skips_negative_persist(self):
+        ai = analyze_images
+        self.assertFalse(bool(ai.FAST_PASS_UNREADABLE))
+        self.assertIsNone(ai.negative_fast_pass_row(ai.FAST_PASS_UNREADABLE))
+        self.assertEqual(ai.negative_fast_pass_row({}), {"fast_pass": "negative"})
+        self.assertEqual(ai.negative_fast_pass_row(None), {"fast_pass": "negative"})
+
 
 class TestAtomicIO(unittest.TestCase):
     """The audit-trail files are read live by the API and written by possibly

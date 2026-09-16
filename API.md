@@ -19,13 +19,19 @@ please update this file in the same change.
 
 ### `GET /api/pins`
 Sorted list of pinned filenames.
+- **Query** `?camera=<id>` optional; omitted (or `all`) returns every camera's pins
 - **200** → `["10.0.0.21_..._MOTDEC.jpg", ...]`
+- **400** → `{"error": "unknown camera ..."}` if `camera` is not a known id
 
 ### `POST /api/pin`
 Pin or unpin an image (pins are excluded from auto-cleanup).
+Requires `?camera=<id>` (folder basename from `GET /api/cameras`). Writing without a camera is not supported.
+- **Query** `?camera=<id>` **required**
 - **Body** `{"filename": "<name>", "pinned": true|false}`
 - **200** → `{"ok": true, "pinned": true|false}` (the resulting state)
-- **404** → `{"error": "image not found"}` if the filename isn't in a camera dir
+- **404** → `{"error": "image not found"}` if the filename isn't in that camera's dir
+- **400** → `{"error": "camera is required for this endpoint (known: ...)"}` if `camera` is missing
+- **400** → `{"error": "unknown camera ..."}` if `camera` is not a known id
 - **400** → `{"error": "bad request"}` on unparseable JSON
 
 `filename` must be a bare basename (no path separators, no leading `.`); path
@@ -33,13 +39,36 @@ traversal is rejected.
 
 ### `POST /api/delete`
 Permanently remove an image and its thumbnail, and unpin it.
+Requires `?camera=<id>` (same as pin).
+- **Query** `?camera=<id>` **required**
 - **Body** `{"filename": "<name>"}`
 - **200** → `{"ok": true}`
 - **404** → `{"error": "image not found"}`
+- **400** → `{"error": "camera is required for this endpoint (known: ...)"}` if `camera` is missing
+- **400** → `{"error": "unknown camera ..."}` if `camera` is not a known id
+
+### `GET /api/cameras`
+Configured watch dirs. `id` is the folder basename (`Webcam21`, ...) — the value
+`?camera=` resolves against. `kind` is `front`/`back` (settings ignore-regions
+and HA schema), kept separate so renaming a folder does not break zones.
+- **200** → `[{id, kind, label, source_dir, index}, ...]`
+
+### `GET /api/catalogs`
+One camera's `images` / `analysis` / `bursts` / `pins` plus `thumbUrl` (relative
+path to the latest thumb, so a dashboard at `/` can load another camera's card).
+Missing catalog files are empty (`[]` for images/pins, `{}` for analysis/bursts),
+not errors. A camera that has never been swept is a valid empty payload.
+- **Query** `?camera=<id>` optional; omitted (or `all`) returns every camera
+  keyed by id
+- **200** (scoped) → `{images, analysis, bursts, pins, thumbUrl}`
+- **200** (all) → `{ "<id>": {images, analysis, bursts, pins, thumbUrl}, ... }`
+- **400** → `{"error": "unknown camera ..."}` if `camera` is not a known id
 
 ### `GET /api/settings`
-The mutable settings subset only.
-- **200** → `{"fast_pass_engine", "deep_backfill", "deep_passes_enabled", "burst_summaries_enabled", "idle_sweep_seconds", "ignore_regions"}`
+The mutable settings subset, plus a live `cameras` registry (not POST-able).
+- **200** → `{"fast_pass_engine", "deep_backfill", "deep_passes_enabled", "burst_summaries_enabled", "idle_sweep_seconds", "ignore_regions", "cameras"}`
+  `cameras` is `[{id, kind, label, source_dir, index}, ...]` from the process's
+  `watch_dirs` (folder basename = `id`; `kind` is front/back).
 
 ### `POST /api/settings`
 Update one or more mutable settings (validated; others ignored).
@@ -58,7 +87,11 @@ Update one or more mutable settings (validated; others ignored).
     Empty list = no mask.
 - **200** → `{"ok": true, ...changed}`
 - **400** → `{"error": "<key> must be <choices|range>"}` on an invalid value,
-  or `{"error": "no recognized settings in payload"}` if nothing applied
+  or `{"error": "no recognized settings in payload"}` if nothing applied.
+  Invalid `ignore_regions` uses a list-shape message (`camera`, `polygon[3+]`,
+  `labels?`, `enabled?`, `mode?`, `scan?`, `id?`), not the min..max template.
+- **409** → `{"error": "settings.json is unreadable; refusing to overwrite"}`
+  if the file is present but corrupt; bytes on disk are unchanged.
 
 ### `GET /api/integrations`
 **Redacted** integration config — presence of tokens, never their values.
@@ -129,7 +162,11 @@ Live pipeline snapshot. Shape (keys may be absent if a source is unavailable):
   `{ts, dir, count, bytes_freed}` (Unix seconds, camera basename, images
   removed, bytes freed). Written by `apply_retention` on full sweeps and
   `--retention-only` (cron watchdog).
-- **200** always.
+- **200** on success. **400** `{"error": "unknown camera ..."}` if `?camera=`
+  is present and is not a known id (`_camera_param` runs before the snapshot).
+- `watch_dirs` and `cameras[]` come from **import-time** `WATCH_DIRS`. `settings`
+  is re-read from disk each request, so the two can disagree until the API restarts
+  after a `watch_dirs` edit.
 
 ### `GET /api/health`
 Compact health for an external uptime monitor (and the cron watchdog).
@@ -137,6 +174,8 @@ Compact health for an external uptime monitor (and the cron watchdog).
 - **503** → same shape with `"status": "degraded"` — **body is still JSON**;
   clients must not treat HTTP 503 as “no response” (e.g. avoid bare `curl -f`
   if you need the checks object).
+- **400** → `{"error": "unknown camera ..."}` if `?camera=` is present and unknown
+  (same `_camera_param` gate as `/api/status`; monitors should omit `camera`).
 - `checks` → `{inotify, llm_reachable, recent_sweep, disk_space}` (booleans;
   `llm_reachable` is skipped/true when deep passes are off;
   `recent_sweep` is true when `last_sweep_age_s` &lt; 1 h;
