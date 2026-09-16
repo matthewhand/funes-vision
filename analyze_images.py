@@ -134,8 +134,8 @@ def negative_fast_pass_row(fp_results):
 
 def fast_pass(image_path):
     try:
-        if face_cascade is None or body_cascade is None or cat_cascade is None:
-            return {}
+        if cv2 is None or face_cascade is None or body_cascade is None or cat_cascade is None:
+            return FAST_PASS_UNREADABLE
         img = cv2.imread(image_path)
         if img is None:
             return FAST_PASS_UNREADABLE
@@ -161,7 +161,7 @@ def fast_pass(image_path):
         return results
     except Exception as e:
         print(f"Fast pass error: {e}")
-        return {}
+        return FAST_PASS_UNREADABLE
 
 # --- YOLO fast pass (yolov4-tiny via OpenCV DNN, COCO classes) ---
 YOLO_CLASSES = {0: "person", 2: "car", 14: "bird", 15: "cat", 16: "dog"}
@@ -926,7 +926,10 @@ def run_deep_pass(image_path, img_name, can_run_chain, api_key, trigger, fp_labe
     started = time.time()
     centres = {}
     if fp_labels is None:
-        fp = fast_pass_dispatch(image_path) or {}
+        fp = fast_pass_dispatch(image_path)
+        if fp is FAST_PASS_UNREADABLE:
+            return None, 0
+        fp = fp or {}
         fp_labels, centres = labels_and_centres(fp)
     elif isinstance(fp_labels, dict):
         fp_labels, centres = labels_and_centres(fp_labels)

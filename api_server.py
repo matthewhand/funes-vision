@@ -641,8 +641,11 @@ class Handler(BaseHTTPRequestHandler):
                     out[key] = json.load(f)
             except (OSError, ValueError):
                 out[key] = [] if key in ("images", "pins") else {}
-        images = out.get("images") or []
-        if images:
+        images = out.get("images")
+        if not isinstance(images, list):
+            images = []
+            out["images"] = images
+        if images and isinstance(images[0], str):
             latest = images[0]
             out["thumbUrl"] = f"/cameras/{camera_id}/thumbs/{quote(str(latest))}"
         else:
@@ -663,6 +666,8 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 settings = json.load(open(SETTINGS_FILE))
             except (OSError, ValueError):
+                settings = {}
+            if not isinstance(settings, dict):
                 settings = {}
             out = {k: settings.get(k) for k in MUTABLE_SETTINGS}
             out["cameras"] = cameras()
