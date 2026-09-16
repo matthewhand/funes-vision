@@ -1953,6 +1953,10 @@
     <header>
       <div class="header-content">
         <div class="logo-area">
+          <button class="btn" id="sidebar-toggle" aria-label="Show or hide the dates & activity panels" aria-pressed="false" title="Dates &amp; activity panels">
+            <i data-lucide="panel-left"></i>
+            <span class="sidebar-toggle-label">Panels</span>
+          </button>
           <div class="logo-icon">
             <i data-lucide="camera"></i>
           </div>
@@ -1966,6 +1970,16 @@
           </button>
         </div>
 
+        <!-- Tabs + the count of what they're showing, kept together -->
+        <div class="tab-cluster" style="display: flex; align-items: center; gap: var(--space-3);">
+          <div class="tab-group" id="filter-tabs" role="group" aria-label="Gallery view">
+            <button type="button" class="tab-btn active" data-filter="events" aria-pressed="true" title="Object visits grouped over time">Timeline</button>
+            <button type="button" class="tab-btn" data-filter="objects" aria-pressed="false" title="Frames with a detected object">Objects</button>
+            <button type="button" class="tab-btn" data-filter="all" aria-pressed="false" title="Every captured snapshot">All</button>
+          </div>
+          <span class="stats-info" id="stats-label">Loading snapshots…</span>
+        </div>
+
         <div class="controls-wrapper">
 
           <div class="search-box">
@@ -1976,6 +1990,200 @@
             </button>
           </div>
           
+          <!-- Right-aligned actions cluster: Filters + Settings/Integrations/AI -->
+          <div class="toolbar-actions" id="toolbar-actions">
+            <div class="filters-menu" style="position: relative; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+              <button class="btn" id="btn-filters" aria-haspopup="true" aria-expanded="false" style="display: none;" title="Filter the gallery by detected object">
+                <i data-lucide="filter"></i><span>Filters</span>
+                <span id="filters-active-count" class="filters-count" hidden></span>
+              </button>
+              <span id="active-filters-summary" class="active-filters-summary" aria-live="polite"></span>
+              <!-- Always-visible when any filter dimension is active (search/date/time/objects) -->
+              <span id="filter-active-banner" class="filter-active-banner" hidden>
+                <span id="filter-active-banner-text"></span>
+                <button type="button" id="filter-active-clear" class="chip__x" title="Clear all filters" aria-label="Clear all filters">✕</button>
+              </span>
+              <div class="menu" id="filters-dropdown" role="dialog" aria-label="Filter by object">
+                <div class="menu-section-title">Filter by object</div>
+                <div id="object-filter-panel" style="display: none; flex-direction: column; gap: 4px; align-items: flex-start;">
+                  <button type="button" id="sticky-toggle" class="filter-meta-btn" title="When on, toggle several object filters at once (match any). When off, one at a time."></button>
+                  <div class="chip-row" id="object-filters">
+                    <!-- Buttons injected by JS -->
+                  </div>
+                  <button type="button" id="hide-filters-toggle" class="filter-meta-btn" title="Hide or show the object filter chips"></button>
+                </div>
+              </div>
+            </div>
+            
+            <div class="blacklist-menu">
+              <button class="btn" id="btn-manage-blacklist" aria-label="Settings" aria-haspopup="true" aria-expanded="false" title="Detection settings: hidden labels, merging, detector, backfill, intervals">
+                <i data-lucide="settings-2"></i>
+                <span>Settings</span>
+              </button>
+              <div class="blacklist-dropdown" id="blacklist-dropdown" role="dialog" aria-label="Detection settings">
+              <div class="menu-section-title">Grid size</div>
+              <div class="segmented view-toggles" id="view-toggles">
+              <button class="view-btn" data-view="small" aria-label="Small Cards" aria-pressed="false" title="Small Cards">
+                <i data-lucide="layout-grid"></i>
+              </button>
+              <button class="view-btn active" data-view="medium" aria-label="Medium Grid" aria-pressed="true" title="Medium Grid">
+                <i data-lucide="grid"></i>
+              </button>
+              <button class="view-btn" data-view="large" aria-label="Large Grid" aria-pressed="false" title="Large Grid">
+                <i data-lucide="layout-template"></i>
+              </button>
+              <button class="view-btn" data-view="list" aria-label="List View" aria-pressed="false" title="List View">
+                <i data-lucide="list"></i>
+              </button>
+            </div>
+                <div class="menu-section-title">
+                  Hide / Show Labels
+                </div>
+                <div id="blacklist-list">
+                  <!-- Items injected by JS -->
+                </div>
+                <div class="menu-section-title with-gap">
+                  Label Merging
+                </div>
+                <div class="blacklist-item" id="alias-toggle" title="Merge equivalent labels: face/body -> person, raccoon -> dog">
+                  <span>Merge labels (&rarr;person, &rarr;dog)</span>
+                  <div class="blacklist-status"></div>
+                </div>
+                <div class="blacklist-item" id="unconfirmed-toggle" title="Also show DISPUTED detections (one model saw it, the other ruled it out). Preliminary (awaiting the vision model) hits are always shown with a '?' badge.">
+                  <span>Show unconfirmed detections</span>
+                  <div class="blacklist-status"></div>
+                </div>
+                <div class="menu-section-title with-gap" id="detector-heading">
+                  Fast Detector
+                </div>
+                <select id="detector-select" class="menu-field" aria-labelledby="detector-heading" title="Fast detector that decides who jumps the vision-model queue" style="width: 100%;">
+                  <option value="yolo">YOLO (recommended)</option>
+                  <option value="haar">Haar cascades (legacy)</option>
+                </select>
+                <div class="blacklist-item" id="deep-passes-toggle" title="Master switch for ALL vision-model analysis (priority + backfill + burst summaries). Off = detector-only, frees CPU/RAM." style="margin-top: 8px;">
+                  <span>Vision deep passes</span>
+                  <div class="blacklist-status"></div>
+                </div>
+                <div class="blacklist-item hidden-label" id="backfill-toggle" title="When idle, verify leftover empties and car-only skips (near detections first)." style="margin-top: 8px;">
+                  <span>Idle backfill</span>
+                  <div class="blacklist-status"></div>
+                </div>
+                <div class="blacklist-item hidden-label" id="burst-summaries-toggle" title="LLM caption of a multi-frame visit (last 3 images). Off by default — single-frame analysis is unchanged." style="margin-top: 8px;">
+                  <span>Multi-image summaries</span>
+                  <div class="blacklist-status"></div>
+                </div>
+                <div class="menu-section-title with-gap">
+                  Parked-car mask
+                </div>
+                <div class="blacklist-item" id="parked-mask-toggle" title="Drop YOLO car hits whose centre sits in the triangle (the parked orange SUV). A car on the street or leaving the driveway is kept.">
+                  <span>Ignore parked car</span>
+                  <div class="blacklist-status"></div>
+                </div>
+                <button type="button" class="btn" id="parked-mask-edit" style="width:100%; margin-top:6px; justify-content:center; font-size:0.75rem;">
+                  Draw triangle…
+                </button>
+                <div class="menu-section-title with-gap">
+                  Porch zone
+                </div>
+                <div class="blacklist-item" id="porch-mask-toggle" title="Person YOLO centre must sit on the grey tiled porch. Path, driveway, and street are not porch — e2b is not asked.">
+                  <span>Gate porch by tiles</span>
+                  <div class="blacklist-status"></div>
+                </div>
+                <button type="button" class="btn" id="porch-mask-edit" style="width:100%; margin-top:6px; justify-content:center; font-size:0.75rem;">
+                  Draw porch…
+                </button>
+                <div class="menu-section-title with-gap">
+                  Intervals
+                </div>
+                <label style="display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:0.78rem; padding:2px 0;" title="Server: seconds between idle catch-up sweeps">
+                  Idle sweep (s)
+                  <input type="number" id="sweep-interval-input" class="menu-field" min="15" max="3600" step="15" value="60" style="width:70px;">
+                </label>
+                <label style="display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:0.78rem; padding:2px 0;" title="This browser: seconds between AI status polls">
+                  Status poll (s)
+                  <input type="number" id="poll-interval-input" class="menu-field" min="5" max="300" step="5" value="15" style="width:70px;">
+                </label>
+              </div>
+            </div>
+
+            <div class="blacklist-menu">
+              <button class="btn" id="btn-integrations" aria-label="Integrations" aria-haspopup="true" aria-expanded="false" title="Outbound integrations (Slack, ...)">
+                <i data-lucide="share-2"></i>
+                <span>Integrations</span>
+              </button>
+              <div class="blacklist-dropdown" id="integrations-dropdown" role="dialog" aria-label="Integrations" style="width: 300px;">
+                <div class="menu-section-title">
+                  Integrations
+                </div>
+                <div style="font-size: 0.72rem; color: var(--text-secondary); margin-bottom: 10px; line-height: 1.5;">
+                  Post timeline activity to external services. MQTT and ntfy are config-file only (no panel here).
+                </div>
+
+                <!-- Slack integration card -->
+                <div style="border: 1px solid var(--border-color); border-radius: 8px; padding: 10px;">
+                  <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
+                    <strong style="font-size:0.85rem;">Slack</strong>
+                    <span id="slack-status" style="font-size:0.68rem; color:var(--text-secondary);">checking&hellip;</span>
+                    <span id="slack-will-post" style="font-size:0.62rem; color:var(--text-secondary); margin-left:6px;"></span>
+                  </div>
+                  <div style="font-size:0.68rem; color:var(--text-secondary); margin-bottom:8px; line-height:1.5;">
+                    Optional. <b>context</b> posts a visit only after a multi-image summary (off by default — silent). <b>objects</b> pings each new person/dog/cat/bird hit. <b>all</b> uses that same urgent path today (empties and parked cars do not post).
+                  </div>
+                  <label style="display:block; font-size:0.72rem; margin-bottom:6px;">Bot token (xoxb-)
+                    <input type="password" id="slack-bot-token" autocomplete="off" placeholder="leave blank to keep current" style="width:100%; margin-top:2px; padding:5px; background:var(--bg-tertiary); color:var(--text-primary); border:1px solid var(--border-color); border-radius:4px; font-size:0.75rem;">
+                  </label>
+                  <label style="display:block; font-size:0.72rem; margin-bottom:6px;">App token (xapp-)
+                    <input type="password" id="slack-app-token" autocomplete="off" placeholder="leave blank to keep current" style="width:100%; margin-top:2px; padding:5px; background:var(--bg-tertiary); color:var(--text-primary); border:1px solid var(--border-color); border-radius:4px; font-size:0.75rem;">
+                  </label>
+                  <label style="display:block; font-size:0.72rem; margin-bottom:6px;">Channel ID
+                    <input type="text" id="slack-channel" autocomplete="off" placeholder="C0123ABCD" style="width:100%; margin-top:2px; padding:5px; background:var(--bg-tertiary); color:var(--text-primary); border:1px solid var(--border-color); border-radius:4px; font-size:0.75rem;">
+                  </label>
+                  <label style="display:block; font-size:0.72rem; margin-bottom:6px;">Public site URL
+                    <input type="text" id="slack-base-url" autocomplete="off" placeholder="https://dogcam.example.org" style="width:100%; margin-top:2px; padding:5px; background:var(--bg-tertiary); color:var(--text-primary); border:1px solid var(--border-color); border-radius:4px; font-size:0.75rem;">
+                  </label>
+                  <label style="display:block; font-size:0.72rem; margin-bottom:6px;">Notify on
+                    <select id="slack-notify-mode" style="width:100%; margin-top:2px; padding:5px; background:var(--bg-tertiary); color:var(--text-primary); border:1px solid var(--border-color); border-radius:4px; font-size:0.75rem;">
+                      <option value="context">Context — sequences only (quietest)</option>
+                      <option value="objects">Object detections — each new person/dog/cat/bird hit</option>
+                      <option value="all">All — same urgent hits as objects (not empties or parked cars)</option>
+                    </select>
+                  </label>
+                  <div style="font-size:0.64rem; color:var(--text-secondary); margin-bottom:6px; line-height:1.4;">
+                    Per-image modes alert on newly-captured frames only, not the historical backfill.
+                  </div>
+                  <div class="blacklist-item hidden-label" id="slack-enabled-toggle" style="margin-top:6px;">
+                    <span>Enabled</span>
+                    <div class="blacklist-status"></div>
+                  </div>
+                  <div style="display:flex; gap:6px; margin-top:10px;">
+                    <button class="btn" id="slack-save" style="flex:1;">Save</button>
+                    <button class="btn" id="slack-test" style="flex:1;">Send test</button>
+                  </div>
+                  <div id="slack-last-delivery" style="font-size:0.66rem; margin-top:8px; text-align:center;"></div>
+                </div>
+              </div>
+            </div>
+
+            <a class="btn" id="btn-help" href="USER-GUIDE.html" target="_blank" rel="noopener"
+               title="How to use this gallery" aria-label="How to use this gallery">
+              <i data-lucide="book-open"></i>
+              <span>Help</span>
+            </a>
+
+            <div class="blacklist-menu">
+              <button class="btn" id="btn-system-status" aria-haspopup="true" aria-expanded="false" aria-label="Pipeline status" title="Pipeline status">
+                <span id="ai-live-dot" class="status-dot"></span>
+                <span id="ai-live-label">AI</span>
+              </button>
+              <div class="blacklist-dropdown" id="system-dropdown" role="dialog" aria-label="Pipeline status">
+                <div class="menu-section-title">
+                  Pipeline Status
+                </div>
+                <div id="system-status-content" style="font-size: 0.78rem; line-height: 1.4;"></div>
+              </div>
+            </div>
+          </div>
+
           <button id="btn-refresh" class="btn" aria-label="Force Reload" title="Force Reload">
             <i data-lucide="refresh-cw" id="refresh-icon"></i>
             <span>Refresh</span>
@@ -1991,8 +2199,8 @@
     </header>
 
     <div class="workspace">
-      <!-- Dashboard: one card per configured camera. Visible at / and
-           /cameras/; the gallery (sidebar + grid below) is hidden. -->
+      <!-- Dashboard: one card per configured camera. Visible at /cameras/;
+           `/` is the Front gallery. -->
       <div id="dashboard-view" class="dashboard-view" style="display:none;">
         <div id="dashboard-grid" class="dashboard-grid"></div>
       </div>
@@ -2038,199 +2246,9 @@
       <!-- Main feeds area -->
       <div class="content-area">
       <div class="toolbar-bar">
-        <button class="btn" id="sidebar-toggle" aria-label="Show or hide the dates & activity panels" aria-pressed="false" title="Dates &amp; activity panels">
-          <i data-lucide="panel-left"></i>
-          <span class="sidebar-toggle-label">Panels</span>
-        </button>
-        <!-- Tabs + the count of what they're showing, kept together -->
-        <div class="tab-cluster" style="display: flex; align-items: center; gap: var(--space-3);">
-          <div class="tab-group" id="filter-tabs" role="group" aria-label="Gallery view">
-            <button type="button" class="tab-btn active" data-filter="events" aria-pressed="true" title="Object visits grouped over time">Timeline</button>
-            <button type="button" class="tab-btn" data-filter="objects" aria-pressed="false" title="Frames with a detected object">Objects</button>
-            <button type="button" class="tab-btn" data-filter="all" aria-pressed="false" title="Every captured snapshot">All</button>
-          </div>
-          <span class="stats-info" id="stats-label">Loading snapshots…</span>
-        </div>
-
-        <!-- Right-aligned actions cluster: Filters + Settings/Integrations/AI -->
-        <div class="toolbar-actions" id="toolbar-actions">
-          <div class="filters-menu" style="position: relative; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-            <button class="btn" id="btn-filters" aria-haspopup="true" aria-expanded="false" style="display: none;" title="Filter the gallery by detected object">
-              <i data-lucide="filter"></i><span>Filters</span>
-              <span id="filters-active-count" class="filters-count" hidden></span>
-            </button>
-            <span id="active-filters-summary" class="active-filters-summary" aria-live="polite"></span>
-            <!-- Always-visible when any filter dimension is active (search/date/time/objects) -->
-            <span id="filter-active-banner" class="filter-active-banner" hidden>
-              <span id="filter-active-banner-text"></span>
-              <button type="button" id="filter-active-clear" class="chip__x" title="Clear all filters" aria-label="Clear all filters">✕</button>
-            </span>
-            <div class="menu" id="filters-dropdown" role="dialog" aria-label="Filter by object">
-              <div class="menu-section-title">Filter by object</div>
-              <div id="object-filter-panel" style="display: none; flex-direction: column; gap: 4px; align-items: flex-start;">
-                <button type="button" id="sticky-toggle" class="filter-meta-btn" title="When on, toggle several object filters at once (match any). When off, one at a time."></button>
-                <div class="chip-row" id="object-filters">
-                  <!-- Buttons injected by JS -->
-                </div>
-                <button type="button" id="hide-filters-toggle" class="filter-meta-btn" title="Hide or show the object filter chips"></button>
-              </div>
-            </div>
-          </div>
-          
-          <div class="blacklist-menu">
-            <button class="btn" id="btn-manage-blacklist" aria-label="Settings" aria-haspopup="true" aria-expanded="false" title="Detection settings: hidden labels, merging, detector, backfill, intervals">
-              <i data-lucide="settings-2"></i>
-              <span>Settings</span>
-            </button>
-            <div class="blacklist-dropdown" id="blacklist-dropdown" role="dialog" aria-label="Detection settings">
-              <div class="menu-section-title">
-                Hide / Show Labels
-              </div>
-              <div id="blacklist-list">
-                <!-- Items injected by JS -->
-              </div>
-              <div class="menu-section-title with-gap">
-                Label Merging
-              </div>
-              <div class="blacklist-item" id="alias-toggle" title="Merge equivalent labels: face/body -> person, raccoon -> dog">
-                <span>Merge labels (&rarr;person, &rarr;dog)</span>
-                <div class="blacklist-status"></div>
-              </div>
-              <div class="blacklist-item" id="unconfirmed-toggle" title="Also show DISPUTED detections (one model saw it, the other ruled it out). Preliminary (awaiting the vision model) hits are always shown with a '?' badge.">
-                <span>Show unconfirmed detections</span>
-                <div class="blacklist-status"></div>
-              </div>
-              <div class="menu-section-title with-gap" id="detector-heading">
-                Fast Detector
-              </div>
-              <select id="detector-select" class="menu-field" aria-labelledby="detector-heading" title="Fast detector that decides who jumps the vision-model queue" style="width: 100%;">
-                <option value="yolo">YOLO (recommended)</option>
-                <option value="haar">Haar cascades (legacy)</option>
-              </select>
-              <div class="blacklist-item" id="deep-passes-toggle" title="Master switch for ALL vision-model analysis (priority + backfill + burst summaries). Off = detector-only, frees CPU/RAM." style="margin-top: 8px;">
-                <span>Vision deep passes</span>
-                <div class="blacklist-status"></div>
-              </div>
-              <div class="blacklist-item hidden-label" id="backfill-toggle" title="When idle, verify leftover empties and car-only skips (near detections first)." style="margin-top: 8px;">
-                <span>Idle backfill</span>
-                <div class="blacklist-status"></div>
-              </div>
-              <div class="blacklist-item hidden-label" id="burst-summaries-toggle" title="LLM caption of a multi-frame visit (last 3 images). Off by default — single-frame analysis is unchanged." style="margin-top: 8px;">
-                <span>Multi-image summaries</span>
-                <div class="blacklist-status"></div>
-              </div>
-              <div class="menu-section-title with-gap">
-                Parked-car mask
-              </div>
-              <div class="blacklist-item" id="parked-mask-toggle" title="Drop YOLO car hits whose centre sits in the triangle (the parked orange SUV). A car on the street or leaving the driveway is kept.">
-                <span>Ignore parked car</span>
-                <div class="blacklist-status"></div>
-              </div>
-              <button type="button" class="btn" id="parked-mask-edit" style="width:100%; margin-top:6px; justify-content:center; font-size:0.75rem;">
-                Draw triangle…
-              </button>
-              <div class="menu-section-title with-gap">
-                Porch zone
-              </div>
-              <div class="blacklist-item" id="porch-mask-toggle" title="Person YOLO centre must sit on the grey tiled porch. Path, driveway, and street are not porch — e2b is not asked.">
-                <span>Gate porch by tiles</span>
-                <div class="blacklist-status"></div>
-              </div>
-              <button type="button" class="btn" id="porch-mask-edit" style="width:100%; margin-top:6px; justify-content:center; font-size:0.75rem;">
-                Draw porch…
-              </button>
-              <div class="menu-section-title with-gap">
-                Intervals
-              </div>
-              <label style="display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:0.78rem; padding:2px 0;" title="Server: seconds between idle catch-up sweeps">
-                Idle sweep (s)
-                <input type="number" id="sweep-interval-input" class="menu-field" min="15" max="3600" step="15" value="60" style="width:70px;">
-              </label>
-              <label style="display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:0.78rem; padding:2px 0;" title="This browser: seconds between AI status polls">
-                Status poll (s)
-                <input type="number" id="poll-interval-input" class="menu-field" min="5" max="300" step="5" value="15" style="width:70px;">
-              </label>
-            </div>
-          </div>
-
-          <div class="blacklist-menu">
-            <button class="btn" id="btn-integrations" aria-label="Integrations" aria-haspopup="true" aria-expanded="false" title="Outbound integrations (Slack, ...)">
-              <i data-lucide="share-2"></i>
-              <span>Integrations</span>
-            </button>
-            <div class="blacklist-dropdown" id="integrations-dropdown" role="dialog" aria-label="Integrations" style="width: 300px;">
-              <div class="menu-section-title">
-                Integrations
-              </div>
-              <div style="font-size: 0.72rem; color: var(--text-secondary); margin-bottom: 10px; line-height: 1.5;">
-                Post timeline activity to external services. MQTT and ntfy are config-file only (no panel here).
-              </div>
-
-              <!-- Slack integration card -->
-              <div style="border: 1px solid var(--border-color); border-radius: 8px; padding: 10px;">
-                <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
-                  <strong style="font-size:0.85rem;">Slack</strong>
-                  <span id="slack-status" style="font-size:0.68rem; color:var(--text-secondary);">checking&hellip;</span>
-                  <span id="slack-will-post" style="font-size:0.62rem; color:var(--text-secondary); margin-left:6px;"></span>
-                </div>
-                <div style="font-size:0.68rem; color:var(--text-secondary); margin-bottom:8px; line-height:1.5;">
-                  Optional. <b>context</b> posts a visit only after a multi-image summary (off by default — silent). <b>objects</b> pings each new person/dog/cat/bird hit. <b>all</b> uses that same urgent path today (empties and parked cars do not post).
-                </div>
-                <label style="display:block; font-size:0.72rem; margin-bottom:6px;">Bot token (xoxb-)
-                  <input type="password" id="slack-bot-token" autocomplete="off" placeholder="leave blank to keep current" style="width:100%; margin-top:2px; padding:5px; background:var(--bg-tertiary); color:var(--text-primary); border:1px solid var(--border-color); border-radius:4px; font-size:0.75rem;">
-                </label>
-                <label style="display:block; font-size:0.72rem; margin-bottom:6px;">App token (xapp-)
-                  <input type="password" id="slack-app-token" autocomplete="off" placeholder="leave blank to keep current" style="width:100%; margin-top:2px; padding:5px; background:var(--bg-tertiary); color:var(--text-primary); border:1px solid var(--border-color); border-radius:4px; font-size:0.75rem;">
-                </label>
-                <label style="display:block; font-size:0.72rem; margin-bottom:6px;">Channel ID
-                  <input type="text" id="slack-channel" autocomplete="off" placeholder="C0123ABCD" style="width:100%; margin-top:2px; padding:5px; background:var(--bg-tertiary); color:var(--text-primary); border:1px solid var(--border-color); border-radius:4px; font-size:0.75rem;">
-                </label>
-                <label style="display:block; font-size:0.72rem; margin-bottom:6px;">Public site URL
-                  <input type="text" id="slack-base-url" autocomplete="off" placeholder="https://dogcam.example.org" style="width:100%; margin-top:2px; padding:5px; background:var(--bg-tertiary); color:var(--text-primary); border:1px solid var(--border-color); border-radius:4px; font-size:0.75rem;">
-                </label>
-                <label style="display:block; font-size:0.72rem; margin-bottom:6px;">Notify on
-                  <select id="slack-notify-mode" style="width:100%; margin-top:2px; padding:5px; background:var(--bg-tertiary); color:var(--text-primary); border:1px solid var(--border-color); border-radius:4px; font-size:0.75rem;">
-                    <option value="context">Context — sequences only (quietest)</option>
-                    <option value="objects">Object detections — each new person/dog/cat/bird hit</option>
-                    <option value="all">All — same urgent hits as objects (not empties or parked cars)</option>
-                  </select>
-                </label>
-                <div style="font-size:0.64rem; color:var(--text-secondary); margin-bottom:6px; line-height:1.4;">
-                  Per-image modes alert on newly-captured frames only, not the historical backfill.
-                </div>
-                <div class="blacklist-item hidden-label" id="slack-enabled-toggle" style="margin-top:6px;">
-                  <span>Enabled</span>
-                  <div class="blacklist-status"></div>
-                </div>
-                <div style="display:flex; gap:6px; margin-top:10px;">
-                  <button class="btn" id="slack-save" style="flex:1;">Save</button>
-                  <button class="btn" id="slack-test" style="flex:1;">Send test</button>
-                </div>
-                <div id="slack-last-delivery" style="font-size:0.66rem; margin-top:8px; text-align:center;"></div>
-              </div>
-            </div>
-          </div>
-
-          <a class="btn" id="btn-help" href="USER-GUIDE.html" target="_blank" rel="noopener"
-             title="How to use this gallery" aria-label="How to use this gallery">
-            <i data-lucide="book-open"></i>
-            <span>Help</span>
-          </a>
-
-          <div class="blacklist-menu">
-            <button class="btn" id="btn-system-status" aria-haspopup="true" aria-expanded="false" aria-label="Pipeline status" title="Pipeline status">
-              <span id="ai-live-dot" class="status-dot"></span>
-              <span id="ai-live-label">AI</span>
-            </button>
-            <div class="blacklist-dropdown" id="system-dropdown" role="dialog" aria-label="Pipeline status">
-              <div class="menu-section-title">
-                Pipeline Status
-              </div>
-              <div id="system-status-content" style="font-size: 0.78rem; line-height: 1.4;"></div>
-            </div>
-          </div>
-        </div>
           <!-- Time-of-day Range Slider -->
+
+
           <div class="time-slider-wrapper">
             <div class="slider-header">
               <span class="slider-label"><i data-lucide="clock" style="width:14px;height:14px;"></i> Time Range: <span id="time-range-display">All day</span></span>
@@ -2254,48 +2272,8 @@
             </div>
           </div>
 
-          <div class="view-toggles-wrap" style="display: flex; align-items: center; gap: 12px; margin-left: auto;">
-            <div class="segmented view-toggles" id="view-toggles">
-              <button class="view-btn" data-view="small" aria-label="Small Cards" aria-pressed="false" title="Small Cards">
-                <i data-lucide="layout-grid"></i>
-              </button>
-              <button class="view-btn active" data-view="medium" aria-label="Medium Grid" aria-pressed="true" title="Medium Grid">
-                <i data-lucide="grid"></i>
-              </button>
-              <button class="view-btn" data-view="large" aria-label="Large Grid" aria-pressed="false" title="Large Grid">
-                <i data-lucide="layout-template"></i>
-              </button>
-              <button class="view-btn" data-view="list" aria-label="List View" aria-pressed="false" title="List View">
-                <i data-lucide="list"></i>
-              </button>
-            </div>
           </div>
         </div>
-        <script>
-        (function hoistChrome() {
-          var hc = document.querySelector('.header-content');
-          var controls = hc && hc.querySelector('.controls-wrapper');
-          var logo = hc && hc.querySelector('.logo-area');
-          if (!hc || !controls || !logo) return;
-          var tabs = document.querySelector('.tab-cluster');
-          var actions = document.getElementById('toolbar-actions');
-          var side = document.getElementById('sidebar-toggle');
-          var dens = document.getElementById('view-toggles');
-          var settings = document.getElementById('blacklist-dropdown');
-          var refresh = document.getElementById('btn-refresh');
-          if (side && side.parentNode !== logo) logo.insertBefore(side, logo.firstChild);
-          if (tabs && tabs.parentNode !== hc) hc.insertBefore(tabs, controls);
-          if (actions && refresh) controls.insertBefore(actions, refresh);
-          if (dens && settings && dens.parentNode !== settings) {
-            var title = document.createElement('div');
-            title.className = 'menu-section-title';
-            title.textContent = 'Grid size';
-            settings.insertBefore(dens, settings.firstChild);
-            settings.insertBefore(title, dens);
-            dens.style.display = '';
-          }
-        })();
-        </script>
 
         <!-- Image Grid -->
         <div class="image-grid medium" id="image-grid">
