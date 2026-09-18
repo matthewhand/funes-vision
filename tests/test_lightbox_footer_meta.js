@@ -1,6 +1,5 @@
-// Node assert test for the pure lightboxFooterMeta() helper in index.html — the
-// lightbox technical-metadata line, with date+time intentionally omitted (they're
-// in the heading via lightboxTitle, so showing them here too is redundant).
+// Node assert test for the pure lightboxFooterMeta() helper in index.html —
+// footer is caption/detected only (Channel / Event Type live in the heading).
 // Run: node tests/test_lightbox_footer_meta.js
 const fs = require('fs');
 const assert = require('assert');
@@ -13,16 +12,14 @@ eval(m[1]); // defines lightboxFooterMeta
 const meta = { channel: '01', eventType: 'Motion Detected', ip: '10.0.0.21',
                formattedDate: 'Jun 21, 2026', formattedTime: '06:08:26 pm' };
 
-// keeps the technical fields, drops date/time (no "Created"/date in the output)
 const out = lightboxFooterMeta(meta, ' | AI: No candidates');
-assert.strictEqual(out, 'Channel: 01 | Event Type: Motion Detected | AI: No candidates');
-assert.ok(!/Created|Jun 21|06:08:26/.test(out), 'footer must not repeat the heading date/time');
+assert.strictEqual(out, 'AI: No candidates');
+assert.ok(!/Channel|Event Type|Created|Jun 21|06:08:26/.test(out),
+  'footer must not repeat channel, event type, or heading date/time');
 
-// no aiText -> just the technical fields
-assert.strictEqual(lightboxFooterMeta(meta, ''),
-  'Channel: 01 | Event Type: Motion Detected');
+assert.strictEqual(lightboxFooterMeta(meta, ''), '');
+assert.strictEqual(lightboxFooterMeta(meta, ' | Detected: Person'), 'Detected: Person');
 
-// aiText but no meta fields -> strip the leading separator (no " | AI: x")
 assert.strictEqual(lightboxFooterMeta({}, ' | AI: Scanned (Clear)'), 'AI: Scanned (Clear)');
 assert.strictEqual(lightboxFooterMeta(null, ''), '');
 
