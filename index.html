@@ -688,6 +688,16 @@
       gap: 16px;
       flex-wrap: wrap;
     }
+    .toolbar-bar:has(.range-collapsed) { display: none; }
+    .logo-icon { display: none; }
+    #time-chip {
+      display: inline-flex; align-items: center; gap: 6px;
+      height: 32px; padding: 0 10px; font-size: 0.75rem;
+      color: var(--text-secondary); border: 1px solid var(--border-color);
+      border-radius: var(--radius-pill); background: transparent; cursor: pointer;
+    }
+    #time-chip[aria-expanded="true"],
+    #time-chip.is-filtered { color: var(--accent-fg); border-color: var(--accent-25); }
     /* No single toolbar child may impose a width wider than the viewport. */
     .toolbar-bar > * { min-width: 0; }
     /* The dynamic object-filter chip row must wrap (not push a >viewport
@@ -753,12 +763,10 @@
     /* nowrap: the cluster stays one row or fully collapses to icons via
        .compact (actionsOverflow) — no ragged 1.5-row wrap state. */
     .toolbar-actions { display: flex; gap: var(--space-1); align-items: center; flex-wrap: nowrap; }
-    /* Quiet chrome: operator actions are icons. Names stay on aria-label/title. */
-    #btn-refresh span,
+    /* Quiet chrome: operator actions in the header are icons. */
     #btn-filters > span:not(.filters-count),
     #btn-manage-blacklist span,
     #btn-integrations span,
-    #btn-help span,
     .sidebar-toggle-label { display: none; }
     .toolbar-actions.compact #btn-manage-blacklist span,
     .toolbar-actions.compact #btn-integrations span { display: none; }
@@ -2079,6 +2087,9 @@
             <button type="button" class="tab-btn" data-filter="objects" aria-pressed="false" title="Frames with a detected object">Objects</button>
             <button type="button" class="tab-btn" data-filter="all" aria-pressed="false" title="Every captured snapshot">All</button>
           </div>
+          <button type="button" class="btn" id="time-chip" aria-expanded="false" aria-controls="time-start" title="Time of day">
+            <i data-lucide="clock"></i><span id="time-chip-label">All day</span>
+          </button>
           <span class="stats-info" id="stats-label">Loading snapshots…</span>
         </div>
 
@@ -2205,6 +2216,10 @@
                   Status poll (s)
                   <input type="number" id="poll-interval-input" class="menu-field" min="5" max="300" step="5" value="15" style="width:70px;">
                 </label>
+                <a class="btn" id="btn-help" href="USER-GUIDE.html" target="_blank" rel="noopener"
+                   title="How to use this gallery" aria-label="How to use this gallery" style="width:100%; margin-top:8px; justify-content:center;">
+                  <i data-lucide="book-open"></i><span>Help</span>
+                </a>
               </div>
             </div>
 
@@ -2266,11 +2281,6 @@
               </div>
             </div>
 
-            <a class="btn" id="btn-help" href="USER-GUIDE.html" target="_blank" rel="noopener"
-               title="How to use this gallery" aria-label="How to use this gallery">
-              <i data-lucide="book-open"></i>
-              <span>Help</span>
-            </a>
 
             <div class="blacklist-menu">
               <button class="btn" id="btn-system-status" aria-haspopup="true" aria-expanded="false" aria-label="Pipeline status" title="Pipeline status">
@@ -2282,14 +2292,13 @@
                   Pipeline Status
                 </div>
                 <div id="system-status-content" style="font-size: 0.78rem; line-height: 1.4;"></div>
+                <button id="btn-refresh" class="btn" aria-label="Force Reload" title="Force Reload" style="width:100%; margin-top:8px; justify-content:center;">
+                  <i data-lucide="refresh-cw" id="refresh-icon"></i>
+                  <span>Refresh</span>
+                </button>
               </div>
             </div>
           </div>
-
-          <button id="btn-refresh" class="btn" aria-label="Force Reload" title="Force Reload">
-            <i data-lucide="refresh-cw" id="refresh-icon"></i>
-            <span>Refresh</span>
-          </button>
 
           <div id="live-toggle" class="live-badge" role="switch" tabindex="0" aria-checked="true"
                aria-label="Live, toggle live updates" title="Toggle real-time auto-polling">
@@ -5522,12 +5531,20 @@
         wrapper.classList.toggle('range-default', isDefault);
         wrapper.classList.toggle('range-collapsed',
           timeRangeCollapsed(state.timeStart, state.timeEnd, state.timeRangeExpanded));
+        const collapsed = wrapper.classList.contains('range-collapsed');
         const expandBtn = document.getElementById('btn-expand-time');
         if (expandBtn) {
-          const open = !wrapper.classList.contains('range-collapsed');
-          expandBtn.setAttribute('aria-expanded', String(open));
-          expandBtn.setAttribute('aria-label', open ? 'Hide time-of-day filters' : 'Show time-of-day filters');
+          expandBtn.setAttribute('aria-expanded', String(!collapsed));
+          expandBtn.setAttribute('aria-label', collapsed ? 'Show time-of-day filters' : 'Hide time-of-day filters');
         }
+        const chip = document.getElementById('time-chip');
+        const chipLabel = document.getElementById('time-chip-label');
+        if (chip) {
+          chip.setAttribute('aria-expanded', String(!collapsed));
+          chip.classList.toggle('is-filtered', !isDefault);
+        }
+        if (chipLabel) chipLabel.textContent = timeRangeIsDefault(state.timeStart, state.timeEnd)
+          ? 'All day' : (label ? label.textContent : '');
       }
     }
 
@@ -6354,6 +6371,13 @@
       const expandBtn = document.getElementById('btn-expand-time');
       if (expandBtn) {
         expandBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          expandTime();
+        });
+      }
+      const timeChip = document.getElementById('time-chip');
+      if (timeChip) {
+        timeChip.addEventListener('click', (e) => {
           e.stopPropagation();
           expandTime();
         });
