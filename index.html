@@ -1913,10 +1913,16 @@
 
     @media (max-width: 768px) {
       .header-content {
-        flex-direction: column;
-        align-items: flex-start;
+        flex-direction: row;
+        flex-wrap: wrap;
+      }
+      .logo-area { flex: 0 0 auto; }
+      .header-content .tab-cluster {
+        order: 0;
+        overflow-x: auto;
       }
       .controls-wrapper {
+        flex: 1 1 100%;
         width: 100%;
         justify-content: space-between;
         flex-wrap: nowrap;
@@ -2038,7 +2044,8 @@
     }
     @media (max-width: 960px) {
       .header-content { flex-wrap: wrap; }
-      .header-content .tab-cluster { order: 3; flex: 1 1 100%; }
+      .header-content .tab-cluster { order: 0; flex: 1 1 auto; min-width: 0; }
+      #stats-label { display: none; }
     }
   </style>
 </head>
@@ -2344,7 +2351,7 @@
           <!-- Time-of-day Range Slider -->
 
 
-          <div class="time-slider-wrapper">
+          <div class="time-slider-wrapper range-default range-collapsed">
             <div class="slider-header">
               <span class="slider-label"><i data-lucide="clock" style="width:14px;height:14px;"></i> Time Range: <span id="time-range-display">All day</span></span>
               <span class="slider-header-actions">
