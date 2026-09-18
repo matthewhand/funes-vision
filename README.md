@@ -7,6 +7,8 @@ MQTT **may leave the box**.
 How to use it: **[docs/USER-GUIDE.md](docs/USER-GUIDE.md)**
 (rendered: **[docs/USER-GUIDE.html](docs/USER-GUIDE.html)**).
 
+Hostable demo (synthetic stills, no cameras): **[tools/demo/README.md](tools/demo/README.md)**.
+
 ## Vision
 
 Security cameras produce thousands of near-identical motion frames a day. The

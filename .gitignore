@@ -29,6 +29,9 @@ analysis.json.tmp.*
 # with tools/deploy-webroot.sh; the pre-push hook verifies they match HEAD.
 /mnt/models/
 
+# Generated static demo bundle (python3 tools/demo/build_demo.py).
+/dist/
+
 # Tooling and subagent artifacts — never commit.
 .kilo/          # tool config dir (has its own .gitignore for node_modules)
 logs/           # subagent rollcall/debug logs
