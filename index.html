@@ -1024,22 +1024,23 @@
       width: min(360px, calc(100vw - 24px));
     }
 
-    /* On phones these menus are anchored right:0 to a trigger that now sits near
-       the left of the wrapped toolbar, so a 220-300px menu ran off the LEFT edge
-       (clipping every label) and off the bottom. Re-anchor as a centred, viewport-
-       fitted panel so it always fits both axes and scrolls inside. */
+    /* On phones, use a viewport-safe sheet instead of anchoring to the
+       wrapped toolbar. The sheet owns scrolling, so every setting remains
+       reachable without clipping the bottom scrollbar. */
     @media (max-width: 768px) {
       .blacklist-dropdown,
       #filters-dropdown {
         position: fixed;
-        left: 50%;
-        right: auto;
-        top: 50%;
-        transform: translate(-50%, -50%);
-        width: min(360px, calc(100vw - 24px));
-        max-width: calc(100vw - 24px);
-        max-height: min(82vh, calc(100vh - 72px));
+        left: 12px;
+        right: 12px;
+        top: 12px;
+        bottom: 12px;
+        transform: none;
+        width: auto;
+        max-width: none;
+        max-height: none;
         margin: 0;
+        overflow-y: auto;
       }
     }
 
