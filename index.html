@@ -19,6 +19,11 @@
       --text-secondary: #94a3b8;
       --border-color: rgba(255, 255, 255, 0.06);
       --transition-speed: 0.25s;
+      /* Distance from the top of the viewport to the image grid. The grid's
+         max-height is 100dvh minus this, so the grid caps at the visible
+         area instead of growing the page body to the full archive. Set by
+         syncGridOffset() on load/resize; 180px is the header+toolbar floor. */
+      --grid-top-offset: 180px;
 
       /* === design tokens (declutter program) ============================== */
       /* spacing — 4px base scale */
@@ -35,6 +40,25 @@
       --accent-15: rgba(59, 130, 246, 0.15);
       --accent-25: rgba(59, 130, 246, 0.25);
       --accent-35: rgba(59, 130, 246, 0.35);
+
+      /* Per-view chart colouring. The activity charts share one blue/red
+         recipe regardless of which tab is active, so switching Timeline →
+         Objects → All changed the data but not the look — the eye could not
+         tell a filtered view from the default. Each view now gets its own
+         hue: indigo for Timeline (grouped visits), amber for Objects
+         (detector hits), slate for All (raw stills). */
+      --chart-timeline: #6366f1;
+      --chart-timeline-tint: rgba(99, 102, 241, 0.20);
+      --chart-objects: #f59e0b;
+      --chart-objects-tint: rgba(245, 158, 11, 0.22);
+      --chart-all: #64748b;
+      --chart-all-tint: rgba(100, 116, 139, 0.20);
+
+      /* Per-view chart base RGB (alpha set inline per-bar by volume). */
+      --chart-base-rgb: 59, 130, 246;
+      body[data-view="events"] { --chart-base-rgb: 99, 102, 241; }
+      body[data-view="objects"] { --chart-base-rgb: 245, 158, 11; }
+      body[data-view="all"] { --chart-base-rgb: 100, 116, 139; }
       /* semantic */
       --success: #10b981;
       --danger: #ef4444;
@@ -569,7 +593,6 @@
 
     .chart-bar {
       width: 100%;
-      background: rgba(59, 130, 246, 0.2);
       border-radius: 2px 2px 0 0;
       transition: all 0.3s ease;
       min-height: 1px;
@@ -577,16 +600,31 @@
       overflow: hidden;
     }
 
+    /* Per-view base tint — switching views now changes the chart's colour, not
+       just its data. Timeline=indigo (grouped visits), Objects=amber
+       (detector hits), All=slate (raw stills). */
+    body[data-view="events"] .chart-bar,
+    .chart-bar.view-timeline { background: var(--chart-timeline-tint); }
+    body[data-view="objects"] .chart-bar,
+    .chart-bar.view-objects { background: var(--chart-objects-tint); }
+    body[data-view="all"] .chart-bar,
+    .chart-bar.view-all { background: var(--chart-all-tint); }
+
     /* Portion of the hour's events matching the active object filter */
     .chart-bar-match {
       position: absolute;
       bottom: 0;
       left: 0;
       width: 100%;
-      background: #ef4444;
       border-radius: 2px 2px 0 0;
-      box-shadow: 0 0 6px rgba(239, 68, 68, 0.5);
+      box-shadow: 0 0 6px var(--chart-match-glow, rgba(239, 68, 68, 0.5));
     }
+    body[data-view="events"] .chart-bar-match,
+    .chart-bar.view-timeline .chart-bar-match { background: var(--chart-timeline); --chart-match-glow: rgba(99, 102, 241, 0.5); }
+    body[data-view="objects"] .chart-bar-match,
+    .chart-bar.view-objects .chart-bar-match { background: var(--chart-objects); --chart-match-glow: rgba(245, 158, 11, 0.5); }
+    body[data-view="all"] .chart-bar-match,
+    .chart-bar.view-all .chart-bar-match { background: #ef4444; --chart-match-glow: rgba(239, 68, 68, 0.5); }
 
     /* Day-mode bars are full-height 24h timelines; red segments sit at
        the time of day they occurred (top = midnight) */
@@ -601,17 +639,17 @@
 
     .chart-bar.day-bar.active {
       outline: 1px solid var(--accent);
-      box-shadow: 0 0 6px rgba(59, 130, 246, 0.5);
+      box-shadow: 0 0 6px rgba(var(--chart-base-rgb), 0.5);
     }
 
     .chart-bar-wrapper:hover .chart-bar {
       background: var(--accent);
-      box-shadow: 0 0 6px rgba(59, 130, 246, 0.5);
+      box-shadow: 0 0 6px rgba(var(--chart-base-rgb), 0.5);
     }
 
     .chart-bar.active {
-      background: linear-gradient(to top, #3b82f6, #6366f1);
-      box-shadow: 0 0 6px rgba(59, 130, 246, 0.4);
+      background: linear-gradient(to top, rgb(var(--chart-base-rgb)), var(--accent));
+      box-shadow: 0 0 6px rgba(var(--chart-base-rgb), 0.4);
     }
 
     .chart-x-axis {
@@ -1193,6 +1231,16 @@
       grid-template-columns: repeat(auto-fill, minmax(var(--card-min-width), 1fr));
       gap: var(--grid-gap);
       transition: all var(--transition-speed);
+      /* The grid is the page's main scroll region. Without a cap it grew to
+         the full archive (10k px on mobile, 2k on desktop) every time the All
+         tab rendered one card per row — switching Timeline → All → Timeline
+         made the page body jump by thousands of pixels. Capping it here keeps
+         the viewport stable across tab switches; the sentinel lives inside the
+         grid so infinite scroll still fires as you scroll the grid. */
+      max-height: calc(100dvh - var(--grid-top-offset, 200px));
+      overflow-y: auto;
+      overflow-x: hidden;
+      scroll-padding: var(--grid-gap);
     }
 
     .image-grid.large {
@@ -2283,11 +2331,14 @@
           <div class="skeleton-card"></div>
           <div class="skeleton-card"></div>
           <div class="skeleton-card"></div>
-        </div>
 
-        <!-- Scroll Sentinel -->
-        <div id="scroll-sentinel" class="scroll-sentinel">
-          <span id="sentinel-text"></span>
+          <!-- Scroll Sentinel — lives INSIDE the image grid. The grid is now
+               the page's scroll region (capped to the viewport), so the
+               IntersectionObserver root must be the grid; a sentinel outside
+               it is never reachable and infinite scroll silently stops. -->
+          <div id="scroll-sentinel" class="scroll-sentinel">
+            <span id="sentinel-text"></span>
+          </div>
         </div>
       </div>
     </div>
@@ -3243,9 +3294,12 @@
 
         const intensity = 0.08 + 0.22 * (d.total / maxTotal);
         const activeDay = state.activeDateFilter === dayStr ? 'active' : '';
+        const viewClass = 'view-' + state.activeFilter;
         const title = `${d.label}: ${d.total} events, ${d.matchTotal} ${what}${d.matchTotal !== 1 ? 's' : ''}`;
+        // Alpha carries the day's volume; the hue comes from --chart-base-rgb so
+        // the day planner re-colours with the rest of the chart on tab switch.
         barWrapper.innerHTML = `
-          <div class="chart-bar day-bar ${activeDay}" style="height: 100%; background: rgba(59, 130, 246, ${intensity.toFixed(2)})" title="${escapeHtml(title)}">${segs}</div>
+          <div class="chart-bar day-bar ${activeDay} ${viewClass}" style="height: 100%; background: rgba(var(--chart-base-rgb), ${intensity.toFixed(2)})" title="${escapeHtml(title)}">${segs}</div>
         `;
         barWrapper.setAttribute('aria-label', title);
         barWrapper.setAttribute('aria-pressed', String(!!activeDay));
@@ -3320,8 +3374,7 @@
       });
     }
 
-    // Render dynamic object filter buttons based on what's in analysis.json
-    // Resolve a raw AI label to its canonical UI label
+// Render dynamic object filter buttons based to what's in analysis.json
     // === pure:labelStates ===
     // Detection lifecycle, per canonical label (pure: analysis + alias map):
     //   preliminary - only the fast detector has run (awaiting Gemma)
@@ -4212,6 +4265,7 @@
 
       afterPaint(() => renderActivityChart());
       if (typeof updateFilterActiveBanner === 'function') updateFilterActiveBanner();
+      if (window.syncGridOffset) window.syncGridOffset();
 
       // The card-layout toggles (small/medium/large/list) only drive the
       // image grid; the Timeline tab is a bespoke visit list that ignores
@@ -4228,8 +4282,15 @@
 
       // Reset scroll position and draw grid
       state.renderedCount = 0;
-      document.getElementById('image-grid').innerHTML = '';
-      
+      const grid = document.getElementById('image-grid');
+      // The scroll sentinel lives inside the grid (it must, since the grid is
+      // now the scroll region and the IntersectionObserver root). Clearing the
+      // grid here would delete it, so preserve it across the clear.
+      const sentinel = document.getElementById('scroll-sentinel');
+      grid.innerHTML = '';
+      if (sentinel) grid.appendChild(sentinel);
+      moveSentinelToEnd();
+
       // Update statistics
       document.getElementById('stats-label').textContent = gridStatsLabel(state.filteredImages.length, state.allImages.length);
 
@@ -4581,8 +4642,15 @@
 
     function renderEventsView(scoped) {
       const grid = document.getElementById('image-grid');
+      // Preserve the scroll sentinel: it lives inside the grid (it must,
+      // since the grid is now the scroll region and the IntersectionObserver
+      // root), so clearing the grid here would delete it.
+      const sentinel = document.getElementById('scroll-sentinel');
       grid.innerHTML = '';
-      document.getElementById('sentinel-text').textContent = '';
+      if (sentinel) grid.appendChild(sentinel);
+      moveSentinelToEnd();
+      const sentinelText = document.getElementById('sentinel-text');
+      if (sentinelText) sentinelText.textContent = '';
 
       const src = scoped || filenamesOnDate(state.allImages, state.activeDateFilter);
       let visits = computeVisits(src);
@@ -5443,6 +5511,10 @@
           ? 'All snapshots loaded'
           : '';
       }
+      moveSentinelToEnd();
+      // Re-measure the grid's distance from the viewport top — the toolbar can
+      // wrap differently after a batch renders, and the cap must follow.
+      if (window.syncGridOffset) window.syncGridOffset();
 
       // Ensure the viewport is full - trigger again if sentinel is still visible
       if (state.renderedCount < state.filteredImages.length && isSentinelVisible()) {
@@ -5454,6 +5526,11 @@
     function showEmptyState(message, actionsHtml = '', title) {
       const grid = document.getElementById('image-grid');
       const h = title || 'No Snapshots Found';
+      // Wipe the grid to show the empty state. The scroll sentinel lives inside
+      // the grid (it must, since the grid is now the scroll region), so it gets
+      // destroyed here — re-attach it afterwards or the IntersectionObserver
+      // root has nothing to observe and infinite scroll silently stops.
+      const sentinel = document.getElementById('scroll-sentinel');
       grid.innerHTML = `
         <div class="empty-state">
           <i data-lucide="image-off"></i>
@@ -5462,7 +5539,10 @@
           <div style="display:flex; gap:8px; justify-content:center; margin-top:12px;">${actionsHtml}</div>
         </div>
       `;
-      document.getElementById('sentinel-text').textContent = '';
+      if (sentinel) grid.appendChild(sentinel);
+      moveSentinelToEnd();
+      const sentinelText = document.getElementById('sentinel-text');
+      if (sentinelText) sentinelText.textContent = '';
 
       const unhideBtn = document.getElementById('empty-unhide');
       if (unhideBtn) unhideBtn.onclick = () => {
@@ -5502,14 +5582,44 @@
 
     // Check if sentinel is in viewport
     function isSentinelVisible() {
+      // The image grid is now the page's scroll region (capped to the
+      // viewport), so the sentinel lives inside it. Check visibility against
+      // the grid, not the window — the sentinel is always below the fold.
       const sentinel = document.getElementById('scroll-sentinel');
-      if (!sentinel) return false;
-      const rect = sentinel.getBoundingClientRect();
-      return (
-        rect.top >= 0 &&
-        rect.bottom <= (window.innerHeight || document.documentElement.clientHeight)
-      );
+      const grid = document.getElementById('image-grid');
+      if (!sentinel || !grid) return false;
+      const sRect = sentinel.getBoundingClientRect();
+      const gRect = grid.getBoundingClientRect();
+      const visible = sRect.top >= gRect.top - 1
+        && sRect.top <= gRect.bottom + 1;
+      return visible;
     }
+
+// Measure the gap between the top of the viewport and the image grid and
+      // store it as --grid-top-offset, which caps the grid to the visible area.
+      // Without this the All tab grew the page body to the full archive (10k px
+      // on mobile) every render, so switching Timeline → All → Timeline jumped
+      // the layout by thousands of pixels.
+      function syncGridOffset() {
+        const grid = document.getElementById('image-grid');
+        if (!grid) return;
+        const top = grid.getBoundingClientRect().top;
+        document.documentElement.style.setProperty('--grid-top-offset', Math.max(0, Math.round(top)) + 'px');
+      }
+
+      // Keep the scroll sentinel as the LAST child of the image grid. The grid
+      // is now the scroll region and the IntersectionObserver root, so the
+      // sentinel must be at the bottom for infinite scroll to fire. Several
+      // paths re-attach it after clearing the grid (showEmptyState,
+      // applyFiltersAndSearch) — without this it lands at the top and scrolling
+      // to the bottom never reaches it.
+      function moveSentinelToEnd() {
+        const grid = document.getElementById('image-grid');
+        const sentinel = document.getElementById('scroll-sentinel');
+        if (!grid || !sentinel) return;
+        if (sentinel.parentElement !== grid) grid.appendChild(sentinel);
+        else if (grid.lastChild !== sentinel) grid.appendChild(sentinel);
+      }
 
     // Zoom and pan logic inside lightbox
     function updateZoomTransform() {
@@ -6138,6 +6248,12 @@
           e.target.classList.add('active');
           e.target.setAttribute('aria-pressed', 'true');
           state.activeFilter = e.target.dataset.filter;
+          // Paint the whole page the view's colour: the activity charts share
+          // one blue/red recipe regardless of tab, so switching Timeline →
+          // Objects → All changed the data but not the look. body[data-view]
+          // drives the chart tints above and is read by any other view-specific
+          // styling.
+          document.body.dataset.view = state.activeFilter;
           applyFiltersAndSearch();
         }
       });
@@ -6310,6 +6426,13 @@
           localStorage.setItem('webcam_sidebar_collapsed', String(collapsed));
         });
       }
+
+      // Cap the image grid to the visible area so the All tab can't grow the
+      // page body to the full archive (see syncGridOffset). Re-measure on
+      // every resize and whenever the filter/grid content changes.
+      syncGridOffset();
+      window.addEventListener('resize', syncGridOffset);
+      window.syncGridOffset = syncGridOffset;
 
       // Integrations panel (Slack, ...): outbound posts of timeline activity
       const btnIntegrations = document.getElementById('btn-integrations');
@@ -6774,12 +6897,17 @@ html += `<div style="margin-top:6px;padding:4px 6px;background:var(--accent-10);
         });
       });
 
-      // Infinite scroll listener
+      // Infinite scroll listener. The image grid is now the page's scroll region
+      // (capped to the viewport), so the sentinel lives inside it and the
+      // observer must watch the grid, not the window — otherwise the sentinel
+      // is always below the fold and infinite scroll never fires.
+      const gridEl = document.getElementById('image-grid');
       const observer = new IntersectionObserver((entries) => {
         if (entries[0].isIntersecting && state.renderedCount < state.filteredImages.length) {
           renderNextPage();
         }
       }, {
+        root: gridEl,
         rootMargin: '200px'
       });
       observer.observe(document.getElementById('scroll-sentinel'));
