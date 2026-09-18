@@ -240,6 +240,16 @@
     }
     .header-content #toolbar-actions { margin-left: 0; }
     .header-content .controls-wrapper { margin-left: auto; gap: 8px; }
+    /* Dashboard (/cameras/): hide gallery review chrome. Keep Settings/AI. */
+    body.mode-dashboard .tab-cluster,
+    body.mode-dashboard #stats-label,
+    body.mode-dashboard .search-box,
+    body.mode-dashboard #live-toggle,
+    body.mode-dashboard #btn-help,
+    body.mode-dashboard #sidebar-toggle,
+    body.mode-dashboard #btn-refresh {
+      display: none !important;
+    }
     .logo-text p { display: none; }
     #stats-label.stats-info {
       max-width: 14ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -2513,6 +2523,7 @@
       const aside = document.querySelector('.workspace aside');
       const content = document.querySelector('.content-area');
       const isDash = mode === 'dashboard';
+      document.body.classList.toggle('mode-dashboard', isDash);
       if (dash) dash.style.display = isDash ? 'flex' : 'none';
       if (aside) aside.style.display = isDash ? 'none' : '';
       if (content) content.style.display = isDash ? 'none' : '';
@@ -2520,6 +2531,7 @@
       if (dates) dates.style.display = isDash ? 'none' : '';
       if (charts) charts.style.display = isDash ? 'none' : '';
     }
+    setWorkspaceMode(currentRoute().view === ROUTE_DASHBOARD ? 'dashboard' : 'gallery');
     async function applyRoute(route) {
       if (route.view === ROUTE_DASHBOARD) {
         setWorkspaceMode('dashboard');
