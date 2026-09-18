@@ -81,8 +81,10 @@
     Your live e2b pass <strong>does not write free-text captions</strong>.
     Expect detector badges, quieter scene flags, and at most two synthesized facts
     such as “Postal delivery on foot.” Detector-only visits often have no sentence at all.
-    The fixture catalog <strong>mixes both cameras</strong> so one walkthrough can show a dog visit and a postal visit. Live, each camera is its own site.
-    On-still OSD clocks match the filename date (18 June 2026).
+    The fixture catalog <strong>mixes both cameras</strong> so one walkthrough can show a dog visit and a postal visit.
+    Live, front is <code>/</code> and back is <code>/Webcam22/</code>; the camera wall is <code>/cameras/</code>.
+    Stills are Grok-generated (watermark, 18 June 2026) — not live <code>/mnt/models</code> footage, no GPS EXIF.
+    Guide PNGs were recaptured from the same synthetic gallery (never live cameras).
   </blockquote>
 
   <nav>
@@ -110,8 +112,8 @@
   <h2 id="box">This box, today</h2>
   <table>
     <tr><th>Knob</th><th>This box</th></tr>
-    <tr><td>Front camera</td><td><code>http://&lt;host&gt;:8180</code> — header <b>Webcam Live Feed</b></td></tr>
-    <tr><td>Back camera</td><td>the same URL, under <code>/Webcam22/</code> — header <b>Dogcam Live Feed</b></td></tr>
+    <tr><td>Front camera</td><td><code>http://&lt;host&gt;:8180</code> — header <b>Front</b></td></tr>
+    <tr><td>Back camera</td><td>the same URL, under <code>/Webcam22/</code> — header <b>Back</b></td></tr>
     <tr><td>Vision model</td><td><code>gemma4:e2b</code> via local Ollama (~40 s/frame when busy)</td></tr>
     <tr><td>Cloud fallback</td><td><strong>off</strong></td></tr>
     <tr><td>Vision deep passes</td><td><strong>on</strong> (person/dog/cat/bird jump the queue)</td></tr>
@@ -132,15 +134,15 @@
     <tr><td>Front (driveway / gate)</td><td><code>http://&lt;host&gt;:8180</code></td></tr>
     <tr><td>Back (yard / dogcam)</td><td>the same URL, under <code>/Webcam22/</code></td></tr>
   </table>
-  <p>Each camera is its own site. They do not share one URL or one filter state. On a phone, Add to Home Screen — there is no service worker, so you will not get a stale offline copy.</p>
-  <p>Title is <strong>Webcam Live Feed</strong> or <strong>Dogcam Live Feed</strong>. Subtitle is <em>Monitoring front gate area · AEST</em> or <em>Monitoring backyard and dog area · AEST</em> — not a LAN address. First paint on :8180 is already those front-camera strings. <strong>Switch to Dogcam Feed</strong> jumps cameras. On a phone, <strong>Panels</strong> hides or shows the date list, charts, and saved searches.</p>
+  <p>Each camera is its own site. They do not share one URL or one filter state. Switch with the small <strong>Back</strong> / <strong>Front</strong> chip, or open <code>/Webcam22/</code>. The camera wall is <code>/cameras/</code>. On a phone, Add to Home Screen — there is no service worker.</p>
+  <p>Title is <strong>Front</strong> or <strong>Back</strong>. Subtitle is <em>Front camera</em> or <em>Back camera</em> — not a LAN address. Status uses the same names.</p>
   <figure>
     <img src="guide/img/mobile-timeline.png" alt="Mobile timeline of dog and person visits">
     <figcaption>Phone: Timeline is the default. Fixture captions are sample sentences — see the yellow note above.</figcaption>
   </figure>
 
   <h2 id="header">2. The header</h2>
-  <p>Header, left to right: <strong>Webcam Live Feed</strong> / <strong>Dogcam Live Feed</strong>, subtitle <em>Monitoring front gate area · AEST</em> (or backyard), Switch Feed, search, Refresh, and the <strong>Live</strong> switch. The toolbar (not the header) has Filters, Settings, Integrations, <strong>Help</strong> (this page), and AI (pipeline status). Status names the same cameras Front / Back.</p>
+  <p>One sticky bar: <strong>Panels</strong>, <strong>Front</strong> (or <strong>Back</strong>) plus the swap chip, <strong>Timeline | Objects | All</strong>, search, Filters, Settings, Integrations, Help, AI, Refresh, and the <strong>Live</strong> switch. Help is this page (fixture pictures, not your house).</p>
   <table>
     <tr><th>Badge</th><th>Meaning</th></tr>
     <tr><td><strong>Live</strong></td><td>Event stream connected, heartbeats arriving</td></tr>
@@ -160,7 +162,7 @@
     <tr><td><strong>Objects</strong></td><td>Only frames the detector marked</td></tr>
     <tr><td><strong>All</strong></td><td>Every motion still, including empty / CLEAR frames</td></tr>
   </table>
-  <p>Grid density buttons appear on Objects and All only. Timeline hides them.</p>
+  <p>Grid density (small / medium / large / list) lives in Settings. Timeline ignores it.</p>
   <figure>
     <img src="guide/img/objects.png" alt="Objects tab with person, dog, bird, and a preliminary car">
     <figcaption>Amber <code>Car?</code> is a detector hit the vision model has not finished (or will not — parked cars are quiet).</figcaption>
@@ -175,7 +177,8 @@
   </figure>
 
   <h2 id="rail">4. The left rail</h2>
-  <h3>Date Timeline</h3>
+  <p><strong>Motion</strong> and <strong>Saved</strong> start collapsed. Open them when you need charts or a named view.</p>
+  <h3>Dates</h3>
   <p><strong>Today</strong> is the default. <strong>All Dates</strong> is still on the rail for the whole archive. If today has no stills yet, the newest day in the catalog is selected instead. Clear all returns to this home day. The count is how many stills that day has, not how many match the object filter.</p>
   <h3>Motion Activity</h3>
   <p><strong>By day</strong> — one bar per day, top = midnight, red marks when the currently filtered objects appeared. <strong>By hour</strong> — 12 AM → 11 PM. Search and object filters apply to these charts the same way they apply to the grid.</p>
@@ -299,7 +302,7 @@
   </ul>
 
   <h2 id="privacy">14. Privacy</h2>
-  <p>Frames and inference stay on this machine by default. Slack, ntfy, and HA MQTT can leave the box only if you turn them on. This guide’s screenshots are generated fiction.</p>
+  <p>Frames and inference stay on this machine by default. Slack, ntfy, and HA MQTT can leave the box only if you turn them on. Guide screenshots and fixture JPEGs are <strong>Grok-generated</strong> (watermark, dated 18 June 2026) — not your house, not <code>/mnt/models</code> footage, and not GPS-tagged. Do not replace them with live camera stills.</p>
 
   <h2 id="wrong">15. If it looks wrong</h2>
   <table>

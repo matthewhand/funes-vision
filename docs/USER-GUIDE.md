@@ -34,15 +34,18 @@ you should expect:
 
 **The fixture catalog mixes both cameras** so one walkthrough can show a
 dog visit *and* a postal visit. Live, both cameras are served from **one**
-nginx container: the front feed at the root and the dogcam feed under
-`/Webcam22/` — they share one URL, and the header still first-paints
-**Webcam Live Feed** (front). The two cameras are also reachable on their
-own subdomains behind basic-auth (`webcam.` / `dogcam.…`), which proxy
-`/api/` to the write API.
+nginx container: the front feed at the root (`/`) and the back feed under
+`/Webcam22/`. The header first-paints **Front**. A camera picker lives at
+`/cameras/`. Public subdomains (`webcam.` / `dogcam.…`) proxy `/api/` to
+the write API behind basic-auth.
 
 The on-still OSD clock is stamped to match the filename date
-(**18 June 2026**). The header, tabs, Settings labels, Live badge, and
-Front/Back camera names in the shots **do** match the live UI.
+(**18 June 2026**). Stills are **Grok-generated** CCTV fiction (watermark
+bottom-right). They are not `/mnt/models` footage, have no GPS EXIF, and
+show no readable plates or house numbers.
+
+Guide PNGs were recaptured from the same synthetic gallery (fixture
+proxy, stub API — never `/mnt/models`).
 
 ---
 
@@ -53,8 +56,8 @@ fresh clone behaves the same if `settings.json` is missing.
 
 | Knob | This box |
 |------|----------|
-| Front camera | `http://<host>:8180` — header **Webcam Live Feed** |
-| Back camera | the same URL, under `/Webcam22/` — header **Dogcam Live Feed** |
+| Front camera | `http://<host>:8180` — header **Front** |
+| Back camera | the same URL, under `/Webcam22/` — header **Back** |
 | Vision model | `gemma4:e2b` via local Ollama (~40 s/frame when busy) |
 | Cloud fallback | **off** |
 | Vision deep passes | **on** (person/dog/cat/bird jump the queue) |
@@ -78,20 +81,20 @@ fresh clone behaves the same if `settings.json` is missing.
 | Back (yard / dogcam) | the same URL, under `/Webcam22/` |
 
 Each camera is its **own site** — they do not share one URL or one
-filter state. Switch feeds with the **Switch to Dogcam Feed** link in the
-header, or open `/Webcam22/` directly.
+filter state. Switch feeds with the small **Back** / **Front** chip
+(swap icon) in the header, or open `/Webcam22/` directly. The camera
+wall is `/cameras/`.
 
 On a phone, **Add to Home Screen**. There is no service worker, so you
 will not get a stale offline copy.
 
-The header title is **Webcam Live Feed** (front) or **Dogcam Live Feed**
-(back). The subtitle is *Monitoring front gate area · AEST* or
-*Monitoring backyard and dog area · AEST* — **not** a LAN address.
-Filenames on disk still contain camera IPs; the chrome is not supposed
-to show them. Status calls the same two cameras **Front** and **Back**.
+The header title is **Front** or **Back**. The subtitle is *Front camera*
+or *Back camera* — **not** a LAN address. Filenames on disk still contain
+camera IPs; the chrome is not supposed to show them. Status uses the same
+two names.
 
-**Switch Feed** in the header jumps to the other camera
-(*Switch to Dogcam Feed* / *Switch to Webcam Feed*).
+**Switch camera** is that chip, not a large “Switch to Dogcam Feed”
+button.
 
 ![Mobile timeline of dog and person visits](guide/img/mobile-timeline.png)
 
@@ -103,17 +106,18 @@ keeps the sidebar open.
 
 ## 2. The header
 
-Left to right:
+One sticky bar, left to right on a wide screen:
 
-- **Camera name + timezone**
-- **Switch Feed** — other camera
+- **Panels** — show/hide the dates rail (and collapsed Motion / Saved)
+- **Front** (or **Back**) + **swap chip** — other camera
+- **Timeline | Objects | All** and the count
 - **Search** — time, detector labels, or caption text (see [§5](#5-find-something))
+- **Filters** — only once the archive has detector labels
+- **Settings**, **Integrations**, **Help**, **AI**
 - **Refresh** — force-reload catalogs from disk
 - **Live** — a switch, not just a light (see [§9](#9-live-updates))
 
-On the toolbar (next to Settings / Integrations / **AI**):
-
-- **Help** — this walkthrough, in a new tab (fixture pictures, not your house)
+Help opens this walkthrough in a new tab (fixture pictures, not your house).
 
 Default first paint is a green **Live** pill. Click it to pause. The
 visible states are:
@@ -143,8 +147,8 @@ The count next to the tabs is honest about the current tab
 (*“2 visits detected”* vs *“Showing 7 of 10 snapshots”*). Timeline
 caps the list at 300 visits (*“showing first 300 of N visits”*).
 
-Grid density buttons (small / medium / large / list) appear on
-**Objects** and **All** only. Timeline ignores them, so they hide there.
+Grid density (small / medium / large / list) lives in **Settings**, not
+on the toolbar. Timeline ignores density.
 
 ![Objects tab with person, dog, bird, and a preliminary car](guide/img/objects.png)
 
@@ -168,6 +172,9 @@ Dates** is still on the rail if you want the whole archive. If today
 has no stills yet, the newest day in the catalog is selected instead.
 The count is how many stills that day has, not how many match the
 current object filter. Clear all returns to this home day.
+
+**Motion** and **Saved** start **collapsed**. Open the section when you
+need the charts or a named view.
 
 ### Motion Activity
 
@@ -413,7 +420,7 @@ You should see, in order:
 - **Deep analysis:** a percent bar over verified vs pending, plus an
   ETA (`≈42s @ ~42s/frame`) when priority work is queued
 - **Last sweep:** age, or red *stalled?* if older than 30 minutes
-- **Cameras:** **Front** and **Back** (header says Webcam / Dogcam)
+- **Cameras:** **Front** and **Back** (same names as the header)
 - Last cleanup / host disk, when the API has those numbers
 - **This view:** stats over *loaded* frames (busiest hour, sparkline,
   most-seen). Not a product called Insights
@@ -515,7 +522,15 @@ Things that *can* leave, only if you turn them on:
 - ntfy text (only with an explicit server URL)
 - Home Assistant MQTT flag JSON (no image bytes; needs an explicit host)
 
-This guide’s screenshots are generated fiction. They are not your house.
+This guide’s screenshots and the fixture JPEGs are **generated fiction**
+(Grok watermark, dated 18 June 2026). They are not your house, not
+`/mnt/models` footage, and they are not GPS-tagged. Do not replace them
+with live camera stills.
+
+The same synthetic stills power the screenshot harness
+([tools/screenshots/README.md](../tools/screenshots/README.md)). A
+hostable no-camera demo is issue
+[#27](https://github.com/matthewhand/webcam/issues/27).
 
 ---
 
@@ -543,6 +558,7 @@ This guide’s screenshots are generated fiction. They are not your house.
 
 Developer / ops reference: [DEVELOP.md](../DEVELOP.md),
 [DEPLOYMENT.md](../DEPLOYMENT.md), [API.md](../API.md).
-How the screenshots were taken: [tools/screenshots/README.md](../tools/screenshots/README.md).
+How the screenshots were taken (fixture-only, never live cameras):
+[tools/screenshots/README.md](../tools/screenshots/README.md).
 What is still not built (token streaming, pipeline→API push):
 [ROADMAP.md](../ROADMAP.md).
