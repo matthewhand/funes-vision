@@ -476,10 +476,10 @@
 
     /* Sidebar Panel (Collapsible/Drawer on mobile) */
     aside {
-      width: 232px;
+      width: 196px;
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: 8px;
       flex-shrink: 0;
       /* Constrain the panel to the viewport so a long date list (34+ days) or
          the activity chart can't push the whole page taller than the window.
@@ -495,17 +495,15 @@
     #sidebar-toggle[aria-pressed="true"] { color: var(--accent); border-color: var(--accent-25); }
 
     .sidebar-section {
-      background: var(--bg-secondary);
-      border-radius: var(--radius-3);
-      border: 1px solid var(--border-color);
-      padding: var(--space-4);
-      box-shadow: var(--elevation-1); /* panels sit at rest elevation so they
-                                         read above the page, not flatter than
-                                         the cards they contain (ROADMAP:316) */
+      background: transparent;
+      border-radius: var(--radius-2);
+      border: none;
+      padding: var(--space-1) 0;
+      box-shadow: none;
     }
 
     .sidebar-section h3 {
-      font-size: 0.9rem;
+      font-size: 0.68rem;
       font-weight: 600;
       color: var(--text-secondary);
       text-transform: uppercase;
@@ -942,13 +940,22 @@
     }
     /* HA flags are scene facts, not object chips — one muted line. */
     .scene-line {
-      display: block;
-      width: 100%;
+      display: none;
       font-size: 0.68rem;
       font-weight: 500;
       color: #c4b5fd;
       text-shadow: 0 1px 2px rgba(0,0,0,0.7);
       text-transform: capitalize;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 100%;
+    }
+    .image-card:hover .scene-line,
+    .image-card:focus-within .scene-line,
+    .image-grid.list .scene-line { display: block; }
+    @media (hover: none) {
+      .scene-line { display: block; }
     }
 
     /* Verified-detection tags: a calm tinted recipe (tinted bg + light-hue text
@@ -1345,13 +1352,32 @@
       bottom: 0;
       left: 0;
       right: 0;
-      background: linear-gradient(transparent, rgba(0, 0, 0, 0.85));
-      padding: 10px 12px;
+      background: linear-gradient(transparent, rgba(0, 0, 0, 0.55));
+      padding: 8px 10px 6px;
       display: flex;
       justify-content: flex-start;
       align-items: flex-end;
       opacity: 1;
       transition: opacity var(--transition-speed);
+    }
+    .card-overlay .card-caption,
+    .card-overlay .date-stamp {
+      display: none;
+    }
+    .image-card:hover .card-overlay,
+    .image-card:focus-within .card-overlay {
+      background: linear-gradient(transparent, rgba(0, 0, 0, 0.88));
+    }
+    .image-card:hover .card-caption,
+    .image-card:focus-within .card-caption,
+    .image-card:hover .date-stamp,
+    .image-card:focus-within .date-stamp,
+    .image-grid.list .card-caption,
+    .image-grid.list .date-stamp { display: block; }
+    .image-grid.list .card-caption { display: block; }
+    @media (hover: none) {
+      .card-overlay .card-caption,
+      .card-overlay .date-stamp { display: block; }
     }
 
     .image-grid.list .card-overlay {
@@ -5027,8 +5053,9 @@
             </span>`;
         });
 
-        // Home Assistant flags: one scene line, not a stack of purple chips.
-        if (analysis._llm || analysis._llm_skip) {
+        // HA scene line only when there is no caption (caption already states it).
+        const captionEarly = entryCaption(analysis);
+        if (!captionEarly && (analysis._llm || analysis._llm_skip)) {
           const haFlags = getHAFlags(analysis);
           if (haFlags.length) {
             const scene = haFlags.map(({ label, value, isString }) => {
@@ -5038,12 +5065,7 @@
             detectionsHtml += `<span class="scene-line">${escapeHtml(scene)}</span>`;
           }
         }
-        if (detectionsHtml === '') {
-          // No object badges -> show a calm state instead of an empty middle,
-          // including explicit negatives (the common case).
-          const status = frameStatusBadge(analysis);
-          if (status.text) detectionsHtml = `<span class="badge ${status.cls}">${escapeHtml(status.text)}</span>`;
-        }
+        // No CLEAR badge on the still — time + object chips are enough.
       }
 
       const caption = entryCaption(analysis);
