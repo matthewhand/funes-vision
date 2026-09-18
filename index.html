@@ -563,9 +563,6 @@
        the collapsed Dates/Activity/Saved panels are discoverable. */
     .sidebar-toggle-label { display: none; }
     @media (max-width: 768px) { .sidebar-toggle-label { display: inline; } }
-    /* Visit-row meta line: legible on phones (lift contrast a step, wrap cleanly). */
-    .visit-meta { font-size: 0.75rem; color: var(--text-secondary); line-height: 1.5; }
-    @media (max-width: 480px) { .visit-meta { color: var(--text-primary); opacity: 0.85; } }
     /* tiny sub-labels so the stacked day/hour charts read as two distinct views */
     .chart-sublabel {
       font-size: 0.62rem; font-weight: 700; text-transform: uppercase;
@@ -1531,9 +1528,46 @@
       height: 15px;
     }
 
+    /* Timeline visit log: CSS owns density so media queries win over JS chrome. */
+    .visit-log {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+      width: 100%;
+      grid-column: 1 / -1;
+    }
     .visit-row {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+      padding: var(--space-1) var(--space-2);
+      border-bottom: 1px solid var(--border-color);
+      color: var(--text-primary);
+      cursor: pointer;
       content-visibility: auto;
-      contain-intrinsic-size: auto 72px;
+      contain-intrinsic-size: auto 56px;
+    }
+    .visit-row .card-img {
+      width: 48px;
+      height: 48px;
+      object-fit: cover;
+      border-radius: var(--radius-1);
+      flex-shrink: 0;
+    }
+    .visit-body { flex: 1; min-width: 0; }
+    .visit-title { font-weight: 600; font-size: 0.85rem; line-height: 1.2; }
+    .visit-label { text-transform: capitalize; }
+    .visit-meta, .visit-caption {
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .visit-ongoing { color: #f59e0b; }
+    @media (max-width: 768px) {
+      .visit-row { contain-intrinsic-size: auto 48px; }
+      .visit-row .card-img { width: 40px; height: 40px; }
     }
 
     /* Skeleton placeholders */
@@ -1990,6 +2024,7 @@
       .time-slider::-webkit-slider-thumb { width: 24px; height: 24px; }
       .time-slider::-moz-range-thumb { width: 24px; height: 24px; }
       .dual-range-container { height: 28px; }
+      .visit-row { min-height: 44px; }
     }
     @media (max-width: 960px) {
       .header-content { flex-wrap: wrap; }
@@ -3155,7 +3190,7 @@
       // A camera whose root served this page: the gallery fetches its
       // catalogs as relative URLs for free. Any other camera goes through
       // /api/catalogs, which is what makes client-side switching possible.
-      // Wait for lucide: renderEventsView references the bare global, and
+      // Wait for lucide: loadData's finally calls the bare global, and
       // the lucide script tag (line 2321) loads after this inline script,
       // so a synchronous call here would paint before lucide exists. The
       // normal gallery path is async (loadData) and never hits this.
@@ -4708,9 +4743,8 @@
       }
 
       const list = document.createElement('div');
-      list.style.cssText = 'display:flex;flex-direction:column;gap:8px;width:100%;grid-column:1/-1;';
+      list.className = 'visit-log';
       visits.slice(0, VISIT_CAP).forEach(v => {
-        const icon = v.label === 'person' ? 'user' : v.label === 'dog' ? 'dog' : v.label === 'cat' ? 'cat' : v.label === 'bird' ? 'bird' : 'eye';
         const timeRange = v.count > 1
           ? `${escapeHtml(v.start.meta.formattedTime)} – ${escapeHtml(v.end.meta.formattedTime)}`
           : escapeHtml(v.start.meta.formattedTime);
@@ -4718,22 +4752,19 @@
         const endObj = (v.end.meta && v.end.meta.dateObj) ? v.end.meta.dateObj : null;
         const ago = endObj ? relativeTime(endObj.getTime() / 1000, Date.now() / 1000) : '';
         const captionHtml = v.caption
-          ? `<div style="font-size:0.75rem;color:var(--text-primary);font-style:italic;margin-top:2px;">&ldquo;${escapeHtml(v.caption)}&rdquo;</div>` : '';
+          ? `<div class="visit-caption">&ldquo;${escapeHtml(v.caption)}&rdquo;</div>` : '';
         const dateLabel = visitDateLabel(v.start.meta.formattedDate, v.end.meta.formattedDate);
         // The player/clip is capped at 60 frames; tell the user when a visit is longer.
         const framesNote = (v.frames && v.count > v.frames.length) ? ` (first ${v.frames.length} shown)` : '';
         const row = document.createElement('div');
         row.className = 'visit-row';
-        row.style.cssText = 'display:flex;align-items:center;gap:12px;padding:10px 12px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:8px;color:var(--text-primary);cursor:pointer;';
         row.innerHTML = `
-          <img class="card-img unloaded" data-src="thumbs/${encodeURIComponent(v.start.f)}" data-full="${encodeURIComponent(v.start.f)}" loading="lazy" decoding="async" alt="${escapeHtml(visitAltText(v.label, v.start.meta.formattedTime, v.count, v.ongoing))}" style="width:80px;height:52px;object-fit:cover;border-radius:4px;flex-shrink:0;">
-          <i data-lucide="${icon}" style="color:${v.ongoing ? '#f59e0b' : '#10b981'};width:20px;height:20px;flex-shrink:0;"></i>
-          <div style="flex:1;min-width:0;">
-            <div style="font-weight:600;"><span style="text-transform:capitalize;">${escapeHtml(v.label)}</span> visit ${v.ongoing ? '<span style="color:#f59e0b;">(ongoing)</span>' : ''}</div>
+          <img class="card-img unloaded" data-src="thumbs/${encodeURIComponent(v.start.f)}" data-full="${encodeURIComponent(v.start.f)}" loading="lazy" decoding="async" alt="${escapeHtml(visitAltText(v.label, v.start.meta.formattedTime, v.count, v.ongoing))}">
+          <div class="visit-body">
+            <div class="visit-title"><span class="visit-label">${escapeHtml(v.label)}</span> visit ${v.ongoing ? '<span class="visit-ongoing">(ongoing)</span>' : ''}</div>
             <div class="visit-meta">${escapeHtml(dateLabel)} &middot; ${timeRange} &middot; ${dur} &middot; ${v.count} frame${v.count !== 1 ? 's' : ''}${framesNote}${ago ? ' &middot; ' + ago : ''}</div>
             ${captionHtml}
-          </div>
-          <i data-lucide="play-circle" style="width:22px;height:22px;color:var(--accent);flex-shrink:0;"></i>`;
+          </div>`;
         // Keyboard-operable (Timeline is the default view; rows play the visit).
         row.setAttribute('aria-label', 'Play ' + visitAltText(v.label, v.start.meta.formattedTime, v.count, v.ongoing));
         bindActivatable(row, () => openEventPlayer({ label: v.label, type: 'visit', caption: v.caption, frames: v.frames }));
@@ -4747,7 +4778,6 @@
       }
       grid.appendChild(list);
       list.querySelectorAll('img.card-img').forEach(img => imageObserver.observe(img));
-      lucide.createIcons();
     }
 
     // Flipbook player for a Timeline event's frame sequence
