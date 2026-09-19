@@ -1,10 +1,10 @@
 [Unit]
-Description=Periodic health check for the webcam nginx gallery
-# Runs tools/webcam-healthcheck.sh every 60s. webcam-compose.service is a
-# oneshot that starts the container once at boot and then reports
-# "active (exited)" forever — if the container later dies (clean exit,
-# compose timeout, bind-mount hiccup) nothing restarts it. This timer is the
-# watchdog that actually notices and brings it back.
+Description=Periodic health check for the funes-vision nginx gallery
+# Runs tools/webcam-healthcheck.sh every 60s. webcam-compose.service is
+# Type=simple with Restart=always and owns the container's lifetime via
+# tools/webcam-compose-run.sh (`compose up -d gallery` then `docker wait
+# gallery`); this timer is the independent second line of defence for the
+# case where the unit is alive but the container it waits on is dead.
 After=webcam-compose.service docker.service
 Wants=webcam-compose.service
 

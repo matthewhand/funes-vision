@@ -1,28 +1,54 @@
-# Webcam AI Gallery
+# funes-vision
 
-A self-hosted, AI-assisted gallery for two home security cameras — local-first.
-Frames stay on this machine. Slack notifications and optional Home Assistant
-MQTT **may leave the box**.
+> *"The solitary and lucid spectator of a multiform, instantaneous, and almost
+> intolerably precise world."*
+> — Jorge Luis Borges, *Funes the Memorious*
+
+A local-first, two-stage computer vision sentry for camera motion stills.
+Runs on 4-core ARM with zero cloud dependencies.
 
 How to use it: **[docs/USER-GUIDE.md](docs/USER-GUIDE.md)**
 (rendered: **[docs/USER-GUIDE.html](docs/USER-GUIDE.html)**).
 
 Hostable demo (synthetic stills, no cameras): **[tools/demo/README.md](tools/demo/README.md)**.
 
-## Vision
+## How it works
 
-Security cameras produce thousands of near-identical motion frames a day. The
-useful information — *who or what was here, when, and for how long* — is buried
-in that pile, and finding it means scrubbing endlessly.
+Hikvision cameras drop motion stills over FTP; `inotifywait` picks each one up
+within seconds. Two passes then decide what changed:
 
-This project turns that raw stream into a **queryable timeline of events**:
-*"When was a person at the gate?"*, *"When did the car leave?"*, *"Was the dog
-out back this afternoon?"* A fast detector flags motion subjects within
-seconds. A local vision LLM then answers a **fixed Home Assistant schema**
-(flags such as `postal_delivery`, `porch_access`, `animal_detected`) — it does
-**not** write free-text captions, and it **never overwrites** detector labels
-(`person` / `car` / `dog` / …). The gallery groups those hits into **visits**
-("Person visit · 7:02–7:08 · 6 min") instead of a wall of thumbnails.
+```
+Hikvision cameras ──FTP──> /mnt/models/Webcam{21,22}
+        │
+        ▼
+  inotifywait ──> analysis queue
+        │
+        ▼
+  Stage 1 · YOLOv4-tiny fast pass (OpenCV DNN)
+        │        person / car / bird / cat / dog
+        ├─ hit  ──> Stage 2 · 2B vision LLM (gemma4:e2b via Ollama)
+        │              │
+        │              ▼
+        │         Home Assistant event schema
+        │         (postal_delivery, porch_access, animal_detected, …)
+        │
+        └─ clear ──> stored, no LLM budget spent
+```
+
+The fast pass is cheap and runs on every frame. The deep pass is expensive
+(~40 s/image on this box) and only fires on frames the detector flagged —
+parked cars and empty CLEAR frames never reach it. The LLM answers a **fixed
+Home Assistant schema** (flags such as `postal_delivery`, `porch_access`,
+`animal_detected`); it does **not** write free-text captions, and it **never
+overwrites** detector labels (`person` / `car` / `dog` / …). The gallery
+groups those hits into **visits** ("Person visit · 7:02–7:08 · 6 min") instead
+of a wall of thumbnails.
+
+The name: Irineo Funes, from Borges's story, was a boy who could remember
+every sight he had ever seen, in uncompressed detail, and notice the smallest
+change in state without effort. That is what this pipeline does for camera
+feeds — an exhaustive, infallible record of what changed, when, confirmed by a
+second look.
 
 Three principles guide it:
 
@@ -150,7 +176,7 @@ How to use the gallery: **[docs/USER-GUIDE.md](docs/USER-GUIDE.md)** ·
 
 | Camera | URL |
 |--------|-----|
-| Webcam (front, car in frame) | `http://<host>:8180/` |
+| Front camera (car in frame) | `http://<host>:8180/` |
 | Dogcam | `http://<host>:8180/Webcam22/` |
 
 Use **Switch feed** in the page to jump between the two.

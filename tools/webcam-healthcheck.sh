@@ -2,16 +2,16 @@
 # tools/webcam-healthcheck.sh — verify the gallery container is actually up
 # and serving, and bring it back if it died.
 #
-# Why this exists: systemd/webcam-compose.service is a oneshot that runs
-# `docker compose up -d` once at boot. It reports "active (exited)" and never
-# re-checks, so if the container later dies (clean exit, compose timeout,
-# bind-mount hiccup) the unit still looks healthy and the gallery is dead —
-# nothing restarts it. This script is run by a systemd timer every 60s and
-# restarts the container only if it is down.
+# Why this exists: systemd/webcam-compose.service is Type=simple with
+# Restart=always and owns the container's lifetime via
+# tools/webcam-compose-run.sh (`compose up -d gallery` then `docker wait
+# gallery`). This script is the independent second line of defence: it runs
+# every 60s and restarts the container only if it is down — a unit that
+# reports "active" can still be running a dead container's wait process.
 set -uo pipefail
 
 COMPOSE="/usr/bin/docker compose -f /home/user/webcam/docker-compose.yml"
-CONTAINER="webcam"
+CONTAINER="gallery"
 URL="http://127.0.0.1:8180/"
 
 # 0. nginx alias roots must match the compose bind mounts.

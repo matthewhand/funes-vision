@@ -361,12 +361,25 @@
     .search-clear:hover { color: var(--text-primary); background: rgba(255, 255, 255, 0.08); }
     .search-clear i { width: 14px; height: 14px; }
 
-    .search-input:focus {
-      outline: none;
-      border-color: var(--accent);
-      background: rgba(255, 255, 255, 0.07);
-      box-shadow: 0 0 0 3px var(--accent-15);
-    }
+.search-input:focus {
+        outline: none;
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25);
+      }
+
+      /* Natural-language search status, shown beside the search box. It is
+         deliberately quiet: it reports state, never error. Loading = "NL
+         search loading", ready = "NL search ready", otherwise nothing — a
+         failed download must not look like a broken feature. */
+      .nl-search-status {
+        font-size: 0.62rem;
+        color: var(--text-secondary);
+        margin-left: 6px;
+        white-space: nowrap;
+        opacity: 0.85;
+      }
+      .nl-search-status.ready { color: var(--accent); }
+      .nl-search-status.busy { color: var(--text-secondary); font-style: italic; }
 
     /* Canonical button (token-based). .btn-switch is the accent variant. */
     .btn {
@@ -1253,6 +1266,7 @@
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(var(--card-min-width), 1fr));
       gap: var(--grid-gap);
+      grid-auto-rows: minmax(180px, auto);
       transition: all var(--transition-speed);
       /* The grid is the page's main scroll region. Without a cap it grew to
          the full archive (10k px on mobile, 2k on desktop) every time the All
@@ -2141,6 +2155,7 @@
           <div class="search-box">
             <i data-lucide="search"></i>
             <input type="text" id="search-input" class="search-input" placeholder="Search time, labels, or caption…" aria-label="Search gallery">
+            <span id="nl-search-status" class="nl-search-status" aria-live="polite" title="Natural-language search status"></span>
             <button id="search-clear" class="search-clear" type="button" aria-label="Clear search" hidden>
               <i data-lucide="x"></i>
             </button>
@@ -2677,6 +2692,16 @@
       activeHourChartFilter: null, // specific hour filter: null, 0-23
       activeView: 'medium', // small, medium, large, list
       searchQuery: '',      // search query
+      // Natural-language search (Cactus Needle, in-browser). Loaded lazily on
+      // demand — the search box uses keyword matching until the model is up,
+      // so a slow link or a failed download never degrades the gallery.
+      nlSearch: {
+        available: false,   // true once the model module + weights are loaded
+        loading: false,     // true while the import is in flight
+        busy: false,        // true while a query is being resolved
+        error: '',          // last load error, or '' if none
+        lastResolved: null, // {query, filters} of the last translation, for the UI
+      },
       blacklist: JSON.parse(localStorage.getItem('webcam_ai_blacklist') || '[]'),
       // Map raw AI labels to a canonical UI label (e.g. face/body -> person)
       labelAliases: JSON.parse(localStorage.getItem('webcam_ai_aliases') || '{"face":"person","body":"person","raccoon":"dog"}'),
@@ -4318,6 +4343,72 @@
     renderUnconfirmedToggle();
 
     // Apply Active Filters & Search Query
+    // Shallow set equality for arrays of strings, order-independent.
+    function arraysEqual(a, b) {
+      if (a === b) return true;
+      if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+      const sa = new Set(a), sb = new Set(b);
+      if (sa.size !== sb.size) return false;
+      for (const x of sa) if (!sb.has(x)) return false;
+      return true;
+    }
+
+    // Apply filter fields produced by the natural-language search. Advisory
+    // only: each field is validated against the real filter state before it
+    // is applied, so a bad translation cannot set an impossible value.
+    function applyNaturalLanguageFilters(f) {
+      if (!f || typeof f !== 'object') return;
+      let changed = false;
+      if (typeof f.view === 'string'
+          && ['timeline', 'objects', 'all'].includes(f.view)
+          && state.activeFilter !== f.view) {
+        state.activeFilter = f.view;
+        changed = true;
+      }
+      if (Array.isArray(f.objects)) {
+        const valid = f.objects.filter(l => typeof l === 'string' && l.trim());
+        if (valid.length && !arraysEqual([...state.objectFilters], valid)) {
+          state.objectFilters = new Set(valid);
+          changed = true;
+        }
+      }
+      if (typeof f.date === 'string' && f.date.trim()) {
+        const dates = catalogDateStrs(state.allImages);
+        const home = homeDateFilter(todayDateStr(new Date(), DISPLAY_TZ), dates);
+        if (f.date === 'all' || f.date === home || dates.includes(f.date)) {
+          if (state.activeDateFilter !== f.date) {
+            state.activeDateFilter = f.date;
+            state.dateUserSet = f.date !== home;
+            changed = true;
+          }
+        }
+      }
+      if (typeof f.hour === 'number' && f.hour >= 0 && f.hour <= 23) {
+        if (state.activeHourChartFilter !== f.hour) {
+          state.activeHourChartFilter = f.hour;
+          changed = true;
+        }
+      }
+      if (typeof f.time_start === 'number' && f.time_start >= 0 && f.time_start <= 23) {
+        if (state.timeStart !== f.time_start) { state.timeStart = f.time_start; changed = true; }
+      }
+      if (typeof f.time_end === 'number' && f.time_end >= 0 && f.time_end <= 23) {
+        if (state.timeEnd !== f.time_end) { state.timeEnd = f.time_end; changed = true; }
+      }
+      if (typeof f.search === 'string' && f.search.trim()) {
+        const si = document.getElementById('search-input');
+        if (si && si.value !== f.search) {
+          si.value = f.search;
+          state.searchQuery = f.search;
+          changed = true;
+        }
+      }
+      if (changed) {
+        if (window.syncTimePills) window.syncTimePills();
+        applyFiltersAndSearch();
+      }
+    }
+
     function applyFiltersAndSearch() {
       const scoped = filenamesOnDate(state.allImages, state.activeDateFilter);
       if (state.activeFilter === 'events') {
@@ -6238,14 +6329,109 @@
       // Live auto-refresh: keyboard-operable switch (Enter/Space + click)
       bindActivatable(document.getElementById('live-toggle'), toggleLiveMode);
 
-      // Search Query box (debounced)
+      // --- Natural-language search (Cactus Needle, in-browser) -------------------
+      // Loaded lazily and only when the user actually types a query that the
+      // keyword matcher cannot resolve on its own. The search box keeps using
+      // keyword matching until the model is up, so a slow link or a failed
+      // download never degrades the gallery — the worst case is that the
+      // feature silently does not appear.
+      //
+      // The model is a tool caller: it is handed a description of the
+      // gallery's filter schema and returns a structured call. It never sees
+      // image data or the analysis JSON, so nothing leaves the box for this
+      // feature regardless of how it is loaded.
+      let needleModule = null;
+
+      async function loadNeedle() {
+        if (state.nlSearch.loading) return;
+        if (state.nlSearch.available) return;
+        state.nlSearch.loading = true;
+        state.nlSearch.error = '';
+        try {
+          // Dynamic import — kept out of the initial bundle so the page parses
+          // and renders before 140 MB of WASM is even requested.
+          needleModule = await import('/tools/needle-client.js');
+          await needleModule.init();
+          state.nlSearch.available = true;
+        } catch (e) {
+          state.nlSearch.error = (e && e.message) ? e.message : String(e);
+          state.nlSearch.available = false;
+        } finally {
+          state.nlSearch.loading = false;
+        }
+      }
+
+      // Translate a natural-language query into filter state. Returns null
+      // on any failure so the caller can fall back to keyword matching without
+      // surfacing an error to the user.
+      async function resolveNaturalLanguage(query) {
+        if (!state.nlSearch.available) return null;
+        if (state.nlSearch.busy) return null; // one at a time
+        state.nlSearch.busy = true;
+        try {
+          const filters = await needleModule.translate(query, filterToolSchema());
+          if (!filters || typeof filters !== 'object') return null;
+          state.nlSearch.lastResolved = { query, filters };
+          return filters;
+        } catch (e) {
+          return null;
+        } finally {
+          state.nlSearch.busy = false;
+        }
+      }
+
+      // The schema Needle is handed. It is a description, not data — the model
+      // still never sees frames or the analysis JSON.
+      function filterToolSchema() {
+        return {
+          name: 'set_filters',
+          description: 'Set the gallery filters from a natural-language query.',
+          parameters: {
+            type: 'object',
+            properties: {
+              view: { type: 'string', enum: ['timeline', 'objects', 'all'],
+                description: 'Gallery tab: timeline groups visits, objects shows detector hits, all shows every snapshot.' },
+              objects: { type: 'array', items: { type: 'string' },
+                description: 'Detectors to include: person, dog, cat, bird, car.' },
+              date: { type: 'string',
+                description: 'Date scope: today, yesterday, a YYYY-MM-DD date, all, or a relative span such as "last two weeks".' },
+              time_start: { type: 'integer', minimum: 0, maximum: 23,
+                description: 'Start hour 0-23. Time ranges wrap midnight when start > end.' },
+              time_end: { type: 'integer', minimum: 0, maximum: 23,
+                description: 'End hour 0-23. Time ranges wrap midnight when start > end.' },
+              hour: { type: ['integer', 'null'], minimum: 0, maximum: 23,
+                description: 'Specific hour to show, or null for the whole range.' },
+              search: { type: ['string', 'null'],
+                description: 'Free-text substring to match against time, labels, or caption, or null.' },
+            },
+          },
+        };
+      }
+
+      // Search Query box (debounced). Keyword matching runs first and always;
+      // if the natural-language model is loaded, the query is also passed
+      // through it so a sentence can set date/time/object filters. The model
+      // result is advisory — the keyword search still applies on top, so a
+      // bad translation can only widen or narrow, never break, the view.
       let searchTimeout;
       document.getElementById('search-input').addEventListener('input', (e) => {
         syncSearchClear();
         clearTimeout(searchTimeout);
-        searchTimeout = setTimeout(() => {
-          state.searchQuery = e.target.value;
+        searchTimeout = setTimeout(async () => {
+          const value = e.target.value;
+          state.searchQuery = value;
+          if (state.nlSearch.available) {
+            const filters = await resolveNaturalLanguage(value);
+            if (filters) applyNaturalLanguageFilters(filters);
+          }
           applyFiltersAndSearch();
+          syncNlStatus();
+          // Kick off lazy loading in the background. It does not block the
+          // render above, and the first successful load enables the NL path
+          // for the next query.
+          if (!state.nlSearch.available && !state.nlSearch.loading) {
+            loadNeedle().then(syncNlStatus);
+          }
         }, 300);
       });
 
@@ -6256,6 +6442,18 @@
         if (searchClearBtn && si) searchClearBtn.hidden = !showSearchClear(si.value);
       }
       window.syncSearchClear = syncSearchClear;
+
+      // Reflect the natural-language search state beside the search box.
+      function syncNlStatus() {
+        const el = document.getElementById('nl-search-status');
+        if (!el) return;
+        if (state.nlSearch.busy) { el.textContent = 'NL search running…'; el.className = 'nl-search-status busy'; }
+        else if (state.nlSearch.loading) { el.textContent = 'NL search loading'; el.className = 'nl-search-status'; }
+        else if (state.nlSearch.available) { el.textContent = 'NL search ready'; el.className = 'nl-search-status ready'; }
+        else { el.textContent = ''; el.className = 'nl-search-status'; }
+      }
+      window.syncNlStatus = syncNlStatus;
+
       if (searchClearBtn) {
         searchClearBtn.addEventListener('click', () => {
           const si = document.getElementById('search-input');

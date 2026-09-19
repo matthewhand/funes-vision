@@ -1,5 +1,5 @@
 [Unit]
-Description=Webcam gallery write API (pin/delete)
+Description=funes-vision gallery write API (pin/delete)
 After=network.target remote-fs.target
 
 [Service]
