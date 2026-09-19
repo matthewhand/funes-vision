@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Webcam pipeline watchdog — cron safety net over systemd.
+# funes-vision pipeline watchdog — cron safety net over systemd.
 #
 # The long-lived create-index / analyze services can look "active" while a
 # sweep is stuck for hours (or analysis.json is corrupt and retention never

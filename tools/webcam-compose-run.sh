@@ -14,7 +14,7 @@
 # be the only thing standing between the gallery and downtime.
 set -eu
 
-docker compose -f /home/user/webcam/docker-compose.yml up -d webcam
+docker compose -f /home/user/webcam/docker-compose.yml up -d gallery
 # exec so systemd tracks the wait process as the main PID: when the container
 # exits, this process exits, and Restart=always brings the whole thing back.
-exec docker wait webcam
+exec docker wait gallery

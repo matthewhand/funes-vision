@@ -1,5 +1,5 @@
 [Unit]
-Description=Webcam nginx gallery (docker compose)
+Description=funes-vision nginx gallery (docker compose)
 # docker.service must be up and the data-root mount (/mnt/models) present
 # before compose can start the bind-mounted gallery container. The daemon
 # was historically 1.7 min late on boot because it had no ordering on the
@@ -10,8 +10,8 @@ Wants=docker.service docker.socket network-online.target
 
 [Service]
 # Type=simple + Restart=always, owned by tools/webcam-compose-run.sh:
-#   1. `docker compose up -d webcam` ensures the container exists (idempotent)
-#   2. `exec docker wait webcam` blocks until it exits
+#   1. `docker compose up -d gallery` ensures the container exists (idempotent)
+#   2. `exec docker wait gallery` blocks until it exits
 #   3. on exit, Restart=always brings the whole thing back.
 #
 # The old unit was Type=oneshot: `compose up -d` returned immediately in
