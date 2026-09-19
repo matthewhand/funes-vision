@@ -263,6 +263,7 @@
     .view-toggles-wrap { display: none; }
 
     .logo-area {
+      position: relative;
       display: flex;
       align-items: center;
       gap: 12px;
@@ -303,6 +304,31 @@
       border-radius: var(--radius-pill);
     }
     .cam-chip #switch-feed-label { font-weight: 600; }
+    .camera-switch-menu {
+      position: absolute;
+      z-index: 20;
+      margin-top: 4px;
+      min-width: 150px;
+      padding: 4px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+    }
+    .camera-switch-menu[hidden] { display: none; }
+    .camera-switch-option {
+      display: block;
+      width: 100%;
+      padding: 7px 9px;
+      border: 0;
+      border-radius: 4px;
+      background: transparent;
+      color: var(--text-primary);
+      text-align: left;
+      cursor: pointer;
+    }
+    .camera-switch-option:hover,
+    .camera-switch-option:focus-visible { background: var(--surface-hover); }
 
     /* Top Action controls */
     .controls-wrapper {
@@ -2135,6 +2161,7 @@
             <i data-lucide="arrow-left-right"></i>
             <span id="switch-feed-label">Back</span>
           </button>
+          <div id="camera-switch-menu" class="camera-switch-menu" role="menu" hidden></div>
         </div>
 
         <!-- Tabs + the count of what they're showing, kept together -->
@@ -6288,28 +6315,44 @@
       syncSearchPlaceholder();
       window.addEventListener('resize', syncSearchPlaceholder);
 
-      // Set switch feed details
+      // Camera selector uses the registry for every route, including the dashboard.
       const btnSwitch = document.getElementById('btn-switch-feed');
-      document.getElementById('switch-feed-label').textContent = profile.switchLabel;
-      btnSwitch.addEventListener('click', () => {
-        // On the dashboard, switch cameras client-side instead of navigating
-        // to a root that doesn't exist for the other camera. Pick the other
-        // camera from the cached registry rather than hardcoding names: the
-        // ids are folder basenames and could be anything once settings.json
-        // changes. cameras() is async; by click time the dashboard has loaded
-        // and camerasCache is populated, so read it synchronously here.
-        if (document.getElementById('dashboard-view').style.display !== 'none') {
-          const list = camerasCache || [];
-          const current = servedCameraId();
-          const others = list.filter(c => c.id !== current);
-          const next = (others[0] || list[0]);
-          if (next) {
-            pushRoute({ view: ROUTE_GALLERY, cameraId: next.id });
-            loadGalleryForCamera(next.id);
-          }
-          return;
+      const switchMenu = document.getElementById('camera-switch-menu');
+      const switchLabel = document.getElementById('switch-feed-label');
+      const renderCameraMenu = (list) => {
+        const current = currentRoute().cameraId || servedCameraId();
+        switchMenu.replaceChildren();
+        (list || []).forEach((camera) => {
+          if (camera.id === current) return;
+          const option = document.createElement('button');
+          option.type = 'button';
+          option.className = 'camera-switch-option';
+          option.setAttribute('role', 'menuitem');
+          option.textContent = camera.label || cameraDisplayName(camera.id);
+          option.addEventListener('click', () => {
+            switchMenu.hidden = true;
+            pushRoute({ view: ROUTE_GALLERY, cameraId: camera.id });
+            loadGalleryForCamera(camera.id);
+          });
+          switchMenu.appendChild(option);
+        });
+        switchMenu.hidden = !switchMenu.childElementCount;
+      };
+      btnSwitch.addEventListener('click', async (event) => {
+        event.stopPropagation();
+        const list = await cameras();
+        if (switchMenu.hidden) renderCameraMenu(list);
+        else switchMenu.hidden = true;
+      });
+      document.addEventListener('click', (event) => {
+        if (!switchMenu.contains(event.target) && event.target !== btnSwitch) {
+          switchMenu.hidden = true;
         }
-        window.location.href = profile.switchUrl;
+      });
+      cameras().then((list) => {
+        const current = currentRoute().cameraId || servedCameraId();
+        const currentCamera = (list || []).find(c => c.id === current);
+        switchLabel.textContent = currentCamera ? (currentCamera.label || cameraDisplayName(currentCamera.id)) : profile.switchLabel;
       });
 
       // Back/forward: re-run the router so the right view paints.
