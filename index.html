@@ -393,6 +393,115 @@
         box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25);
       }
 
+      /* === Command-palette-style search popup === */
+      .search-trigger {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 6px 10px 6px 12px;
+        color: var(--text-secondary);
+        font-size: 0.85rem;
+        cursor: text;
+        transition: all var(--transition-speed);
+        min-width: 180px;
+      }
+      .search-trigger:hover { border-color: var(--accent); color: var(--text-primary); }
+      .search-trigger:focus-visible {
+        outline: none;
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25);
+      }
+      .search-trigger i { width: 15px; height: 15px; flex-shrink: 0; }
+      .search-trigger .search-placeholder { flex: 1; }
+      .search-trigger .search-kbd {
+        display: inline-flex;
+        align-items: center;
+        gap: 2px;
+        font-size: 0.7rem;
+        color: var(--text-secondary);
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid var(--border-color);
+        border-radius: 4px;
+        padding: 1px 5px;
+        font-family: inherit;
+      }
+      .search-trigger .search-kbd kbd {
+        font-family: inherit;
+        font-size: 0.7rem;
+      }
+
+      .search-popup {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.6);
+        backdrop-filter: blur(4px);
+        display: none;
+        align-items: flex-start;
+        justify-content: center;
+        z-index: 1000;
+        padding-top: 18vh;
+      }
+      .search-popup.open { display: flex; }
+      .search-popup-inner {
+        width: min(560px, 92vw);
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+        overflow: hidden;
+        animation: searchPopupIn 0.15s ease-out;
+      }
+      @keyframes searchPopupIn {
+        from { opacity: 0; transform: translateY(-12px) scale(0.97); }
+        to   { opacity: 1; transform: translateY(0) scale(1); }
+      }
+      .search-popup-input-wrap {
+        position: relative;
+        display: flex;
+        align-items: center;
+      }
+      .search-popup-input-wrap i {
+        position: absolute;
+        left: 14px;
+        width: 16px;
+        height: 16px;
+        color: var(--text-secondary);
+        pointer-events: none;
+      }
+      .search-popup-input {
+        width: 100%;
+        background: transparent;
+        border: none;
+        border-bottom: 1px solid var(--border-color);
+        padding: 16px 16px 14px 44px;
+        color: var(--text-primary);
+        font-size: 0.95rem;
+        outline: none;
+      }
+      .search-popup-input:focus { border-color: var(--accent); }
+      .search-popup-input::placeholder { color: var(--text-secondary); }
+      .search-popup-footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 8px 14px;
+        font-size: 0.72rem;
+        color: var(--text-secondary);
+        border-top: 1px solid var(--border-color);
+      }
+      .search-popup-footer .spf-left { display: flex; gap: 12px; }
+      .search-popup-footer kbd {
+        font-family: inherit;
+        font-size: 0.7rem;
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid var(--border-color);
+        border-radius: 3px;
+        padding: 1px 5px;
+      }
+
       /* Natural-language search status, shown beside the search box. It is
          deliberately quiet: it reports state, never error. Loading = "NL
          search loading", ready = "NL search ready", otherwise nothing — a
@@ -2179,13 +2288,10 @@
 
         <div class="controls-wrapper">
 
-          <div class="search-box">
+          <div class="search-trigger" id="search-trigger" role="button" tabindex="0" aria-label="Search gallery (Ctrl+K)">
             <i data-lucide="search"></i>
-            <input type="text" id="search-input" class="search-input" placeholder="Search time, labels, or caption…" aria-label="Search gallery">
-            <span id="nl-search-status" class="nl-search-status" aria-live="polite" title="Natural-language search status"></span>
-            <button id="search-clear" class="search-clear" type="button" aria-label="Clear search" hidden>
-              <i data-lucide="x"></i>
-            </button>
+            <span class="search-placeholder">Search time, labels, or caption…</span>
+            <span class="search-kbd"><kbd>⌘</kbd><kbd>K</kbd></span>
           </div>
           
           <!-- Right-aligned actions cluster: Filters + Settings/Integrations/AI -->
@@ -2555,7 +2661,25 @@
     </div>
   </div>
 
-  <!-- Live Toast Alert -->
+  <!-- Search popup (Ctrl+K / Cmd+K) -->
+    <div class="search-popup" id="search-popup" role="dialog" aria-modal="true" aria-label="Search gallery">
+      <div class="search-popup-inner">
+        <div class="search-popup-input-wrap">
+          <i data-lucide="search"></i>
+          <input type="text" id="search-input" class="search-popup-input" placeholder="Search time, labels, or caption…">
+        </div>
+        <div class="search-popup-footer">
+          <div class="spf-left">
+            <span><kbd>↑</kbd><kbd>↓</kbd> navigate</span>
+            <span><kbd>Enter</kbd> select</span>
+            <span><kbd>Esc</kbd> close</span>
+          </div>
+          <span id="search-popup-count"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Live Toast Alert -->
   <!-- role=status + aria-live so screen readers announce toast messages (pins,
        deletes, copy, errors). The element is always rendered (slid off via
        transform/opacity, not display:none), so the live region stays in the a11y
@@ -6485,6 +6609,88 @@
         if (searchClearBtn && si) searchClearBtn.hidden = !showSearchClear(si.value);
       }
       window.syncSearchClear = syncSearchClear;
+
+      // --- Search popup (Ctrl+K / Cmd+K) ---
+      const searchTrigger = document.getElementById('search-trigger');
+      const searchPopup = document.getElementById('search-popup');
+      const searchPopupInput = document.getElementById('search-input');
+      const searchPopupCount = document.getElementById('search-popup-count');
+
+      function openSearchPopup(prefill) {
+        if (!searchPopup) return;
+        searchPopup.classList.add('open');
+        searchPopup.setAttribute('aria-hidden', 'false');
+        document.body.style.overflow = 'hidden';
+        if (prefill != null) searchPopupInput.value = prefill;
+        setTimeout(() => searchPopupInput.focus(), 50);
+        syncSearchPopupCount();
+      }
+      function closeSearchPopup() {
+        if (!searchPopup) return;
+        searchPopup.classList.remove('open');
+        searchPopup.setAttribute('aria-hidden', 'true');
+        document.body.style.overflow = '';
+        // Mirror the popup value back into the trigger label for context
+        const v = searchPopupInput.value.trim();
+        const ph = searchTrigger && searchTrigger.querySelector('.search-placeholder');
+        if (ph) ph.textContent = v || 'Search time, labels, or caption…';
+      }
+      window.openSearchPopup = openSearchPopup;
+      window.closeSearchPopup = closeSearchPopup;
+
+      function syncSearchPopupCount() {
+        if (!searchPopupCount) return;
+        const n = state.filteredImages ? state.filteredImages.length : 0;
+        searchPopupCount.textContent = n ? `${n} results` : 'no matches';
+      }
+
+      searchTrigger && searchTrigger.addEventListener('click', () => openSearchPopup());
+      searchTrigger && searchTrigger.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openSearchPopup(); }
+      });
+
+      document.addEventListener('keydown', (e) => {
+        if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+          e.preventDefault();
+          if (searchPopup.classList.contains('open')) closeSearchPopup();
+          else openSearchPopup();
+        }
+        if (e.key === 'Escape' && searchPopup.classList.contains('open')) {
+          closeSearchPopup();
+          searchTrigger && searchTrigger.focus();
+        }
+      });
+
+      searchPopup && searchPopup.addEventListener('click', (e) => {
+        if (e.target === searchPopup) closeSearchPopup();
+      });
+
+      // The popup input drives the same state.searchQuery + NL pipeline as the
+      // old inline field. We keep the nl-search-status element hidden here —
+      // the trigger badge already shows the NL state via syncNlStatus().
+      searchPopupInput && searchPopupInput.addEventListener('input', (e) => {
+        const value = e.target.value;
+        state.searchQuery = value;
+        syncSearchClear();
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(async () => {
+          if (state.nlSearch.available) {
+            const filters = await resolveNaturalLanguage(value);
+            if (filters) applyNaturalLanguageFilters(filters);
+          }
+          applyFiltersAndSearch();
+          syncNlStatus();
+          if (!state.nlSearch.available && !state.nlSearch.loading) {
+            loadNeedle().then(syncNlStatus);
+          }
+          syncSearchPopupCount();
+        }, 300);
+      });
+
+      // Restore any saved query on load
+      if (searchPopupInput && state.searchQuery) {
+        searchPopupInput.value = state.searchQuery;
+      }
 
       // Reflect the natural-language search state beside the search box.
       function syncNlStatus() {
