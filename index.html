@@ -7034,20 +7034,29 @@
             <div><b>Idle backfill:</b> ${s.settings.deep_backfill ? 'on' : 'off'}</div>
             <div><b>Multi-image summaries:</b> ${s.settings.burst_summaries_enabled ? 'on' : 'off'}</div>
             <div><b>Quiet labels:</b> ${(s.settings.gate_ignore_labels || []).map(l => escapeHtml(l)).join(', ') || 'none'}</div>
-            <div style="margin-top:6px;"><b>Queue:</b>
-              ${formatCount(s.queue.unanalyzed)} new &middot; ${formatCount(s.queue.unverified_partials)} priority &middot;
-              ${formatCount(s.queue.awaiting_backfill)} backfill &middot; ${formatCount(s.queue.llm_verified)} verified
-              (${formatCount(s.queue.images_on_disk)} on disk)</div>
-            ${(() => {
-              const b = backfillProgress(s.queue);
-              const paused = s.settings && s.settings.deep_passes_enabled === false;
-              const bar = `<span style="display:inline-block;width:80px;height:6px;border-radius:3px;background:var(--border-color);vertical-align:middle;overflow:hidden;"><span style="display:inline-block;height:6px;width:${b.pct}%;background:${paused ? '#f59e0b' : '#10b981'};"></span></span>`;
-              const eta = (!paused && s.queue && s.queue.deep_eta_s > 0)
-                ? ` · ≈${fmtDur(s.queue.deep_eta_s)} @ ~${s.queue.deep_s_per_frame}s/frame`
-                : '';
-              return `<div><b>Deep analysis:</b> ${bar} ${b.pct}% &middot;
-                ${b.analyzed.toLocaleString()} verified, ${b.pending.toLocaleString()} pending${paused ? ' <span style="color:#f59e0b;">(paused — deep passes off)</span>' : ''}${eta}</div>`;
-            })()}
+<div style="margin-top:6px;"><b>Queue:</b>
+               ${formatCount(s.queue.unanalyzed)} new &middot; ${formatCount(s.queue.unverified_partials)} priority &middot;
+               ${formatCount(s.queue.awaiting_backfill)} backfill &middot; ${formatCount(s.queue.llm_verified)} verified
+               (${formatCount(s.queue.images_on_disk)} on disk)</div>
+             ${(() => {
+               const b = backfillProgress(s.queue);
+               const paused = s.settings && s.settings.deep_passes_enabled === false;
+               const bar = `<span style="display:inline-block;width:80px;height:6px;border-radius:3px;background:var(--border-color);vertical-align:middle;overflow:hidden;"><span style="display:inline-block;height:6px;width:${b.pct}%;background:${paused ? '#f59e0b' : '#10b981'};"></span></span>`;
+               const eta = (!paused && s.queue && s.queue.deep_eta_s > 0)
+                 ? ` · ≈${fmtDur(s.queue.deep_eta_s)} @ ~${s.queue.deep_s_per_frame}s/frame`
+                 : '';
+               // Backlog processing rate: frames analyzed per minute over the metrics window
+               const m = s.metrics || {};
+               const rate = m.count > 0 && m.window_min > 0 ? (m.count / m.window_min).toFixed(1) : null;
+               const rateStr = rate ? `${rate} frames/min` : '—';
+               const drainMin = (rate && b.pending > 0) ? Math.ceil(b.pending / parseFloat(rate)) : null;
+               const drainStr = drainMin != null
+                 ? ` · drains in ~${drainMin < 60 ? drainMin + 'min' : Math.floor(drainMin/60) + 'h ' + (drainMin%60) + 'm'}`
+                 : '';
+               return `<div style="margin-top:4px;font-size:0.8rem;color:var(--text-secondary);"><b>Backlog:</b> ${b.pending.toLocaleString()} pending &middot; processing ${rateStr}${drainStr}</div>
+               <div><b>Deep analysis:</b> ${bar} ${b.pct}% &middot;
+                 ${b.analyzed.toLocaleString()} verified, ${b.pending.toLocaleString()} pending${paused ? ' <span style="color:#f59e0b;">(paused — deep passes off)</span>' : ''}${eta}</div>`;
+             })()}
             <div><b>Last sweep:</b> ${s.trigger.last_sweep_age_s == null
               ? '<span style="color:#ef4444;">unknown</span>'
               : (s.trigger.last_sweep_age_s < 1800 ? fmtDur(s.trigger.last_sweep_age_s) + ' ago'
