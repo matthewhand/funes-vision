@@ -2204,11 +2204,11 @@
               <div class="menu" id="filters-dropdown" role="dialog" aria-label="Filter by object">
                 <div class="menu-section-title">Filter by object</div>
                 <div id="object-filter-panel" style="display: none; flex-direction: column; gap: 4px; align-items: flex-start;">
-                  <button type="button" id="sticky-toggle" class="filter-meta-btn" title="When on, toggle several object filters at once (match any). When off, one at a time."></button>
+                  <button type="button" id="sticky-toggle" class="filter-meta-btn" aria-label="Sticky filter selection" title="When on, toggle several object filters at once (match any). When off, one at a time."></button>
                   <div class="chip-row" id="object-filters">
                     <!-- Buttons injected by JS -->
                   </div>
-                  <button type="button" id="hide-filters-toggle" class="filter-meta-btn" title="Hide or show the object filter chips"></button>
+                  <button type="button" id="hide-filters-toggle" class="filter-meta-btn" aria-label="Hide or show the object filter chips" title="Hide or show the object filter chips"></button>
                 </div>
               </div>
             </div>
@@ -4533,10 +4533,10 @@
         }
         if (state.blacklist.length > 0 && state.activeFilter === 'objects') {
           msg += ` (${state.blacklist.length} label${state.blacklist.length !== 1 ? 's are' : ' is'} hidden via Settings.)`;
-          actions += '<button class="btn" id="empty-unhide">Unhide all labels</button>';
+          actions += '<button class="btn" id="empty-unhide-obj">Unhide all labels</button>';
         }
         if (filtersActive) {
-          actions += '<button class="btn" id="empty-reset">Clear all filters</button>';
+          actions += '<button class="btn" id="empty-reset-obj">Clear all filters</button>';
         }
         showEmptyState(msg, actions, title);
       } else {
@@ -4908,14 +4908,14 @@
         const es = timelineEmptyState(filtersActive);
         const kind = emptyStateKind({ filtersActive });
         let msg = es.message;
-        let actions = es.showReset ? '<button class="btn" id="empty-reset">Clear all filters</button>' : '';
+        let actions = es.showReset ? '<button class="btn" id="empty-reset-tl">Clear all filters</button>' : '';
         if (!filtersActive && dates.length > 1) {
           msg = 'No object visits on this day.';
           actions += '<button class="btn" id="empty-all-dates">All dates</button>';
         }
         if (state.blacklist.length) {
           msg += ` (${state.blacklist.length} label${state.blacklist.length !== 1 ? 's are' : ' is'} hidden via Settings.)`;
-          actions += '<button class="btn" id="empty-unhide">Unhide all labels</button>';
+          actions += '<button class="btn" id="empty-unhide-tl">Unhide all labels</button>';
         }
         // Prefer emptyStateKind titles (filtered vs empty archive); keep
         // timelineEmptyState's visit-specific message body.
@@ -5760,14 +5760,14 @@
       const sentinelText = document.getElementById('sentinel-text');
       if (sentinelText) sentinelText.textContent = '';
 
-      const unhideBtn = document.getElementById('empty-unhide');
+      const unhideBtn = document.getElementById('empty-unhide-obj') || document.getElementById('empty-unhide-tl');
       if (unhideBtn) unhideBtn.onclick = () => {
         state.blacklist = [];
         localStorage.setItem('webcam_ai_blacklist', '[]');
         renderObjectFilters();
         applyFiltersAndSearch();
       };
-      const resetBtn = document.getElementById('empty-reset');
+      const resetBtn = document.getElementById('empty-reset-obj') || document.getElementById('empty-reset-tl');
       if (resetBtn) resetBtn.onclick = () => resetAllFilters();
       const allDatesBtn = document.getElementById('empty-all-dates');
       if (allDatesBtn) allDatesBtn.onclick = () => {
