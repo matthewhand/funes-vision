@@ -243,7 +243,7 @@
     /* Dashboard (/cameras/): hide gallery review chrome. Keep Settings/AI. */
     body.mode-dashboard .tab-cluster,
     body.mode-dashboard #stats-label,
-    body.mode-dashboard .search-box,
+    body.mode-dashboard #search-trigger,
     body.mode-dashboard #live-toggle,
     body.mode-dashboard #btn-help,
     body.mode-dashboard #sidebar-toggle,
@@ -476,11 +476,33 @@
         background: transparent;
         border: none;
         border-bottom: 1px solid var(--border-color);
-        padding: 16px 16px 14px 44px;
+        padding: 16px 44px 14px 44px;
         color: var(--text-primary);
         font-size: 0.95rem;
         outline: none;
       }
+      .search-popup-input-wrap .search-clear {
+        position: absolute;
+        right: 6px;
+        top: 50%;
+        transform: translateY(-50%);
+        background: none;
+        border: none;
+        color: var(--text-secondary);
+        cursor: pointer;
+        padding: 4px;
+        line-height: 1;
+      }
+      .search-popup-input-wrap .search-clear[hidden] { display: none; }
+      .search-popup-input-wrap .search-clear:hover { color: var(--text-primary); }
+      .search-popup-input-wrap .search-clear i { width: 14px; height: 14px; }
+      .search-popup-footer .nl-search-status {
+        font-size: 0.62rem;
+        color: var(--text-secondary);
+        margin-left: 6px;
+      }
+      .search-popup-footer .nl-search-status.ready { color: var(--accent); }
+      .search-popup-footer .nl-search-status.busy { color: var(--text-secondary); font-style: italic; }
       .search-popup-input:focus { border-color: var(--accent); }
       .search-popup-input::placeholder { color: var(--text-secondary); }
       .search-popup-footer {
@@ -2137,7 +2159,7 @@
       /* Search shares the controls row instead of owning a full-height band;
          the switch-feed + refresh buttons collapse to icons to make room. This
          reclaims the single biggest chunk of vertical space above the feed. */
-      .search-box {
+      .search-trigger {
         flex: 1 1 120px;
         min-width: 0;
       }
@@ -2667,9 +2689,13 @@
         <div class="search-popup-input-wrap">
           <i data-lucide="search"></i>
           <input type="text" id="search-input" class="search-popup-input" placeholder="Search time, labels, or caption…">
+          <button id="search-clear" class="search-clear" type="button" aria-label="Clear search" hidden>
+            <i data-lucide="x"></i>
+          </button>
         </div>
         <div class="search-popup-footer">
           <div class="spf-left">
+            <span id="nl-search-status" class="nl-search-status" aria-live="polite" title="Natural-language search status"></span>
             <span><kbd>↑</kbd><kbd>↓</kbd> navigate</span>
             <span><kbd>Enter</kbd> select</span>
             <span><kbd>Esc</kbd> close</span>

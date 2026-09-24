@@ -16,7 +16,7 @@ assert.ok(hideRules.length, 'expected body.mode-dashboard CSS hide rule');
 const hideCss = hideRules.join('\n');
 assert.match(hideCss, /display:\s*none\s*!important/,
   'dashboard chrome hide must use display:none !important');
-for (const sel of ['.tab-cluster', '.search-box', '#live-toggle', '#btn-help']) {
+for (const sel of ['.tab-cluster', '#search-trigger', '#live-toggle', '#btn-help']) {
   assert.ok(html.includes('body.mode-dashboard ' + sel),
     'CSS hide rule must include ' + sel);
 }
@@ -35,6 +35,13 @@ for (const id of ['stats-label', 'live-toggle', 'btn-help', 'sidebar-toggle',
   assert.ok(html.includes('id="' + id + '"'), id + ' must remain in markup');
 }
 assert.ok(/class="tab-cluster"/.test(html), '.tab-cluster must remain');
-assert.ok(/class="search-box"/.test(html), '.search-box must remain');
+assert.ok(/class="search-trigger"/.test(html), '.search-trigger must remain');
+assert.ok(/id="search-trigger"/.test(html), '#search-trigger must remain');
+assert.ok(/id="search-popup"[^>]*role="dialog"/.test(html), '#search-popup dialog must remain');
+assert.ok(/id="search-input"[^>]*class="search-popup-input"/.test(html), '#search-input must remain');
+assert.match(html, /document\.addEventListener\('keydown', \(e\) => \{[\s\S]*?e\.metaKey \|\| e\.ctrlKey[\s\S]*?e\.key === 'k'/,
+  'Ctrl/Cmd+K must open the search popup');
+assert.match(html, /e\.key === 'Escape'[\s\S]*?closeSearchPopup\(\)[\s\S]*?searchTrigger && searchTrigger\.focus\(\)/,
+  'Escape must close the popup and restore trigger focus');
 
 console.log('dashboard-chrome: all assertions passed');
