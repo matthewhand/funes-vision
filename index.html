@@ -1016,6 +1016,26 @@
       .lightbox-header { flex-wrap: wrap; gap: var(--space-2); }
       .lightbox-controls { width: 100%; justify-content: center; }
     }
+    /* Flipbook player: two stacked layers crossfade between frames. */
+    .evp-stage { display: grid; max-width: 95vw; max-height: 75vh; line-height: 0; }
+    .evp-frame {
+      grid-area: 1 / 1; max-width: 95vw; max-height: 75vh;
+      border-radius: 8px; background: #111; opacity: 0;
+      transition: opacity 180ms ease;
+    }
+    .evp-frame.evp-show { opacity: 1; }
+    .evp-stage.evp-no-fade .evp-frame { transition: none; }
+    /* GIF export spinner (shown while POST /api/clip runs). */
+    .evp-spin {
+      flex: none; width: 12px; height: 12px;
+      border: 2px solid currentColor; border-top-color: transparent;
+      border-radius: 50%; animation: evp-spin 0.7s linear infinite;
+    }
+    @keyframes evp-spin { to { transform: rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) {
+      .evp-frame { transition: none !important; }
+      .evp-spin { animation: none !important; }
+    }
     /* Right-aligned toolbar actions cluster (Filters + Settings/Integrations/AI).
        In .compact (set by JS when space is tight, via actionsOverflow), the
        secondary action labels collapse to icons; the AI status keeps its text. */
@@ -4034,6 +4054,58 @@
     }
     // === /pure:spaceTogglesPlayback ===
 
+    // === pure:frameDurations ===
+    // Per-frame dwell (ms) for a flipbook, from capture timestamps: the gap to
+    // the next frame drives the current frame's display time. A missing,
+    // non-positive, or non-finite gap falls back to `defaultMs`. Every value is
+    // clamped to [minMs, maxMs] so a long gap between visits can't stall the
+    // player and near-simultaneous frames stay on screen. Entries may be epoch
+    // ms, Date, or ISO string; output length always matches the input.
+    function frameDurations(timestamps, opts) {
+      opts = opts || {};
+      const def = opts.defaultMs == null ? 400 : opts.defaultMs;
+      const min = opts.minMs == null ? 80 : opts.minMs;
+      const max = opts.maxMs == null ? 2500 : opts.maxMs;
+      const list = Array.isArray(timestamps) ? timestamps : [];
+      const toMs = (v) => {
+        if (v == null) return NaN;
+        if (typeof v === 'number') return v;
+        if (v instanceof Date) return v.getTime();
+        const n = Date.parse(v);
+        return isNaN(n) ? NaN : n;
+      };
+      const out = [];
+      for (let i = 0; i < list.length; i++) {
+        const gap = toMs(list[i + 1]) - toMs(list[i]);
+        let d = isFinite(gap) && gap > 0 ? gap : def;
+        if (d < min) d = min;
+        if (d > max) d = max;
+        out.push(d);
+      }
+      return out;
+    }
+    // === /pure:frameDurations ===
+
+    // === pure:playbackToggleState ===
+    // Play/pause button copy + pressed state for the flipbook. The caller owns
+    // `playing`; the aria-label stays the existing "Play or pause".
+    function playbackToggleState(playing) {
+      const on = !!playing;
+      return { playing: on, text: on ? 'Pause' : 'Play' };
+    }
+    // === /pure:playbackToggleState ===
+
+    // === pure:clipButtonState ===
+    // GIF export button while POST /api/clip runs: visible label, disabled flag,
+    // aria-busy, and whether to show the spinner. Pure.
+    function clipButtonState(status) {
+      if (status === 'building') {
+        return { text: 'Building…', disabled: true, busy: true, spinner: true };
+      }
+      return { text: 'Download GIF', disabled: false, busy: false, spinner: false };
+    }
+    // === /pure:clipButtonState ===
+
     // === pure:frameErrorFallbackSrc ===
     // Full-res path for the frame that failed to load (capture index at error
     // time so a later idx advance does not show the wrong frame).
@@ -5187,18 +5259,28 @@
     function openEventPlayer(ev) {
       const frames = ev.frames;
       let idx = 0;
-      let timer = null;
+      let playing = false;
+      let playTimer = null;
+      // Resolve capture instants once so cadence is stable for the whole visit.
+      const timestamps = frames.map(f => {
+        const meta = parseFilename(f);
+        return meta && meta.dateObj ? meta.dateObj.getTime() : NaN;
+      });
+      const durations = frameDurations(timestamps);
 
       const overlay = document.createElement('div');
       overlay.style.cssText = 'position:fixed;inset:0;background:#04060a;z-index:2000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:16px;';
       overlay.innerHTML = `
-        <img id="evp-img" alt="" style="max-width:95vw;max-height:75vh;border-radius:8px;background:#111;">
+        <div id="evp-stage" class="evp-stage">
+          <img id="evp-img" class="evp-frame" alt="" style="max-width:95vw;max-height:75vh;">
+          <img id="evp-img-b" class="evp-frame" alt="" aria-hidden="true" style="max-width:95vw;max-height:75vh;">
+        </div>
         <div id="evp-label" style="color:white;font-size:0.85rem;text-align:center;"></div>
         <input type="range" id="evp-scrub" min="0" value="0" aria-label="Scrub through frames" style="width:min(95vw,520px);accent-color:var(--accent);cursor:pointer;">
         <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;">
-          <button class="btn" id="evp-toggle" aria-label="Play or pause">Pause</button>
+          <button class="btn" id="evp-toggle" aria-label="Play or pause" aria-pressed="false">Pause</button>
           <a class="btn" id="evp-full" target="_blank" aria-label="Open full resolution image">Full res</a>
-          ${frames.length > 1 ? '<button class="btn" id="evp-download" aria-label="Download this sequence as an animated GIF">Download GIF</button>' : ''}
+          ${frames.length > 1 ? '<button class="btn" id="evp-download" aria-label="Download this sequence as an animated GIF" aria-busy="false">Download GIF</button>' : ''}
           <button class="btn" id="evp-share" aria-label="Copy a shareable link to this frame">Copy link</button>
           <button class="btn" id="evp-close" aria-label="Close player">Close</button>
         </div>`;
@@ -5209,25 +5291,41 @@
       document.body.appendChild(overlay);
       const releaseFocus = trapFocus(overlay);  // focus in + trap Tab; restored on close
 
-      const imgEl = overlay.querySelector('#evp-img');
+      const stageEl = overlay.querySelector('#evp-stage');
+      const layers = [overlay.querySelector('#evp-img'), overlay.querySelector('#evp-img-b')];
+      let frontLayer = 1; // first transition fades layer 0 in over the empty layer 1
       const labelEl = overlay.querySelector('#evp-label');
       const fullEl = overlay.querySelector('#evp-full');
       const scrubEl = overlay.querySelector('#evp-scrub');
+      const toggleEl = overlay.querySelector('#evp-toggle');
       scrubEl.max = Math.max(0, frames.length - 1);
+
+      const reduceMotion = prefersReducedMotion(
+        typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
+      );
+      // Reduced motion: skip the crossfade entirely (hard cut, as before).
+      stageEl.classList.toggle('evp-no-fade', reduceMotion);
 
       let clipAbort = null;
       const show = () => {
         // Capture idx at bind time so a late error does not advance the wrong frame.
         const loadIdx = idx;
-        imgEl.onerror = () => {
-          imgEl.onerror = null;
+        const incoming = layers[1 - frontLayer];
+        const outgoing = layers[frontLayer];
+        incoming.onerror = () => {
+          incoming.onerror = null;
           const fallback = frameErrorFallbackSrc(loadIdx, frames);
-          if (fallback) imgEl.src = fallback;
+          if (fallback) incoming.src = fallback;
         };
-        imgEl.src = `thumbs/${frames[idx]}`;
+        incoming.src = `thumbs/${frames[idx]}`;
         const meta = parseFilename(frames[idx]);
         const frameLabel = `${ev.label || 'Visit'} ${ev.type || ''} frame ${idx + 1} of ${frames.length}`.replace(/\s+/g, ' ').trim();
-        imgEl.alt = frameLabel + (meta ? `, ${meta.formattedDate} ${meta.formattedTime}` : '');
+        incoming.alt = frameLabel + (meta ? `, ${meta.formattedDate} ${meta.formattedTime}` : '');
+        incoming.removeAttribute('aria-hidden');
+        incoming.classList.add('evp-show');
+        outgoing.classList.remove('evp-show');
+        outgoing.setAttribute('aria-hidden', 'true');
+        frontLayer = 1 - frontLayer;
         labelEl.innerHTML = `<span style="text-transform:capitalize;">${escapeHtml(ev.label)}</span> ${escapeHtml(ev.type)} &middot; frame ${idx + 1}/${frames.length}` +
           (meta ? `<br>${escapeHtml(meta.formattedDate)} ${escapeHtml(meta.formattedTime)}` : '') +
           (ev.caption ? `<br><em>${escapeHtml(ev.caption)}</em>` : '');
@@ -5238,27 +5336,42 @@
       // Drag the slider to seek to any frame (pauses playback)
       scrubEl.oninput = () => { pause(); idx = parseInt(scrubEl.value, 10) || 0; show(); };
 
+      const step = (delta) => { idx = (idx + delta + frames.length) % frames.length; show(); };
+      const syncToggle = () => {
+        const s = playbackToggleState(playing);
+        toggleEl.textContent = s.text;
+        toggleEl.setAttribute('aria-pressed', String(s.playing));
+      };
+      const clearTimer = () => { if (playTimer !== null) { clearTimeout(playTimer); playTimer = null; } };
+      // Cadence-aware: dwell on each frame for its timestamp-derived duration.
+      const schedule = () => {
+        clearTimer();
+        if (!playing) return;
+        const d = durations[idx] || 400;
+        playTimer = setTimeout(() => {
+          if (!playing) return;
+          step(1);
+          schedule();
+        }, d);
+      };
       const play = () => {
-        timer = setInterval(() => { idx = (idx + 1) % frames.length; show(); }, 400);
-        overlay.querySelector('#evp-toggle').textContent = 'Pause';
+        if (frames.length < 2) { playing = false; syncToggle(); return; }
+        playing = true; syncToggle(); schedule();
       };
-      const pause = () => {
-        clearInterval(timer); timer = null;
-        overlay.querySelector('#evp-toggle').textContent = 'Play';
-      };
+      const pause = () => { playing = false; clearTimer(); syncToggle(); };
 
-      overlay.querySelector('#evp-toggle').onclick = () => timer ? pause() : play();
+      toggleEl.onclick = () => playing ? pause() : play();
       // Tap the image to step a frame (pauses playback)
-      imgEl.onclick = () => { pause(); idx = (idx + 1) % frames.length; show(); };
+      stageEl.onclick = () => { pause(); step(1); };
       // Keyboard: Esc closes, arrows step, Space toggles only when focus is not
       // already on a control that handles activation (avoids double-toggle).
       const onKey = (e) => {
         if (e.key === 'Escape') close();
-        else if (e.key === 'ArrowRight') { pause(); idx = (idx + 1) % frames.length; show(); }
-        else if (e.key === 'ArrowLeft') { pause(); idx = (idx - 1 + frames.length) % frames.length; show(); }
+        else if (e.key === 'ArrowRight') { pause(); step(1); }
+        else if (e.key === 'ArrowLeft') { pause(); step(-1); }
         else if ((e.key === ' ' || e.code === 'Space') && spaceTogglesPlayback(e.target)) {
           e.preventDefault();
-          timer ? pause() : play();
+          playing ? pause() : play();
         }
       };
       const close = () => {
@@ -5273,37 +5386,51 @@
       // Download the whole sequence as a clip. Abort + isConnected guard so a
       // late response cannot complete into a closed player.
       const dlBtn = overlay.querySelector('#evp-download');
-      if (dlBtn) dlBtn.onclick = async () => {
-        const orig = dlBtn.textContent;
-        dlBtn.textContent = 'Building…'; dlBtn.disabled = true;
-        if (clipAbort) { try { clipAbort.abort(); } catch (_) {} }
-        clipAbort = new AbortController();
-        try {
-          const resp = await fetch(`${API_BASE}/api/clip`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ files: frames, format: 'gif' }),
-            signal: clipAbort.signal
-          });
-          if (!resp.ok) throw new Error('clip ' + resp.status);
-          const blob = await resp.blob();
-          if (!overlay.isConnected) return; // player closed while building
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = (ev.label || 'visit').toLowerCase().replace(/\s+/g, '-') + '.gif';
-          document.body.appendChild(a); a.click(); a.remove();
-          setTimeout(() => URL.revokeObjectURL(url), 4000);
-          if (overlay.isConnected) dlBtn.textContent = orig;
-        } catch (e) {
-          if (e && e.name === 'AbortError') return;
-          if (overlay.isConnected) {
-            dlBtn.textContent = orig;
-            showToast('Clip build failed — is the API up (and PIL installed)?');
+      if (dlBtn) {
+        let dlStatus = 'idle';
+        const syncDl = () => {
+          const s = clipButtonState(dlStatus);
+          dlBtn.disabled = s.disabled;
+          dlBtn.setAttribute('aria-busy', String(s.busy));
+          dlBtn.classList.toggle('evp-converting', s.busy);
+          dlBtn.textContent = '';
+          if (s.spinner) {
+            const spin = document.createElement('span');
+            spin.className = 'evp-spin';
+            spin.setAttribute('aria-hidden', 'true');
+            dlBtn.appendChild(spin);
           }
-        } finally {
-          if (overlay.isConnected) dlBtn.disabled = false;
-        }
-      };
+          dlBtn.appendChild(document.createTextNode(s.text));
+        };
+        dlBtn.onclick = async () => {
+          if (dlStatus === 'building') return;
+          dlStatus = 'building'; syncDl();
+          if (clipAbort) { try { clipAbort.abort(); } catch (_) {} }
+          clipAbort = new AbortController();
+          try {
+            const resp = await fetch(`${API_BASE}/api/clip`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ files: frames, format: 'gif' }),
+              signal: clipAbort.signal
+            });
+            if (!resp.ok) throw new Error('clip ' + resp.status);
+            const blob = await resp.blob();
+            if (!overlay.isConnected) return; // player closed while building
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = (ev.label || 'visit').toLowerCase().replace(/\s+/g, '-') + '.gif';
+            document.body.appendChild(a); a.click(); a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 4000);
+          } catch (e) {
+            if (e && e.name === 'AbortError') return;
+            if (overlay.isConnected) showToast('Clip build failed — is the API up (and PIL installed)?');
+          } finally {
+            if (overlay.isConnected) { dlStatus = 'idle'; syncDl(); }
+            clipAbort = null;
+          }
+        };
+      }
       // Share the exact frame being viewed (same deep link Slack posts use)
       overlay.querySelector('#evp-share').onclick = () => shareLink('?image=' + frames[idx]);
       overlay.onclick = (e) => { if (e.target === overlay) close(); };
@@ -5313,11 +5440,7 @@
 
       show();
       // Honor prefers-reduced-motion: do not autoplay the flipbook.
-      const reduceMotion = prefersReducedMotion(
-        typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
-      );
-      if (!reduceMotion) play();
-      else overlay.querySelector('#evp-toggle').textContent = 'Play';
+      if (reduceMotion) pause(); else play();
     }
 
     // Copy a same-origin deep link (?event=/?image=) to the clipboard so a
