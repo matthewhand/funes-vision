@@ -13,12 +13,10 @@ eval(m[1]); // defines badgeStateFor
 // deep passes OFF: preliminary -> verified (detector is the final word), others unchanged
 assert.strictEqual(badgeStateFor('preliminary', false), 'verified');
 assert.strictEqual(badgeStateFor('verified', false), 'verified');
-assert.strictEqual(badgeStateFor('disputed', false), 'disputed');   // disputed still shown distinctly
 assert.strictEqual(badgeStateFor('unknown', false), 'unknown');
 
 // deep passes ON: everything passes through unchanged (the "?" is meaningful)
 assert.strictEqual(badgeStateFor('preliminary', true), 'preliminary');
 assert.strictEqual(badgeStateFor('verified', true), 'verified');
-assert.strictEqual(badgeStateFor('disputed', true), 'disputed');
 
 console.log('badgeStateFor: all assertions passed');

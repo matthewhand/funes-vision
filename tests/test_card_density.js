@@ -21,7 +21,7 @@ for (const tag of ['tag-person', 'tag-dog', 'tag-cat', 'tag-face', 'tag-body']) 
   const m = html.match(new RegExp('\\.' + tag + '\\s*\\{([^}]*)\\}'));
   assert(m, '.' + tag + ' rule not found');
   assert(/background:\s*rgba\(/.test(m[1]), '.' + tag + ' should use a tinted rgba background (calm recipe): ' + m[1]);
-  assert(/border:/.test(m[1]), '.' + tag + ' should have a border (consistent with disputed/potential): ' + m[1]);
+  assert(/border:/.test(m[1]), '.' + tag + ' should have a border (consistent with the potential tag): ' + m[1]);
 }
 
 console.log('card-density: actions hover/focus-reveal + tinted tag recipe verified');

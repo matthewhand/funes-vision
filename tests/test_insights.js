@@ -50,7 +50,7 @@ assert.strictEqual(busiestHour(null), -1);
 // Insights "most seen" is fed visibleLabels(); HA flags must not appear.
 const mixedHA = { person: true, porch_access: true, postal_delivery: true, _yolo: ['person'], _llm: {} };
 assert.deepStrictEqual(
-  labelCounts([visibleLabels(mixedHA, {}, { precisionMode: true, showUnconfirmed: false })]),
+  labelCounts([visibleLabels(mixedHA, {}, {})]),
   [{ label: 'person', count: 1 }]
 );
 

@@ -62,8 +62,6 @@
       /* semantic */
       --success: #10b981;
       --danger: #ef4444;
-      --danger-12: rgba(239, 68, 68, 0.12);
-      --danger-35: rgba(239, 68, 68, 0.35);
       --warning: #f59e0b;
       --surface-hover: rgba(255, 255, 255, 0.04);
       --surface-hover-strong: rgba(255, 255, 255, 0.08);
@@ -1129,7 +1127,7 @@
     }
 
     /* Verified-detection tags: a calm tinted recipe (tinted bg + light-hue text
-       + subtle border) consistent with the disputed/potential tags below,
+       + subtle border) consistent with the potential tag below,
        instead of loud solid fills on every card. Hue still identifies the
        object; weight/border keep them distinct from the italic "potential". */
     .tag-person { background: rgba(var(--tag-person), 0.2); color: var(--tag-person-fg); border: 1px solid rgba(var(--tag-person), 0.4); }
@@ -1137,13 +1135,6 @@
     .tag-cat { background: rgba(var(--tag-cat), 0.2); color: var(--tag-cat-fg); border: 1px solid rgba(var(--tag-cat), 0.4); }
     .tag-face { background: rgba(var(--tag-face), 0.2); color: var(--tag-face-fg); border: 1px solid rgba(var(--tag-face), 0.4); }
     .tag-body { background: rgba(var(--tag-body), 0.2); color: var(--tag-body-fg); border: 1px solid rgba(var(--tag-body), 0.4); }
-
-    .tag-disputed {
-      background: var(--danger-12);
-      color: #ef4444;
-      border: 1px solid var(--danger-35);
-      text-decoration: line-through;
-    }
 
     .tag-potential {
       background: rgba(245, 158, 11, 0.15);
@@ -2375,10 +2366,6 @@
                   <span>Merge labels (&rarr;person, &rarr;dog)</span>
                   <div class="blacklist-status"></div>
                 </div>
-                <div class="blacklist-item" id="unconfirmed-toggle" title="Also show DISPUTED detections (one model saw it, the other ruled it out). Preliminary (awaiting the vision model) hits are always shown with a '?' badge.">
-                  <span>Show unconfirmed detections</span>
-                  <div class="blacklist-status"></div>
-                </div>
                 <div class="menu-section-title with-gap" id="detector-heading">
                   Fast Detector
                 </div>
@@ -2882,8 +2869,6 @@
       blacklist: JSON.parse(localStorage.getItem('webcam_ai_blacklist') || '[]'),
       // Map raw AI labels to a canonical UI label (e.g. face/body -> person)
       labelAliases: JSON.parse(localStorage.getItem('webcam_ai_aliases') || '{"face":"person","body":"person","raccoon":"dog"}'),
-      // Show disputed detections (one model saw it, the other didn't)
-      showUnconfirmed: JSON.parse(localStorage.getItem('webcam_show_unconfirmed') || 'false'),
       isLive: true,         // auto-polling switch
       pollingInterval: null,
       streamConnected: false, // SSE live? (false until 'open'; reset on error)
@@ -3679,14 +3664,9 @@
     // === pure:labelStates ===
     // Detection lifecycle, per canonical label (pure: analysis + alias map):
     //   preliminary - only the fast detector has run (awaiting Gemma)
-    //   verified    - Gemma confirmed it (or the label is beyond YOLO's
-    //                 classes, so consensus is impossible)
-    //   disputed    - one model saw it and the other ruled it out
-    // YOLO_CAPABLE must mirror the backend's YOLO_CLASSES (analyze_images.py:
-    // person, car, bird, cat, dog) — consensus only applies where the fast
-    // detector could actually have seen the object.
+    //   verified    - Gemma confirmed it (or the label is beyond the fast
+    //                 detector's classes)
     function computeLabelStates(analysis, aliases) {
-      const YOLO_CAPABLE = new Set(['person', 'car', 'bird', 'cat', 'dog']);
       // HA/e2b scene flags are not object identity. They render via getHAFlags
       // badges, never as person/dog/car chips or Timeline visit types.
       const HA_FLAG_KEYS = new Set([
@@ -3702,26 +3682,13 @@
       // row was not skipped. Missing fast_pass is not enough (car-only
       // no_trigger and bare detector rows have no fast_pass either).
       const hasVerdict = !!(analysis._llm && typeof analysis._llm === 'object' && !analysis._llm_skip);
-      const yoloSaw = new Set((analysis._yolo || []).map(canon).filter(l => !HA_FLAG_KEYS.has(l)));
       Object.entries(analysis).forEach(([key, val]) => {
         if (val !== true || key === 'fast_pass') return;
         if (HA_FLAG_KEYS.has(key)) return;
         const label = canon(key);
         if (HA_FLAG_KEYS.has(label)) return;
-        if (!hasVerdict) {
-          states.set(label, 'preliminary');
-        } else if (YOLO_CAPABLE.has(label) && !yoloSaw.has(label)) {
-          states.set(label, 'disputed'); // Gemma-only claim
-        } else {
-          states.set(label, 'verified');
-        }
+        states.set(label, hasVerdict ? 'verified' : 'preliminary');
       });
-      if (hasVerdict) {
-        // YOLO saw it but Gemma ruled it out
-        yoloSaw.forEach(label => {
-          if (!states.has(label)) states.set(label, 'disputed');
-        });
-      }
       return states;
     }
     // === /pure:labelStates ===
@@ -3785,30 +3752,15 @@
     // === /pure:getHAFlags ===
 
     // === pure:visibleLabels ===
-    // Disputed-hiding is a PRECISION-MODE feature: 'disputed' means the two
-    // models disagreed, which only happens when Gemma deep passes run. With
-    // deep passes OFF (not precision mode) we aren't verifying, so we show
-    // every label from every inference pass. With deep passes ON, disputed
-    // labels stay hidden unless the user opts into "show unconfirmed".
-    function showDisputedLabels(opts) {
-      opts = opts || {};
-      return !opts.precisionMode || !!opts.showUnconfirmed;
-    }
-    // Canonical labels visible under current settings (verified + preliminary
-    // always; disputed per showDisputedLabels()).
+    // Canonical labels visible under current settings. The YOLO-vs-LLM
+    // "disputed" path is gone, so every detected label is visible; this stays
+    // the single chokepoint for filter/search/visit labels.
     function visibleLabels(analysis, aliases, opts) {
-      const showDisp = showDisputedLabels(opts);
-      const out = new Set();
-      computeLabelStates(analysis, aliases).forEach((st, label) => {
-        if (st !== 'disputed' || showDisp) out.add(label);
-      });
-      return out;
+      return new Set(computeLabelStates(analysis, aliases).keys());
     }
     // === /pure:visibleLabels ===
 
-    // Current label-visibility options from app state.
-    const labelOpts = () => ({ precisionMode: deepPassesOn, showUnconfirmed: state.showUnconfirmed });
-    const effectiveLabels = (analysis) => visibleLabels(analysis, state.labelAliases, labelOpts());
+    const effectiveLabels = (analysis) => visibleLabels(analysis, state.labelAliases);
 
     // === pure:isRecent ===
     // True if epoch-seconds `ts` is within `withinS` of `now` and not in the
@@ -4055,9 +4007,7 @@
     // Accessible name for a detection badge: the lifecycle state (which the
     // colour + ?/✗ glyph convey visually) spelled out for screen readers.
     function badgeLabel(label, state) {
-      const note = state === 'preliminary' ? ', unconfirmed'
-                 : state === 'disputed' ? ', disputed'
-                 : '';   // verified / unknown -> bare label
+      const note = state === 'preliminary' ? ', unconfirmed' : '';   // verified / unknown -> bare label
       return `${label}${note}`;
     }
     // === /pure:badgeLabel ===
@@ -4502,23 +4452,6 @@
     document.getElementById('alias-toggle').onclick = toggleAliases;
     renderAliasToggle();
 
-    // "Show unconfirmed" toggle: include disputed detections
-    const unconfirmedToggle = document.getElementById('unconfirmed-toggle');
-    const renderUnconfirmedToggle = () =>
-      unconfirmedToggle.classList.toggle('hidden-label', !state.showUnconfirmed);
-    unconfirmedToggle.onclick = () => {
-      state.showUnconfirmed = !state.showUnconfirmed;
-      localStorage.setItem('webcam_show_unconfirmed', JSON.stringify(state.showUnconfirmed));
-      state.objectFilters.clear(); // filtered labels may no longer exist
-      renderUnconfirmedToggle();
-      renderObjectFilters();
-      applyFiltersAndSearch();
-      showToast(state.showUnconfirmed
-        ? 'Showing disputed detections too'
-        : 'Hiding disputed detections (models disagree)');
-    };
-    renderUnconfirmedToggle();
-
     // Apply Active Filters & Search Query
     // Shallow set equality for arrays of strings, order-independent.
     function arraysEqual(a, b) {
@@ -4608,8 +4541,7 @@
         if (objectFilterActive() && !labelsMatchObjectFilter(labels)) return false;
 
         // 2. Tab filter: "Objects" shows only images with visible
-        // detections (verified + preliminary; disputed only when
-        // "show unconfirmed" is on); "All" shows everything.
+        // detections (verified + preliminary); "All" shows everything.
         if (state.activeFilter === 'objects' && !objectFilterActive() && !hasWhitelistedDetection) return false;
 
         // 3. Date already applied via filenamesOnDate.
@@ -5309,19 +5241,17 @@
       // Build Detections Badges (replacing the redundant Motion tag)
       let detectionsHtml = '';
       if (analysis) {
-        // Lifecycle badges: verified = solid, preliminary = amber "label?",
-        // disputed = struck-through (only with "show unconfirmed" on)
+        // Lifecycle badges: verified = solid, preliminary = amber "label?"
         labelStates(analysis).forEach((rawSt, label) => {
           const st = badgeStateFor(rawSt, deepPassesOn);
           if (state.blacklist.includes(label)) return;
-          if (st === 'disputed' && !showDisputedLabels(labelOpts())) return;
           let icon = 'eye';
           if (label === 'person') icon = 'user';
           if (label === 'dog') icon = 'dog';
           if (label === 'cat') icon = 'cat';
           if (label === 'bird') icon = 'bird';
-          const cls = st === 'preliminary' ? 'tag-potential' : st === 'disputed' ? 'tag-disputed' : '';
-          const suffix = st === 'preliminary' ? '?' : st === 'disputed' ? ' &#10007;' : '';
+          const cls = st === 'preliminary' ? 'tag-potential' : '';
+          const suffix = st === 'preliminary' ? '?' : '';
 
           detectionsHtml += `
             <span class="badge badge-ai tag-${escapeHtml(label)} ${cls}" aria-label="${escapeHtml(badgeLabel(label, st))}">
@@ -5551,7 +5481,7 @@
     })();
 
     // Make the Settings on/off toggles accessible switches (keyboard + aria-checked).
-    ['alias-toggle', 'unconfirmed-toggle', 'deep-passes-toggle', 'backfill-toggle', 'burst-summaries-toggle', 'slack-enabled-toggle', 'parked-mask-toggle', 'porch-mask-toggle']
+    ['alias-toggle', 'deep-passes-toggle', 'backfill-toggle', 'burst-summaries-toggle', 'slack-enabled-toggle', 'parked-mask-toggle', 'porch-mask-toggle']
       .forEach(id => bindSwitch(document.getElementById(id)));
 
     // Resolve the display timezone from the API (WEBCAM_TZ env > settings >

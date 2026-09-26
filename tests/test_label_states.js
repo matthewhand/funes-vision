@@ -1,6 +1,6 @@
 // Node assert test for the pure computeLabelStates() helper in index.html.
-// Covers the detection lifecycle (preliminary/verified/disputed) and the
-// YOLO-consensus rule. Run: node tests/test_label_states.js
+// Covers the detection lifecycle (preliminary/verified) and HA-flag
+// exclusion. Run: node tests/test_label_states.js
 const fs = require('fs');
 const assert = require('assert');
 
@@ -20,21 +20,20 @@ assert.deepStrictEqual(obj({ person: true, _yolo: ['person'] }), { person: 'prel
 // _llm dict + no _llm_skip => verdict. YOLO corroborates => verified.
 assert.deepStrictEqual(obj({ person: true, _yolo: ['person'], _llm: { porch_access: false } }), { person: 'verified' });
 
-// Gemma claims a YOLO-capable object YOLO didn't see => disputed.
-assert.deepStrictEqual(obj({ person: true, _yolo: [], _llm: {} }), { person: 'disputed' });
-
-// YOLO saw it but Gemma didn't claim it => disputed.
-assert.deepStrictEqual(obj({ _yolo: ['dog'], _llm: {} }), { dog: 'disputed' });
+// The YOLO-vs-LLM disputed path was removed: a Gemma-only claim is verified,
+// and YOLO-only labels with no analysis entry are not surfaced at all.
+assert.deepStrictEqual(obj({ person: true, _yolo: [], _llm: {} }), { person: 'verified' });
+assert.deepStrictEqual(obj({ _yolo: ['dog'], _llm: {} }), {});
 
 // Car-only skip is not a verdict (live {car, _llm_skip} has no fast_pass).
 assert.deepStrictEqual(obj({ car: true, _llm_skip: 'no_trigger' }), { car: 'preliminary' });
 
-// BIRD is a YOLO class (backend class 14): a Gemma-only bird claim YOLO
-// didn't corroborate must be DISPUTED, not verified. (regression guard)
-assert.deepStrictEqual(obj({ bird: true, _yolo: [], _llm: {} }), { bird: 'disputed' });
+// A Gemma bird claim is verified regardless of whether YOLO corroborated it
+// (the disputed distinction was removed).
+assert.deepStrictEqual(obj({ bird: true, _yolo: [], _llm: {} }), { bird: 'verified' });
 assert.deepStrictEqual(obj({ bird: true, _yolo: ['bird'], _llm: {} }), { bird: 'verified' });
 
-// Label beyond YOLO's classes => consensus impossible => verified.
+// Label beyond the fast detector's classes => verified.
 assert.deepStrictEqual(obj({ alien_ufo: true, _yolo: [], _llm: {} }), { alien_ufo: 'verified' });
 
 // Aliases canonicalise raw keys before classification.
