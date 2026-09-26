@@ -1,6 +1,6 @@
 # Roadmap
 
-Planned work for the Webcam AI Gallery. Architecture/ops reference:
+Planned work for funes-vision. Architecture/ops reference:
 [DEVELOP.md](DEVELOP.md) · evolution & current design: [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ---

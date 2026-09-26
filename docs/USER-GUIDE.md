@@ -1,4 +1,4 @@
-# Webcam gallery — how to use it
+# funes-vision gallery — how to use it
 
 A two-camera, local-first gallery. Motion stills land on this box. A fast
 detector tags **who or what**. A local vision model (`gemma4:e2b`) adds

@@ -1,6 +1,6 @@
 # Architecture
 
-How the Webcam AI Gallery fits together today, and how earlier versions looked.
+How funes-vision fits together today, and how earlier versions looked.
 For configuration and operations detail see [DEVELOP.md](DEVELOP.md); for what's
 still planned see [ROADMAP.md](ROADMAP.md).
 

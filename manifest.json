@@ -1,6 +1,6 @@
 {
-  "name": "Webcam AI Gallery",
-  "short_name": "Webcam",
+  "name": "funes-vision — Camera Gallery",
+  "short_name": "funes-vision",
   "description": "Local AI gallery for home cameras — a queryable timeline of who/what was here.",
   "start_url": "./",
   "scope": "./",

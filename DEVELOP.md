@@ -1,7 +1,7 @@
 # Developer & Operations Guide
 
 Architecture, data formats, configuration, and operational detail for the
-webcam AI gallery. For end-user usage see [docs/USER-GUIDE.md](docs/USER-GUIDE.md)
+funes-vision. For end-user usage see [docs/USER-GUIDE.md](docs/USER-GUIDE.md)
 and [README.md](README.md).
 
 ## System overview
