@@ -16,6 +16,10 @@
 set -euo pipefail
 
 HTPASSWD_FILE="/etc/nginx/.htpasswd"
+# nginx (Debian/Ubuntu) workers run as www-data; the master (root) reads the
+# file at config load, but 640 root:www-data lets workers read it too without
+# making the hashes world-readable. Override with HTPASSWD_GROUP if needed.
+NGINX_GROUP="${HTPASSWD_GROUP:-www-data}"
 
 verify() {
   if [ ! -f "$HTPASSWD_FILE" ]; then echo "no $HTPASSWD_FILE"; exit 1; fi
@@ -27,15 +31,15 @@ case "${1:-}" in
   set)
     [ "$#" -eq 3 ] || { echo "usage: $0 set USER PASS" >&2; exit 2; }
     sudo htpasswd -cb "$HTPASSWD_FILE" "$2" "$3"
-    sudo chown root:root "$HTPASSWD_FILE"
-    sudo chmod 644 "$HTPASSWD_FILE"
+    sudo chown "root:$NGINX_GROUP" "$HTPASSWD_FILE"
+    sudo chmod 640 "$HTPASSWD_FILE"
     echo "set $2"
     ;;
   rm)
     [ "$#" -eq 2 ] || { echo "usage: $0 rm USER" >&2; exit 2; }
     sudo htpasswd -b "$HTPASSWD_FILE" "$2" "x" >/dev/null 2>&1 || true
     sudo htpasswd -D "$HTPASSWD_FILE" "$2" 2>/dev/null || true
-    sudo chown root:root "$HTPASSWD_FILE"; sudo chmod 644 "$HTPASSWD_FILE"
+    sudo chown "root:$NGINX_GROUP" "$HTPASSWD_FILE"; sudo chmod 640 "$HTPASSWD_FILE"
     echo "removed $2"
     ;;
   *)

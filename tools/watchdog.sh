@@ -213,7 +213,7 @@ need_retention = (
     or ret_age > 3600  # at least hourly cleanup like the old cron
 )
 
-# Safe KEY=value for eval (no spaces in values we emit).
+# KEY=value lines consumed by cmd_check's whitelist parser (no eval).
 print(f"API_OK={'1' if api_ok else '0'}")
 print(f"HEALTH={h_status}")
 print(f"SWEEP_AGE={sweep_age}")
@@ -247,7 +247,20 @@ cmd_check() {
   if [[ -n "$status" ]]; then printf '%s' "$status" >"$sf"; else printf '%s' '{}' >"$sf"; fi
   evals="$(decide_with_python "$hf" "$sf")"
   rm -f "$hf" "$sf"
-  eval "$evals"
+  # Parse the KEY=value output without eval: only whitelisted keys are
+  # assigned, and printf -v writes the value verbatim (no word-splitting,
+  # globbing or command substitution from untrusted API-derived text).
+  API_OK= HEALTH=unknown SWEEP_AGE=999999 MAX_BUDGET=0.0 FREE_GB=999.0
+  RET_AGE=999999 NEED_RESTART=0 NEED_RETENTION=0
+  local k v
+  while IFS='=' read -r k v; do
+    if [[ -z "$k" ]]; then continue; fi
+    case "$k" in
+      API_OK|HEALTH|SWEEP_AGE|MAX_BUDGET|FREE_GB|RET_AGE|NEED_RESTART|NEED_RETENTION)
+        printf -v "$k" '%s' "$v"
+        ;;
+    esac
+  done <<<"$evals"
   log "check: health=$HEALTH sweep_age=${SWEEP_AGE}s max_budget=${MAX_BUDGET}% free_gb=$FREE_GB ret_age=${RET_AGE}s restart=$NEED_RESTART retention=$NEED_RETENTION"
 
   if [[ "${NEED_RESTART:-0}" == "1" ]]; then
