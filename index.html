@@ -1,4 +1,91 @@
 <!DOCTYPE html>
+<!--
+  ============================================================================
+  index.html — single-file SPA. No build step. One inline script element at the
+  end of <body> owns all client logic (lucide.min.js is the only external one).
+  This block is the contributor table of contents: find a section, then grep
+  its sentinel names to jump straight to the code.
+
+  HOW TO READ THIS FILE
+  ----------------------------------------------------------------------------
+  * Sections are delimited by `// --- NAME ---` banner comments (or a clear
+    top-level function group), listed A–S below in file order.
+  * `const state` is the single mutable store; everything else is pure or
+    renders into the DOM.
+  * Pure, side-effect-free helpers additionally carry a machine-readable
+    sentinel comment pair (a `pure:NAME` open marker and its matching close)
+    that tests/*.js use to extract and eval exactly one copy of the function,
+    so the page and the unit test stay in sync. See tests/test_sentinel_inventory.py
+    (markers exist, unique, non-empty) and tests/run.sh (extracts the inline
+    script via tools/lint/extract-inline.mjs and runs `node --check` on it).
+  * Keep this map and DEVELOP.md's "index.html layout" note in sync when a
+    section moves or a helper is added/renamed.
+
+  SECTION MAP (single inline script, in file order)
+  ----------------------------------------------------------------------------
+  A. Router + camera registry   currentRoute / routeHref / pushRoute /
+     setWorkspaceMode / applyRoute / servedCameraId / cameras / getFeedProfile
+     sentinels: peerFeedUrl
+  B. State                      const state — filters, tabs, view mode,
+     lightbox, slideshow, zoom/pan, SSE status; localStorage-backed prefs
+  C. Pure helpers — time / filenames / captions
+     sentinels: cameraDisplayName resolveDisplayTz zonedTimeToUtc hourInZone
+       shortTimeZoneName parseFilenameFields filenamesOnDate visitAltText
+       lightboxTitle deleteConfirmText timelineEmptyState lightboxFooterMeta
+       showSearchClear isActivateKey
+  D. DOM binding + catalog load bindActivatable / bindSwitch / parseFilename /
+     catalogTag / drainBody / afterPaint / loadData
+  E. Dashboard view (/cameras/) loadDashboardCatalogs / renderDashboard /
+     loadGalleryForCamera
+  F. Rendering — date rail + charts
+                                 renderDateSidebar / renderActivityChart
+  G. Pure helpers — labels / badges / counts
+     sentinels: labelStates badgeStateFor getHAFlags visibleLabels isRecent
+       tabWrap formatCount formatGb countActiveFilters activeFilterBanner
+       prefersReducedMotion hideLabelSwitchName spaceTogglesPlayback
+       frameErrorFallbackSrc shouldRefreshSystemPanel emptyStateKind
+       loadErrorKind sparklineHasData labelCounts visitsSummary gridStatsLabel
+       visitDateLabel badgeLabel cardAriaLabel frameStatusBadge timePillRange
+       hourInRange timeRangeIsDefault timeRangeCollapsed listRowSummary
+       activeFiltersSummary actionsOverflow sidebarDefaultCollapsed escapeHtml
+  H. Live SSE merge + saved searches
+     sentinels: mergeNewImage detectionEntry clearedFilters filterSnapshot
+       upsertSearch removeSearch labelsMatchFilter
+  I. Object filters / blacklist renderObjectFilters / renderBlacklistMenu /
+     toggleBlacklist / renderAliasToggle / toggleAliases / arraysEqual
+  J. Filtering pipeline         applyNaturalLanguageFilters /
+     applyFiltersAndSearch  -> writes state.filteredImages
+  K. Pure helpers — dates / visits / duration
+     sentinels: todayDateStr homeDateFilter dayLabel relativeTime entryCaption
+       matchesSearch visitPassesTimeFilter smoothFlicker burstContaining
+       visitPlayFrames formatDuration
+  L. Rendering — timeline + cards
+                                 renderEventsView / openEventPlayer /
+     shareLink / maybeOpenDeepLink / createImageCard
+  M. Write API + camera settings
+                                 API_BASE / currentCameraId / withCamera /
+     apiFetch / fetchWithTimeout / apiPost / togglePin / mask + zone editors /
+     deleteImage            (mirrors api_server.py)
+  N. Rendering — grid & pagination
+                                 formatHour / updateSliderLabel /
+     renderNextPage / showEmptyState / updateFilterActiveBanner /
+     isSentinelVisible / syncGridOffset
+  O. Lightbox — zoom + slideshow
+                                 openLightbox / closeLightbox /
+     navigateLightbox / zoomLightbox / resetZoom / toggleSlideshow
+  P. Live mode — polling + SSE   paintLiveBadge / toggleLiveMode / startPolling
+     / stopPolling / stopEventStream / startEventStream / bumpActivity /
+     showToast
+     sentinels: streamStatusText liveBadgeCopy
+  Q. Bootstrap + event wiring   DOMContentLoaded handler: camera menu, tabs,
+     search popup + natural-language search, saved searches, time slider,
+     blacklist, integrations, status panel, keyboard shortcuts
+     sentinels: formatSeconds bucketByHour busiestHour backfillProgress
+  R. System status + AI polling renderSystemPanel / updateAiLiveIndicator /
+     startAiPolling
+  S. Event listeners            grid scroll, lightbox gestures, global keys
+  ============================================================================
+-->
 <html lang="en">
 <head>
   <meta charset="UTF-8">

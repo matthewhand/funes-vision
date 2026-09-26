@@ -412,6 +412,38 @@ localStorage: `webcam_ai_blacklist` (hidden labels) and
   the player and lightbox produces them.
 - A back-to-top button appears after scrolling ~600px.
 
+## index.html layout
+
+No build step: the SPA is one file with one inline `<script>` at the end of
+`<body>` (`lucide.min.js` is the only external script). The inline logic is
+split into banner-delimited sections — router, state, pure helpers, rendering,
+live/SSE, bootstrap/events — summarised in the **section map** at the top of
+`index.html` (an HTML comment block, so it costs nothing at runtime).
+
+**Sentinel contract.** Pure, side-effect-free helpers are wrapped in a marker
+pair:
+
+```js
+// === pure:NAME ===
+function NAME(...) { ... }
+// === /pure:NAME ===
+```
+
+`tests/*.js` extracts that exact block and `eval`s it, so the page and the
+unit test share **one** copy of the function. The pair is machine-checked in
+two places:
+
+- `tests/test_sentinel_inventory.py` — every `pure:NAME` referenced by a test
+  must have both markers in `index.html`; markers must not be duplicated,
+  unmatched, or left with an empty body.
+- `bash tests/run.sh` — extracts the inline script with
+  `tools/lint/extract-inline.mjs` and runs `node --check` on it, so a syntax
+  error fails locally instead of only in a browser.
+
+When you add, rename, or move a helper, update its sentinel pair, the section
+map at the top of `index.html`, and (if new) the "Covered today" list under
+[Testing](#testing).
+
 ## Data files (all in repo dir, synced to web roots)
 
 | File | Writer | Purpose |
