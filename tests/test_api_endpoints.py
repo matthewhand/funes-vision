@@ -401,6 +401,31 @@ class TestCatalogs(EndpointTestCase):
         self.assertIn("nope", body["error"])
 
 
+class TestUnknownCameraPost(EndpointTestCase):
+    """#100: an unknown ?camera= must be rejected once, at the top of do_POST.
+
+    _camera_param sends the 400 itself, so do_POST has to return immediately —
+    otherwise execution falls through and writes a second response.
+    """
+
+    def test_unknown_camera_single_400_for_each_write_endpoint(self):
+        self.add_frame("x.jpg")
+        for path in ("/api/delete", "/api/clip", "/api/pin"):
+            self.h.run(
+                "POST", path + "?camera=nope",
+                json.dumps({"filename": "x.jpg"}).encode())
+            codes = [code for code, _ in self.h.sent]
+            self.assertEqual(codes, [400], f"{path} wrote {codes}")
+
+    def test_unknown_camera_400_reports_the_id(self):
+        self.add_frame("x.jpg")
+        code, body = self.h.run(
+            "POST", "/api/delete?camera=nope",
+            json.dumps({"filename": "x.jpg"}).encode())
+        self.assertEqual(code, 400)
+        self.assertIn("nope", body["error"])
+
+
 class TestReadEndpoints(EndpointTestCase):
     def test_llm_schema(self):
         code, body = self.h.run("GET", "/api/llm-schema")

@@ -1126,6 +1126,10 @@ class Handler(BaseHTTPRequestHandler):
         # the param with require=True inside their branch.
         camera_id = self._camera_param()
         self.path = self.path.split("?", 1)[0]
+        if camera_id is self._BAD_CAMERA:
+            # _camera_param already sent the 400; mirror the do_GET guard so an
+            # unknown ?camera= doesn't fall through to a second response write.
+            return
         try:
             length = int(self.headers.get("Content-Length", 0))
             payload = json.loads(self.rfile.read(length) or b"{}")
