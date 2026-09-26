@@ -1,0 +1,24 @@
+# Ruff — fast Python linter. Pragmatic baseline for this repo.
+# Run:  ruff check .
+#
+# Scope note: api_server.py, analyze_images.py and tools/ are owned by other
+# in-flight changes and are temporarily excluded so this baseline lands green
+# without touching them. Remove the extend-exclude entries once those files are
+# lint-clean.
+target-version = "py311"
+line-length = 100
+
+extend-exclude = [
+  "api_server.py",
+  "analyze_images.py",
+  "tools",
+]
+
+[lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+# E501  line length          — deferred; this codebase has long single-file SPA strings
+# E731  lambda assignment    — used deliberately in tests for terse stubs
+# E702  semicolon statements — used deliberately in tests for one-liners
+# UP031 percent formatting   — legacy but pervasive and correct; churn not worth the risk
+# UP017 timezone.utc alias   — churns ha_mqtt.py (not part of this change); cosmetic only
+ignore = ["E501", "E731", "E702", "UP031", "UP017"]

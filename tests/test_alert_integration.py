@@ -104,7 +104,6 @@ class AlertIntegrationTest(unittest.TestCase):
 
     def test_identical_after_short_interval_updates_with_count(self):
         self._run()
-        first_ts = self.calls[0][1]  # None on first post
         stored_ts = self._state()["disk_Webcam22"]["slack_ts"]
 
         self._advance(ai.IDENTICAL_UPDATE_S + 1)

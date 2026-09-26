@@ -11,13 +11,13 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from analyze_images import (
-    alert_with_count,
-    alert_base_text,
-    alert_cooldown,
-    alert_next_count,
     ALERT_BASE_COOLDOWN_S,
     ALERT_MAX_COOLDOWN_S,
     IDENTICAL_UPDATE_S,
+    alert_base_text,
+    alert_cooldown,
+    alert_next_count,
+    alert_with_count,
 )
 
 

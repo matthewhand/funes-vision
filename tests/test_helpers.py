@@ -16,10 +16,10 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import api_server
 import analyze_images
-from integrations import slack, media, ntfy
+import api_server
 import integrations as intg
+from integrations import media, ntfy, slack
 
 
 class TestSettingValid(unittest.TestCase):

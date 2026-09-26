@@ -704,6 +704,39 @@ with a non-zero exit, and prints a final passed/total count.
 minimally (confirm GREEN), run both suites, then deploy/commit. DOM behaviour
 that can't be reduced to a pure helper is proven via the deployed app.
 
+## Linting
+
+No build step and no runtime npm deps — both linters are opt-in and inspect the
+same sources the tests use.
+
+- **Python — [ruff](https://docs.astral.sh/ruff/)** (config: [`ruff.toml`](ruff.toml)).
+  `ruff check .` selects `E,F,W,I,UP,B` and ignores a few noisy, style-only rules
+  (`E501`, `E731`, `E702`, `UP031`, `UP017`). `api_server.py`,
+  `analyze_images.py` and `tools/` are temporarily `extend-exclude`d while other
+  changes land — drop those entries once those files are lint-clean.
+  ```sh
+  python3 -m pip install --user --break-system-packages ruff   # or: pipx install ruff
+  ruff check .
+  ```
+- **JavaScript — ESLint flat config** ([`eslint.config.mjs`](eslint.config.mjs)).
+  Covers `tests/*.js` (Node + browser globals, because the suites `eval`
+  extracted SPA helpers) and the SPA's inline `<script>`, pulled out with
+  [`tools/lint/extract-inline.mjs`](tools/lint/extract-inline.mjs). Rules are
+  correctness-only (no stylistic churn) and the config imports nothing.
+  ```sh
+  npx --yes eslint tests/ tools/
+  node tools/lint/extract-inline.mjs \
+    | npx --yes eslint --stdin --stdin-filename index.inline.js
+  ```
+- **Editor defaults:** [`.editorconfig`](.editorconfig) pins 4-space Python,
+  2-space JS/HTML, LF, a final newline, and trailing-whitespace trimming.
+
+**CI note (npm-free):** the repo has no `package.json`, so CI never runs
+`npm install`. Ruff is a single dependency-free binary; ESLint is invoked ad hoc
+via `npx` when available. Dedicated lint jobs are deferred because the Actions
+minutes budget is exhausted (infra, not a test failure) — run the commands above
+locally before pushing.
+
 ## Screenshots
 
 The README/user-guide images in `docs/guide/img/` must come from a **synthetic

@@ -59,7 +59,9 @@ def _call(method, token, **kwargs):
     try:
         data = resp.json()
     except ValueError:
-        raise RuntimeError(f"{method}: HTTP {resp.status_code} (non-JSON response)")
+        raise RuntimeError(
+            f"{method}: HTTP {resp.status_code} (non-JSON response)"
+        ) from None
     if not data.get("ok"):
         raise RuntimeError(f"{method}: {_friendly(data.get('error', 'unknown error'))}")
     return data

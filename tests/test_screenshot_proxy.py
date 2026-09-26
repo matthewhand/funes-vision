@@ -76,7 +76,7 @@ def _recv_until(sock, pred, timeout):
             buf += chunk
             if pred(buf):
                 break
-        except socket.timeout:
+        except TimeoutError:
             continue
     return buf, closed
 
