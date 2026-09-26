@@ -1,0 +1,8 @@
+# Runtime dependencies for funes-vision.
+# Only third-party imports actually used by the pipeline are listed; the
+# rest of the code is standard library. Lower bounds are minimum supported
+# versions, upper bounds only where a major bump is known-breaking.
+requests>=2.31,<3        # analyze_images.py (Ollama/OpenRouter HTTP), integrations/ntfy.py, integrations/slack.py
+opencv-python>=4.8       # analyze_images.py (YOLOv4-tiny DNN + legacy Haar fast pass), tools/screenshots
+numpy>=1.24              # analyze_images.py (detector post-processing), tools/screenshots/make_fixtures.py
+Pillow>=10               # integrations/media.py (JPEG -> GIF/MP4 burst clips)
