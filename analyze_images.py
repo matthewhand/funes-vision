@@ -58,6 +58,11 @@ MULTI_IMAGE_ENABLED = False
 MULTI_IMAGE_2H = 5.0   # minutes: include 1 prior → 2 total
 MULTI_IMAGE_3H = 10.0  # minutes: include 2 prior → 3 total
 WATCH_DIRS = []  # REQUIRED via settings.json watch_dirs - deployment specific
+# Explicit camera registry from settings.json `cameras[]`. When present it is
+# the source of truth for camera identity/kind; when empty, camera_kind()
+# falls back to the legacy filename/IP heuristic. Each entry is
+# {id, label, kind, dir} — see settings.example.json and DEVELOP.md.
+CAMERAS = []
 # Labels that alone do NOT trigger an urgent deep pass (e.g. a car parked
 # in frame 24/7). Persisted as _llm_skip=no_trigger (not partial — that
 # would re-queue as urgent). Idle backfill verifies them later if enabled.
@@ -103,6 +108,7 @@ if os.path.exists(_settings_path):
         GATE_IGNORE_LABELS = _s.get("gate_ignore_labels", GATE_IGNORE_LABELS)
         IGNORE_REGIONS = _s.get("ignore_regions") or []
         WATCH_DIRS = _s.get("watch_dirs", WATCH_DIRS)
+        CAMERAS = _s.get("cameras") or []
         YOLO_DIR = _s.get("yolo_dir", YOLO_DIR)
     except (ValueError, OSError) as e:
         print(f"Warning: could not read settings.json ({e}); using defaults")
@@ -343,14 +349,65 @@ BACK_MAX_TOKENS = 160
 LLM_RAM_FLOOR_LOADED_GB = 0.8
 
 
-def camera_kind(path):
-    """Webcam21 / 10.0.0.21 = front (HA front_door). Webcam22 / 10.0.0.22 = back."""
-    blob = (path or "").replace("\\", "/").lower()
+# Camera kinds collapse onto the pipeline's two schema axes. `dog` is the
+# historical label for the back/yard camera, accepted as an alias so a config
+# can read naturally; anything unrecognised (including `other`) is front.
+CAMERA_KIND_ALIASES = {
+    "front": "front",
+    "front_door": "front",
+    "back": "back",
+    "dog": "back",
+    "dog_cam": "back",
+    "dogcam": "back",
+    "other": "front",
+}
+
+
+def normalize_camera_kind(kind):
+    """Configured `kind` -> pipeline schema axis ('front'/'back').
+
+    Unknown/`other` kinds fall back to 'front', matching the old default when
+    no filename matched the legacy heuristic.
+    """
+    return CAMERA_KIND_ALIASES.get(str(kind or "").strip().lower(), "front")
+
+
+def _camera_source(cam):
+    """Configured image dir: `dir` (preferred) or the `source` alias."""
+    return str(cam.get("dir") or cam.get("source") or "").strip()
+
+
+def _legacy_camera_kind(blob):
+    """Pre-cameras heuristic: Hikvision folder names and LAN IPs.
+
+    This is the fallback for a settings.json without a `cameras[]` block and
+    for paths that match no configured camera. Kept deliberately tiny; new
+    deployments should describe cameras in `cameras[]` instead of extending it.
+    """
     if "webcam22" in blob or "10.0.0.22" in blob:
         return "back"
     if "webcam21" in blob or "10.0.0.21" in blob:
         return "front"
     return "front"
+
+
+def camera_kind(path):
+    """front/back schema axis for an image path.
+
+    Configured `cameras[]` wins: a path containing a camera's `dir`/`source`
+    (or its id/label) returns that camera's normalised `kind`. When `cameras[]`
+    is absent — or nothing matches — `_legacy_camera_kind` reproduces the
+    pre-abstraction Webcam21/22 + 10.0.0.21/22 heuristic so existing boxes and
+    fixtures keep working unchanged.
+    """
+    blob = (path or "").replace("\\", "/").lower()
+    for cam in CAMERAS:
+        if not isinstance(cam, dict):
+            continue
+        for needle in (_camera_source(cam), cam.get("id"), cam.get("label")):
+            if needle and str(needle).replace("\\", "/").lower() in blob:
+                return normalize_camera_kind(cam.get("kind"))
+    return _legacy_camera_kind(blob)
 
 
 def schema_for_kind(kind):

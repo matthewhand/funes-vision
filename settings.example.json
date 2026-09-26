@@ -3,6 +3,21 @@
     "/path/to/camera1",
     "/path/to/camera2"
   ],
+  "cameras": [
+    {
+      "id": "Webcam21",
+      "label": "Front Door",
+      "kind": "front",
+      "dir": "/path/to/camera1"
+    },
+    {
+      "id": "Webcam22",
+      "label": "Dog Cam",
+      "kind": "back",
+      "dir": "/path/to/camera2"
+    }
+  ],
+  "mqtt_topic_prefix": "funes_vision",
   "yolo_dir": "/path/to/yolo",
   "burst_threshold_seconds": 300,
   "idle_sweep_seconds": 60,

@@ -273,12 +273,76 @@ class TestLoadMqttCfg(unittest.TestCase):
     def test_publish_enabled_without_hosts_is_noop(self):
         with mock.patch.object(ha_mqtt, "_mqtt_connect_publish") as pub:
             ok, detail = ha_mqtt.publish_json(
-                "example/vision/front_door", {"x": 1},
+                ha_mqtt.topic_for("front_door"), {"x": 1},
                 cfg={"enabled": True, "hosts": [], "port": 1883},
             )
         self.assertFalse(ok)
         self.assertIn("no hosts", detail)
         pub.assert_not_called()
+
+    def test_client_id_default_is_neutral(self):
+        cfg = self._load("/no/such/integrations.json")
+        self.assertEqual(cfg["client_id"], "funes-vision")
+
+    def test_client_id_env_overrides(self):
+        cfg = self._load("/no/such/integrations.json",
+                         extra_env={"MQTT_CLIENT_ID": "site-a-webcam"})
+        self.assertEqual(cfg["client_id"], "site-a-webcam")
+
+
+class TestTopicPrefix(unittest.TestCase):
+    def _settings(self, obj):
+        import tempfile
+        fd, path = tempfile.mkstemp(suffix=".json")
+        os.close(fd)
+        with open(path, "w") as f:
+            json.dump(obj, f)
+        return path
+
+    def _clean_env(self):
+        return {k: v for k, v in os.environ.items() if not k.startswith("MQTT_")}
+
+    def test_default_prefix_is_neutral(self):
+        with mock.patch.object(ha_mqtt, "SETTINGS_FILE", "/no/such/settings.json"):
+            with mock.patch.dict(os.environ, self._clean_env(), clear=True):
+                self.assertEqual(ha_mqtt.topic_prefix(), "funes_vision")
+                self.assertEqual(
+                    ha_mqtt.topic_for("front_door"), "funes_vision/vision/front_door")
+                self.assertEqual(
+                    ha_mqtt.topic_for("dog_cam"), "funes_vision/vision/dog_cam")
+                self.assertNotIn("example", ha_mqtt.topic_for("front_door"))
+
+    def test_env_overrides_settings(self):
+        path = self._settings({"mqtt_topic_prefix": "from_settings"})
+        try:
+            with mock.patch.object(ha_mqtt, "SETTINGS_FILE", path):
+                with mock.patch.dict(os.environ,
+                                     {"MQTT_TOPIC_PREFIX": "acme"}, clear=False):
+                    self.assertEqual(ha_mqtt.topic_prefix(), "acme")
+                    self.assertEqual(ha_mqtt.topic_for("dog_cam"), "acme/vision/dog_cam")
+        finally:
+            os.unlink(path)
+
+    def test_settings_prefix_and_slash_stripping(self):
+        path = self._settings({"mqtt_topic_prefix": "/site-a/"})
+        try:
+            with mock.patch.object(ha_mqtt, "SETTINGS_FILE", path):
+                with mock.patch.dict(os.environ, self._clean_env(), clear=True):
+                    self.assertEqual(ha_mqtt.topic_prefix(), "site-a")
+        finally:
+            os.unlink(path)
+
+    def test_publish_record_uses_prefixed_topic(self):
+        rec = {"_llm": {"animal_detected": False}, "animal_detected": False}
+        with mock.patch.object(ha_mqtt, "should_publish", return_value=True), \
+             mock.patch.object(ha_mqtt, "ha_vision_payload",
+                               return_value={"camera": "front_door"}), \
+             mock.patch.object(ha_mqtt, "publish_json",
+                               return_value=(True, "ok")) as pub, \
+             mock.patch.object(ha_mqtt, "topic_prefix", return_value="acme"):
+            ok, _ = ha_mqtt.publish_record("x.jpg", rec, e2b_loaded=False)
+        self.assertTrue(ok)
+        self.assertEqual(pub.call_args[0][0], "acme/vision/front_door")
 
 
 if __name__ == "__main__":

@@ -2982,17 +2982,39 @@
       translateY: 0
     };
 
+    // === pure:cameraFeedKind ===
+    // Front/Back for the camera serving this page, resolved from the registry
+    // (`kind`) rather than an IP/hostname guess. `list` is GET /api/cameras
+    // (id/label/kind/source_dir) or the embedded fallback. When the registry is
+    // unavailable or nothing matches, fall back to the legacy Webcam22/dogcam
+    // convention so a failed fetch never breaks the header.
+    function cameraFeedKind(list, path, host) {
+      const cams = Array.isArray(list) ? list.filter(Boolean) : [];
+      const p = String(path || '');
+      const h = String(host || '').toLowerCase();
+      let cam = cams.find(c => c.id && (p.includes('/' + c.id + '/') || p.endsWith('/' + c.id)));
+      if (!cam) cam = cams.find(c => c.id && h.includes(String(c.id).toLowerCase()));
+      if (!cam && h.includes('dogcam')) cam = cams.find(c => c.kind === 'back');
+      if (cam && cam.kind) return cam.kind === 'back' ? 'back' : 'front';
+      return (p.includes('Webcam22') || h.includes('dogcam')) ? 'back' : 'front';
+    }
+    // === /pure:cameraFeedKind ===
+
     // Determine current feed name and target switcher profile
     const getFeedProfile = () => {
       const path = window.location.pathname;
       const host = window.location.hostname;
-      
-      const isDog = path.includes('Webcam22') || host.includes('dogcam');
+
+      const kind = cameraFeedKind(camerasCache, path, host);
+      const isDog = kind === 'back';
+      const meta = (camerasCache || []).find(c =>
+        c.id && (path.includes('/' + c.id + '/') || path.endsWith('/' + c.id) ||
+          host.toLowerCase().includes(String(c.id).toLowerCase())));
       return {
         isDog,
         title: isDog ? 'Back' : 'Front',
         subtitle: isDog ? 'Yard' : 'Front gate',
-        ip: isDog ? '10.0.0.22' : '10.0.0.21',
+        source: meta ? (meta.source_dir || meta.dir || '') : '',
         switchLabel: isDog ? 'Front' : 'Back',
         switchUrl: peerFeedUrl(isDog, host, window.location.protocol),
       };
@@ -6467,7 +6489,11 @@
     }
 
     // Load initial triggers on DOM Loaded
-    document.addEventListener('DOMContentLoaded', () => {
+    document.addEventListener('DOMContentLoaded', async () => {
+      // Resolve the camera registry first so getFeedProfile() derives the
+      // feed kind from configured metadata instead of guessing from the host.
+      // cameras() never throws — it returns the embedded fallback on failure.
+      await cameras();
       const profile = getFeedProfile();
       document.getElementById('camera-title').textContent = profile.title;
       if (typeof renderPorchMaskToggle === 'function') renderPorchMaskToggle();

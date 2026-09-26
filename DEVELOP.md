@@ -548,6 +548,41 @@ move → verify) lives in [ROADMAP.md](ROADMAP.md).
 | `gate_ignore_labels` | ["car"] | labels that alone don't trigger urgent deep passes |
 | `ignore_regions` | parked-car triangle + porch quad | Spatial masks. `mode=ignore`: YOLO drops a `car` whose centre sits in the parked-SUV triangle (street / leaving cars kept). `mode=gate` + `scan=porch`: person centre on the grey tiles → `porch_access` without an e2b call; path/street is false. UI: Settings → Ignore parked car / Gate porch by tiles. Applies to **new** stills |
 | `camera_offline_hours` | 24 | no frames in this long → a Slack "camera offline?" alert |
+| `cameras` | _(absent)_ | explicit camera registry — see [Camera registry](#camera-registry-cameras). Absent keeps the legacy Webcam21/22 + IP heuristic |
+| `mqtt_topic_prefix` | funes_vision | namespace for the retained HA vision topics (`<prefix>/vision/<camera>`); `MQTT_TOPIC_PREFIX` env overrides it (see [Integrations](#integrations)) |
+
+### Camera registry (`cameras[]`)
+
+Camera identity is **declarative**. Each entry maps a stable `id` to a label,
+a schema `kind`, and the image directory the pipeline reads:
+
+```json
+"cameras": [
+  { "id": "Webcam21", "label": "Front Door", "kind": "front", "dir": "/mnt/models/Webcam21" },
+  { "id": "Webcam22", "label": "Dog Cam",    "kind": "back",  "dir": "/mnt/models/Webcam22" }
+]
+```
+
+| Field | Required | Meaning |
+|-------|----------|---------|
+| `id` | yes | stable id used by `?camera=<id>` routing and the SPA camera switcher |
+| `label` | no | human display name (defaults to `id`) |
+| `kind` | no | schema axis: `front` (default) or `back`; `dog` is accepted as an alias for `back`, `other` behaves as `front` |
+| `dir` (alias `source`) | yes | image directory; `camera_kind()` matches a path containing it |
+
+`analyze_images.camera_kind()` checks the configured cameras first and uses
+their `kind`; when `cameras[]` is absent (or a path matches no camera) it falls
+back to the pre-abstraction heuristic (`Webcam21`/`Webcam22`,
+`10.0.0.21`/`10.0.0.22`) so existing installs keep working. To adopt the
+registry, add `cameras[]` mirroring your `watch_dirs`; only the fallback still
+branches on the old folder names/IPs, and new deployments never hit it.
+
+The camera stills are parsed by a **source-specific filename pattern**: the
+Hikvision OSD/FTP name `10.0.0.21_01_YYYYMMDDHHMMSSmmm_MOTDEC.jpg`. It lives in
+two places — `parseFilenameFields()` in `index.html` (UI date/time/event) and
+`FILENAME_TS` in `ha_mqtt.py` (publish timestamps). A different camera or
+recorder means editing those two regexes; the ingest contract is otherwise
+"anything that writes JPEGs into a configured `dir`" (FTP/inotify).
 
 ## Observability & health alerts
 

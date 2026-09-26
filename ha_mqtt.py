@@ -1,4 +1,4 @@
-"""Publish Example HA vision flags to Mosquitto for the compare dashboard.
+"""Publish funes-vision HA vision flags to Mosquitto for the compare dashboard.
 
 Called from analyze_images.py after a person/dog LLM merge/skip is persisted.
 Car-only (skip_reason=no_trigger) is not published as an analysis.
@@ -19,10 +19,10 @@ SETTINGS_FILE = os.path.join(ROOT, "settings.json")
 ANALYSIS_FILE = os.path.join(ROOT, "analysis.json")
 
 HA_CAMERA = {"front": "front_door", "back": "dog_cam"}
-TOPICS = {
-    "front_door": "example/vision/front_door",
-    "dog_cam": "example/vision/dog_cam",
-}
+# Neutral default topic namespace. Override with MQTT_TOPIC_PREFIX or
+# settings.json `mqtt_topic_prefix` so the same code serves any deployment.
+DEFAULT_TOPIC_PREFIX = "funes_vision"
+DEFAULT_CLIENT_ID = "funes-vision"
 DEFAULT_PORT = 1883
 DEFAULT_MODEL = "gemma4:e2b"
 FILENAME_TS = re.compile(
@@ -60,8 +60,35 @@ def load_mqtt_cfg():
         "password": os.environ.get("MQTT_PASSWORD") or cfg.get("password") or "",
         "qos": int(cfg.get("qos", 0)),
         "retain": bool(cfg.get("retain", True)),
-        "client_id": cfg.get("client_id") or "example-webcam",
+        "client_id": os.environ.get("MQTT_CLIENT_ID") or cfg.get("client_id") or DEFAULT_CLIENT_ID,
     }
+
+
+def _settings_topic_prefix():
+    try:
+        with open(SETTINGS_FILE) as f:
+            return (json.load(f) or {}).get("mqtt_topic_prefix")
+    except (OSError, ValueError):
+        return None
+
+
+def topic_prefix():
+    """MQTT topic namespace: MQTT_TOPIC_PREFIX env > settings.json > default.
+
+    Neutral by default so tracked code carries no owner-specific topic. A
+    leading/trailing slash is tolerated and stripped.
+    """
+    prefix = (
+        os.environ.get("MQTT_TOPIC_PREFIX")
+        or _settings_topic_prefix()
+        or DEFAULT_TOPIC_PREFIX
+    )
+    return str(prefix).strip("/") or DEFAULT_TOPIC_PREFIX
+
+
+def topic_for(camera):
+    """Full retained topic for a HA camera key (front_door / dog_cam)."""
+    return f"{topic_prefix()}/vision/{camera}"
 
 
 def display_tz():
@@ -175,7 +202,7 @@ def _mqtt_str(s):
 
 
 def _mqtt_connect_publish(host, port, topic, payload, user="", password="",
-                          retain=True, client_id="example-webcam", timeout=5):
+                          retain=True, client_id=DEFAULT_CLIENT_ID, timeout=5):
     """MQTT 3.1.1 QoS0 PUBLISH. Returns (ok, detail). No extra deps."""
     body = payload if isinstance(payload, (bytes, bytearray)) else payload.encode("utf-8")
     flags = 0x02  # clean session
@@ -233,7 +260,7 @@ def publish_json(topic, obj, cfg=None):
                 user=cfg.get("user") or "",
                 password=cfg.get("password") or "",
                 retain=cfg.get("retain", True),
-                client_id=cfg.get("client_id") or "example-webcam",
+                client_id=cfg.get("client_id") or DEFAULT_CLIENT_ID,
             )
             if ok:
                 return True, detail
@@ -267,7 +294,7 @@ def publish_record(img_name, rec, image_path=None, e2b_loaded=None):
         if e2b_loaded is None:
             e2b_loaded = _e2b_loaded()
         payload = ha_vision_payload(img_name, rec, image_path, e2b_loaded=e2b_loaded)
-        topic = TOPICS[payload["camera"]]
+        topic = topic_for(payload["camera"])
         ok, detail = publish_json(topic, payload)
         print(f"[ha_mqtt] {detail}")
         return ok, detail
