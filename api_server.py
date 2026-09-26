@@ -41,7 +41,8 @@ INTEGRATIONS_FILE = os.path.join(BASE_DIR, "integrations.json")
 
 # Deployment-specific; configured in settings.json
 try:
-    WATCH_DIRS = json.load(open(SETTINGS_FILE)).get("watch_dirs", [])
+    with open(SETTINGS_FILE) as f:
+        WATCH_DIRS = json.load(f).get("watch_dirs", [])
 except (OSError, ValueError):
     WATCH_DIRS = []
 PORT = 8190
@@ -271,7 +272,8 @@ def load_integrations():
 
 def _integration_state():
     try:
-        return json.load(open(os.path.join(BASE_DIR, "integrations_state.json")))
+        with open(os.path.join(BASE_DIR, "integrations_state.json")) as f:
+            return json.load(f)
     except (OSError, ValueError):
         return {}
 
@@ -369,25 +371,29 @@ def load_pins(camera_id=None):
             p = _pins_path(c["id"])
             if os.path.exists(p):
                 try:
-                    out.update(json.load(open(p)))
+                    with open(p) as f:
+                        out.update(json.load(f))
                 except (OSError, ValueError):
                     pass
         if not out and os.path.exists(PINS_FILE):
             try:
-                return set(json.load(open(PINS_FILE)))
+                with open(PINS_FILE) as f:
+                    return set(json.load(f))
             except (OSError, ValueError):
                 pass
         return out
     path = _pins_path(camera_id)
     if os.path.exists(path):
         try:
-            return set(json.load(open(path)))
+            with open(path) as f:
+                return set(json.load(f))
         except (OSError, ValueError):
             return set()
     # Legacy: fall back to the repo-wide pins file (pre-camera-scoping).
     if os.path.exists(PINS_FILE):
         try:
-            return set(json.load(open(PINS_FILE)))
+            with open(PINS_FILE) as f:
+                return set(json.load(f))
         except (OSError, ValueError):
             return set()
     return set()
@@ -437,7 +443,8 @@ SWEEP_STALE_S = 3600  # no sweep in 1h (= analysis lock timeout) -> stalled.
 def _inference_metrics(window_s=3600):
     """Roll up inference_log.json over the last window into health numbers."""
     try:
-        log = json.load(open(os.path.join(BASE_DIR, "inference_log.json")))
+        with open(os.path.join(BASE_DIR, "inference_log.json")) as f:
+            log = json.load(f)
     except (OSError, ValueError):
         log = []
     now = time.time()
@@ -535,7 +542,8 @@ def pipeline_status(camera_id=None):
     (backward compatible with existing callers).
     """
     try:
-        settings = json.load(open(SETTINGS_FILE))
+        with open(SETTINGS_FILE) as f:
+            settings = json.load(f)
     except (OSError, ValueError):
         settings = {}
 
@@ -560,7 +568,8 @@ def pipeline_status(camera_id=None):
 
     # Per-camera fields: which dirs to look at for this request.
     try:
-        analysis = json.load(open(os.path.join(BASE_DIR, "analysis.json")))
+        with open(os.path.join(BASE_DIR, "analysis.json")) as f:
+            analysis = json.load(f)
     except (OSError, ValueError):
         analysis = {}
     files = set()
@@ -573,7 +582,8 @@ def pipeline_status(camera_id=None):
     # In-flight LLM call, if any ({} when idle)
     inference = {}
     try:
-        inference = json.load(open(os.path.join(BASE_DIR, "inference_status.json")))
+        with open(os.path.join(BASE_DIR, "inference_status.json")) as f:
+            inference = json.load(f)
     except (OSError, ValueError):
         pass
     if inference.get("started"):
@@ -623,7 +633,8 @@ def pipeline_status(camera_id=None):
         q["deep_s_per_frame"] = round(avg, 1)
         q["deep_eta_s"] = int(q.get("unverified_partials", 0) * avg)
     try:
-        rlog = json.load(open(os.path.join(BASE_DIR, "retention_log.json")))
+        with open(os.path.join(BASE_DIR, "retention_log.json")) as f:
+            rlog = json.load(f)
         status["retention"] = rlog[-1] if rlog else None
     except (OSError, ValueError):
         status["retention"] = None
@@ -785,7 +796,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, sorted(load_pins(camera_id)))
         elif self.path == "/api/settings":
             try:
-                settings = json.load(open(SETTINGS_FILE))
+                with open(SETTINGS_FILE) as f:
+                    settings = json.load(f)
             except (OSError, ValueError):
                 settings = {}
             if not isinstance(settings, dict):
@@ -803,7 +815,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200 if h["status"] == "ok" else 503, h)
         elif self.path == "/api/inference_log":
             try:
-                log = json.load(open(os.path.join(BASE_DIR, "inference_log.json")))
+                with open(os.path.join(BASE_DIR, "inference_log.json")) as f:
+                    log = json.load(f)
             except (OSError, ValueError):
                 log = []
             self._send(200, list(reversed(log[-50:])))  # newest first
@@ -1040,7 +1053,8 @@ class Handler(BaseHTTPRequestHandler):
                 if amt != a_mtime:
                     a_mtime = amt
                     try:
-                        data = json.load(open(analysis_path))
+                        with open(analysis_path) as f:
+                            data = json.load(f)
                     except (OSError, ValueError):
                         data = {}
                     cur = self._verified_detections(data)
@@ -1069,7 +1083,8 @@ class Handler(BaseHTTPRequestHandler):
                 if bmt != b_mtime:
                     b_mtime = bmt
                     try:
-                        bursts = json.load(open(bursts_path))
+                        with open(bursts_path) as f:
+                            bursts = json.load(f)
                     except (OSError, ValueError):
                         bursts = {}
                     if seeded:
