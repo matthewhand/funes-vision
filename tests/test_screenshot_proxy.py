@@ -1,5 +1,6 @@
 """Screenshot proxy must never serve live camera roots."""
 import http.client
+import http.server
 import importlib.util
 import os
 import socket
@@ -22,6 +23,25 @@ def load_proxy():
 
 def _serve(mod):
     srv = mod.TS(("127.0.0.1", 0), mod.H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv
+
+
+class _Upstream(http.server.BaseHTTPRequestHandler):
+    def log_message(self, *a):
+        return
+
+    def do_GET(self):
+        body = b'{"upstream":true,"path":"' + self.path.encode() + b'"}'
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+
+def _serve_upstream():
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _Upstream)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     return srv
 
@@ -161,6 +181,58 @@ class TestScreenshotProxy(unittest.TestCase):
             conn.close()
         finally:
             _stop(srv)
+
+    def test_live_mode_refuses_non_allowlisted_path(self):
+        p = load_proxy()
+        p.API_MODE = "live"
+        up = _serve_upstream()
+        try:
+            p.LIVE_API = "http://127.0.0.1:%d" % up.server_address[1]
+            srv = _serve(p)
+            try:
+                host, port = srv.server_address
+                for path in ("/api/evil", "/api/settings/extra", "/api/../admin"):
+                    conn = http.client.HTTPConnection(host, port, timeout=2)
+                    conn.request("GET", path)
+                    resp = conn.getresponse()
+                    self.assertEqual(resp.status, 403, path)
+                    resp.read()
+                    conn.close()
+            finally:
+                _stop(srv)
+        finally:
+            up.shutdown()
+            up.server_close()
+
+    def test_live_mode_proxies_allowlisted_path(self):
+        p = load_proxy()
+        p.API_MODE = "live"
+        up = _serve_upstream()
+        try:
+            p.LIVE_API = "http://127.0.0.1:%d" % up.server_address[1]
+            srv = _serve(p)
+            try:
+                host, port = srv.server_address
+                conn = http.client.HTTPConnection(host, port, timeout=2)
+                conn.request("GET", "/api/status")
+                resp = conn.getresponse()
+                body = resp.read()
+                self.assertEqual(resp.status, 200)
+                self.assertIn(b'"upstream":true', body)
+                conn.close()
+                # Query strings on an allowlisted route still proxy.
+                conn = http.client.HTTPConnection(host, port, timeout=2)
+                conn.request("GET", "/api/catalogs?camera=front")
+                resp = conn.getresponse()
+                body = resp.read()
+                self.assertEqual(resp.status, 200)
+                self.assertIn(b"camera=front", body)
+                conn.close()
+            finally:
+                _stop(srv)
+        finally:
+            up.shutdown()
+            up.server_close()
 
     def test_serves_user_guide_from_docs(self):
         p = load_proxy()

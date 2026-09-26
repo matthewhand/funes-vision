@@ -40,8 +40,9 @@ cannot mutate the real box.
 Published guide shots **must** use `SCREENSHOT_API=stub` (already the
 default). The stub holds `GET /api/events` open and emits `event: ping`
 every ~2s (capped at 120s) so Live/status captures stay Live.
-`SCREENSHOT_API=live` still 404s `/api/events` and is not used for
-published shots.
+`SCREENSHOT_API=live` is dev-only (stub is the default), 404s
+`/api/events`, and forwards only an explicit `/api/*` allowlist — any
+other path is refused with 403. It is not used for published shots.
 
 ## Gotchas
 

@@ -33,6 +33,24 @@ IMG_EXT = (".jpg", ".jpeg", ".gif", ".png", ".webp")
 # SPA treats a dead EventSource as Stale after ~15s. Immediate first ping,
 # then keep the stub stream open. Cap so a forgotten curl cannot last forever.
 SSE_STUB_INTERVAL = 2.0  # seconds between stub `ping` events
+# Exact /api/* routes the screenshot harness (shots.js / ui_sweep.js driving
+# index.html) and the stub mode actually use. Live mode forwards ONLY these;
+# any other path is refused before it can reach SCREENSHOT_LIVE_API.
+LIVE_API_ALLOWLIST = frozenset({
+    "/api/cameras",
+    "/api/catalogs",
+    "/api/clip",
+    "/api/delete",
+    "/api/health",
+    "/api/inference_log",
+    "/api/integrations",
+    "/api/integrations/test",
+    "/api/llm-schema",
+    "/api/pin",
+    "/api/pins",
+    "/api/settings",
+    "/api/status",
+})
 
 
 def _is_forbidden(path):
@@ -134,8 +152,12 @@ class H(SimpleHTTPRequestHandler):
         self.send_error(404)
 
     def _proxy_live(self):
-        if self.path.startswith("/api/events"):
+        route = self.path.split("?", 1)[0]
+        if route == "/api/events":
             self.send_error(404)
+            return
+        if route not in LIVE_API_ALLOWLIST:
+            self.send_error(403)
             return
         try:
             data = None
