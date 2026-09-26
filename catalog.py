@@ -5,11 +5,10 @@ Classifies the flat on-disk keys the SPA already reads (`person`,
 analyze_images (that pulls OpenCV). Does not invent HA flags.
 """
 
-SCHEMA_VERSION = 1
+from taxonomy import GATE_IGNORE_LABELS as GATE_IGNORE_LABELS
+from taxonomy import YOLO_PRESENCE_KEYS as YOLO_PRESENCE_KEYS
 
-# Duplicated from analyze_images so this module stays import-light.
-YOLO_PRESENCE_KEYS = ("person", "dog", "car", "cat", "bird", "face", "body")
-GATE_IGNORE_LABELS = ("car",)
+SCHEMA_VERSION = 1
 
 KINDS = ("verified", "no_trigger", "negative", "skip", "preliminary", "empty")
 

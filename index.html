@@ -3047,13 +3047,49 @@
     }
     // === /pure:cameraDisplayName ===
 
+    // Canonical HA flag / label taxonomy, fetched from /api/taxonomy (source of
+    // truth: taxonomy.py). The embedded fallback keeps offline first paint
+    // working; tests/test_taxonomy_parity.js fails if it drifts from the Python
+    // payload.
+    // === pure:taxonomy ===
+    const TAXONOMY_FALLBACK = {
+      ha_flag_keys: [
+        'postal_delivery', 'postal_how', 'dog_walked', 'car_access',
+        'enters_car', 'exits_car', 'car_outfit', 'car_color', 'car_make',
+        'opens_box', 'porch_access', 'animal_detected', 'animal_type',
+        'approaching_house', 'leaving_house', 'weapon_detected', 'clothes_drying'
+      ],
+      ha_string_parents: {
+        postal_how: ['postal_delivery'],
+        animal_type: ['animal_detected'],
+        car_outfit: ['enters_car', 'exits_car'],
+        car_color: ['car_access', 'enters_car', 'exits_car'],
+        car_make: ['car_access', 'enters_car', 'exits_car']
+      },
+      ha_string_sentinels: ['', 'none', 'false', 'unknown'],
+      dropped_flags: [
+        'approaching_house', 'leaving_house', 'car_access', 'enters_car',
+        'exits_car', 'car_outfit', 'car_color', 'car_make', 'clothes_drying',
+        'weapon_detected'
+      ],
+      default_tz: 'Australia/Sydney'
+    };
+    let HA_TAXONOMY = null;
+    function setTaxonomy(t) {
+      HA_TAXONOMY = (t && Array.isArray(t.ha_flag_keys) && t.ha_flag_keys.length)
+        ? Object.assign({}, TAXONOMY_FALLBACK, t) : null;
+    }
+    function haTaxonomy() { return HA_TAXONOMY || TAXONOMY_FALLBACK; }
+    function taxonomyFallback() { return TAXONOMY_FALLBACK; }
+    // === /pure:taxonomy ===
+
     // Display timezone for rendering capture/inference times. The API resolves
     // the source of truth (WEBCAM_TZ env > settings.json `timezone` > default);
-    // resolveDisplayTz() just validates the value it hands us and falls back to
-    // Australia/Sydney if absent/invalid.
+    // resolveDisplayTz() validates the value it hands us and falls back to the
+    // canonical default (taxonomy.default_tz) when absent/invalid.
     // === pure:resolveDisplayTz ===
     function resolveDisplayTz(apiTz) {
-      const FALLBACK = 'Australia/Sydney';
+      const FALLBACK = haTaxonomy().default_tz || taxonomyFallback().default_tz;
       if (typeof apiTz !== 'string' || !apiTz.trim()) return FALLBACK;
       const tz = apiTz.trim();
       try {
@@ -3064,7 +3100,7 @@
       }
     }
     // === /pure:resolveDisplayTz ===
-    let DISPLAY_TZ = 'Australia/Sydney';
+    let DISPLAY_TZ = haTaxonomy().default_tz;
 
     // Cameras stamp filenames with their LOCAL (Sydney) wall-clock time. Sydney
     // observes DST (AEDT +11 Oct–Apr, AEST +10 Apr–Oct), so a fixed +10:00
@@ -3783,13 +3819,9 @@
     //                 detector's classes)
     function computeLabelStates(analysis, aliases) {
       // HA/e2b scene flags are not object identity. They render via getHAFlags
-      // badges, never as person/dog/car chips or Timeline visit types.
-      const HA_FLAG_KEYS = new Set([
-        'postal_delivery', 'postal_how', 'dog_walked', 'car_access',
-        'enters_car', 'exits_car', 'car_outfit', 'car_color', 'car_make',
-        'opens_box', 'porch_access', 'animal_detected', 'animal_type',
-        'approaching_house', 'leaving_house', 'weapon_detected', 'clothes_drying'
-      ]);
+      // badges, never as person/dog/car chips or Timeline visit types. The
+      // canonical flag set lives in taxonomy.py, surfaced via /api/taxonomy.
+      const HA_FLAG_KEYS = new Set(haTaxonomy().ha_flag_keys);
       const canon = (key) => (aliases && aliases[key]) || key;
       const states = new Map();
       if (!analysis) return states;
@@ -3828,26 +3860,19 @@
     // and must have their parent boolean on (postal_how needs postal_delivery).
     function getHAFlags(analysis) {
       if (!analysis) return [];
-      
-      // Known HA flag fields (boolean and string) from both schemas
-      const haFieldNames = new Set([
-        'postal_delivery', 'postal_how', 'dog_walked', 'car_access', 
-        'enters_car', 'exits_car', 'car_outfit', 'car_color', 'car_make',
-        'opens_box', 'porch_access', 'animal_detected', 'animal_type',
-        'approaching_house', 'leaving_house', 'weapon_detected', 'clothes_drying'
-      ]);
-      const stringNeeds = {
-        postal_how: () => analysis.postal_delivery === true,
-        animal_type: () => analysis.animal_detected === true,
-        car_outfit: () => analysis.enters_car === true || analysis.exits_car === true,
-        car_color: () => !!(analysis.car_access || analysis.enters_car || analysis.exits_car),
-        car_make: () => !!(analysis.car_access || analysis.enters_car || analysis.exits_car),
-      };
-      
+
+      // Flag names, string parents and sentinels all come from the canonical
+      // taxonomy.py payload (GET /api/taxonomy), not a hardcoded local copy.
+      const tax = haTaxonomy();
+      const haFieldNames = new Set(tax.ha_flag_keys);
+      const parents = tax.ha_string_parents || {};
+      const sentinels = new Set((tax.ha_string_sentinels || [])
+        .map(s => String(s).trim().toLowerCase()));
+
       const flags = [];
       for (const [key, value] of Object.entries(analysis)) {
         if (!haFieldNames.has(key)) continue;
-        
+
         // Boolean flags: only include if true
         if (value === true) {
           flags.push({ label: key, value: true, isString: false });
@@ -3855,13 +3880,13 @@
         // String fields: skip empty / sentinel values and unparented fields
         else if (typeof value === 'string') {
           const trimmed = value.trim();
-          const low = trimmed.toLowerCase();
-          if (!trimmed || low === 'none' || low === 'false' || low === 'unknown') continue;
-          if (stringNeeds[key] && !stringNeeds[key]()) continue;
+          if (!trimmed || sentinels.has(trimmed.toLowerCase())) continue;
+          const need = parents[key];
+          if (need && !need.some(p => analysis[p] === true)) continue;
           flags.push({ label: key, value: trimmed, isString: true });
         }
       }
-      
+
       return flags;
     }
     // === /pure:getHAFlags ===
@@ -5612,6 +5637,16 @@
           if (state.allImages.length > 0) applyFiltersAndSearch();
         }
       } catch (e) { /* API offline/timeout; keep Australia/Sydney default */ }
+    })();
+
+    // Canonical HA taxonomy (taxonomy.py via GET /api/taxonomy). The embedded
+    // fallback is identical (parity test), so a late/failed fetch is harmless
+    // and needs no re-render.
+    (async () => {
+      try {
+        const t = await apiFetch('/api/taxonomy', { timeout: 3000 }, false);
+        setTaxonomy(t);
+      } catch (e) { /* API offline/timeout; keep embedded fallback */ }
     })();
     deepPassesToggle.onclick = async () => {
       try {

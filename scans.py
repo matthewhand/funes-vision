@@ -6,13 +6,14 @@ tiny JSON schema. YOLO gates decide which run; order is priority.
 Does not import analyze_images (cv2).
 """
 
+from taxonomy import DROPPED_FLAGS as DROPPED_FLAGS
+
 # Default: at most two vision calls per frame (~40s each).
 MAX_SCANS_PER_IMAGE = 2
 SCAN_TOKENS = 48
 
-# Dropped from the live path (vision audit / never-true):
-# approaching_house, leaving_house, car_access, enters_car, exits_car,
-# car_outfit, car_color, car_make, clothes_drying, weapon_detected.
+# Dropped from the live path (vision audit / never-true) — canonical list is
+# taxonomy.DROPPED_FLAGS, re-exported here for existing callers.
 
 _POSTAL = {
     "type": "object",
@@ -120,19 +121,6 @@ SCANS = (
         "schema": _PACKAGE,
         "num_predict": 32,
     },
-)
-
-DROPPED_FLAGS = (
-    "approaching_house",
-    "leaving_house",
-    "car_access",
-    "enters_car",
-    "exits_car",
-    "car_outfit",
-    "car_color",
-    "car_make",
-    "clothes_drying",
-    "weapon_detected",
 )
 
 

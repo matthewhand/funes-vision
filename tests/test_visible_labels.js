@@ -11,6 +11,7 @@ function block(name) {
   assert(m, name + ' sentinel block not found in index.html');
   return m[1];
 }
+eval(block('taxonomy'));      // haTaxonomy() — canonical HA flag set
 eval(block('labelStates'));   // computeLabelStates
 eval(block('visibleLabels')); // visibleLabels
 

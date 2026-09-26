@@ -12,6 +12,7 @@ function block(name) {
 eval(block('bucketByHour'));
 eval(block('labelCounts'));
 eval(block('busiestHour'));
+eval(block('taxonomy'));     // haTaxonomy() — canonical HA flag set
 eval(block('labelStates'));   // computeLabelStates — HA flags must not count
 eval(block('visibleLabels'));
 

@@ -15,6 +15,7 @@ Endpoints (JSON unless noted):
   GET  /api/status                -> pipeline/camera/disk/metrics snapshot
   GET  /api/health                -> {ok|degraded} for uptime monitors (200/503)
   GET  /api/inference_log         -> recent LLM audit trail
+  GET  /api/taxonomy              -> canonical HA flag/label taxonomy + default TZ
   GET  /api/llm-schema            -> live prompt + front/back HA JSON schemas
   POST /api/clip                  -> GIF (player) or MP4 (API-only) from frame names
   GET  /api/events                -> SSE stream: image.new / new-detection / detection.preliminary / new-burst
@@ -30,6 +31,8 @@ import time
 import urllib.request
 from urllib.parse import quote
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+from taxonomy import resolve_timezone
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PINS_FILE = os.path.join(BASE_DIR, "pins.json")
@@ -218,15 +221,6 @@ MUTABLE_SETTINGS = {
     "idle_sweep_seconds": {"min": 15, "max": 3600},
     "ignore_regions": {"kind": "ignore_regions"},
 }
-
-def resolve_timezone(env_val=None, settings_val=None):
-    """Display timezone resolution: WEBCAM_TZ env > settings.json `timezone`
-    > "Australia/Sydney". Blank/whitespace values are ignored."""
-    for v in (env_val, settings_val):
-        if isinstance(v, str) and v.strip():
-            return v.strip()
-    return "Australia/Sydney"
-
 
 def setting_valid(key, value):
     spec = MUTABLE_SETTINGS[key]
@@ -820,6 +814,11 @@ class Handler(BaseHTTPRequestHandler):
             except (OSError, ValueError):
                 log = []
             self._send(200, list(reversed(log[-50:])))  # newest first
+        elif self.path == "/api/taxonomy":
+            # Canonical HA flag / label taxonomy (taxonomy.py) so the SPA does
+            # not keep its own hardcoded copies.
+            import taxonomy
+            self._send(200, taxonomy.payload())
         elif self.path == "/api/llm-schema":
             # Serve the live LLM prompt and HA output schemas for UI display
             try:

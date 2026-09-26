@@ -35,6 +35,7 @@ assert.deepStrictEqual(detectionEntry([], true), { fast_pass: 'partial' });
 assert.deepStrictEqual(detectionEntry(null, false), { _yolo: [], _llm: {} });
 
 // Round-trip: a preliminary entry reads back as 'preliminary' via computeLabelStates.
+eval(block('taxonomy'));  // haTaxonomy() — canonical HA flag set
 eval(block('labelStates'));
 const st = computeLabelStates(detectionEntry(['person'], true), {});
 assert.strictEqual(st.get('person'), 'preliminary');
