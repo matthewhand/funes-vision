@@ -16,6 +16,9 @@ python3 tools/demo/build_demo.py
 
 Writes `dist/demo/`.
 
+The bundle also ships `demo.gif` — an animated person/dog visit built from the
+synthetic fixtures. Regenerate it with `python3 tools/screenshots/make_gifs.py`.
+
 ## Run locally
 
 ```sh
