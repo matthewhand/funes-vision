@@ -37,7 +37,11 @@ def _record_delivery(name, kind, ok, detail):
     """Persist the last send result per integration so the UI can show
     'last delivered / last error' for the channel you rely on while away."""
     try:
-        state = json.load(open(STATE_FILE)) if os.path.exists(STATE_FILE) else {}
+        if os.path.exists(STATE_FILE):
+            with open(STATE_FILE) as f:
+                state = json.load(f)
+        else:
+            state = {}
     except (OSError, ValueError):
         state = {}
     entry = state.get(name) or {}

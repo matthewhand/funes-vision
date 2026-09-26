@@ -348,13 +348,15 @@ class TestAtomicIO(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             p = os.path.join(d, "x.json")
             ai._atomic_write_json(p, {"a": 1}, indent=1)
-            self.assertEqual(json.load(open(p)), {"a": 1})
+            with open(p) as f:
+                self.assertEqual(json.load(f), {"a": 1})
             # Default mode is group/world-readable: the gallery is served by
             # nginx as www-data while the pipeline writes as its own user, so a
             # 0o600 catalog file 403s the whole AI layer of the grid.
             self.assertEqual(stat.S_IMODE(os.stat(p).st_mode), 0o644)
             ai._atomic_write_json(p, {"b": 2})        # overwrite
-            self.assertEqual(json.load(open(p)), {"b": 2})
+            with open(p) as f:
+                self.assertEqual(json.load(f), {"b": 2})
             self.assertEqual(stat.S_IMODE(os.stat(p).st_mode), 0o644)
             # no leftover temp files beside it
             self.assertEqual([f for f in os.listdir(d) if ".tmp." in f], [])
@@ -377,7 +379,8 @@ class TestAtomicIO(unittest.TestCase):
                 ts = [threading.Thread(target=hammer, args=(n,)) for n in range(8)]
                 [t.start() for t in ts]; [t.join() for t in ts]
                 # file always parses (never a half-written read)
-                json.load(open(ai.INFERENCE_STATUS))
+                with open(ai.INFERENCE_STATUS) as f:
+                    json.load(f)
             finally:
                 ai.INFERENCE_STATUS = orig
 
@@ -391,7 +394,8 @@ class TestAtomicIO(unittest.TestCase):
                         ai.log_inference(f"i{n}-{i}", "m", 0.0, 1.0, [], True, "t")
                 ts = [threading.Thread(target=hammer, args=(n,)) for n in range(8)]
                 [t.start() for t in ts]; [t.join() for t in ts]
-                log = json.load(open(ai.INFERENCE_LOG))
+                with open(ai.INFERENCE_LOG) as f:
+                    log = json.load(f)
                 # 80 appends, capped at the last 200 -> all 80 retained, none lost
                 self.assertEqual(len(log), 80)
             finally:
@@ -508,29 +512,34 @@ class TestSaveIntegrations(unittest.TestCase):
 
     def test_missing_file_creates_slack_only(self):
         api_server.save_slack_settings({"enabled": True, "channel_id": "C1"})
-        data = json.load(open(self.path))
+        with open(self.path) as f:
+            data = json.load(f)
         self.assertEqual(data["slack"]["enabled"], True)
         self.assertEqual(data["slack"]["channel_id"], "C1")
         self.assertNotIn("mqtt", data)
         self.assertEqual(stat.S_IMODE(os.stat(self.path).st_mode), 0o600)
 
     def test_merge_preserves_mqtt_and_ntfy(self):
-        json.dump({
-            "slack": {"enabled": False, "bot_token": "xoxb-keep"},
-            "mqtt": {"enabled": True, "password": "s3cret", "host": "broker"},
-            "ntfy": {"topic": "cams", "server_url": "https://n.example.com"},
-        }, open(self.path, "w"))
+        with open(self.path, "w") as f:
+            json.dump({
+                "slack": {"enabled": False, "bot_token": "xoxb-keep"},
+                "mqtt": {"enabled": True, "password": "s3cret", "host": "broker"},
+                "ntfy": {"topic": "cams", "server_url": "https://n.example.com"},
+            }, f)
         api_server.save_slack_settings({"enabled": True})
-        data = json.load(open(self.path))
+        with open(self.path) as f:
+            data = json.load(f)
         self.assertTrue(data["slack"]["enabled"])
         self.assertEqual(data["slack"]["bot_token"], "xoxb-keep")
         self.assertEqual(data["mqtt"]["password"], "s3cret")
         self.assertEqual(data["ntfy"]["topic"], "cams")
 
     def test_empty_file_is_writable(self):
-        open(self.path, "w").close()
+        with open(self.path, "w"):
+            pass
         api_server.save_slack_settings({"enabled": False})
-        self.assertFalse(json.load(open(self.path))["slack"]["enabled"])
+        with open(self.path) as f:
+            self.assertFalse(json.load(f)["slack"]["enabled"])
 
     def test_corrupt_file_refuses_and_keeps_bytes(self):
         original = '{"mqtt":{"password":"s3cret"},"ntfy":{"topic":"x"}\n'
@@ -567,7 +576,8 @@ class TestSaveIntegrations(unittest.TestCase):
                 api_server.save_slack_settings({"enabled": True})
         finally:
             os.chmod(self.path, 0o600)
-        self.assertIn("s3cret", open(self.path).read())
+        with open(self.path) as f:
+            self.assertIn("s3cret", f.read())
 
     def test_get_missing_file_is_empty_slack(self):
         code, body = api_server.integrations_get_response()
@@ -578,7 +588,8 @@ class TestSaveIntegrations(unittest.TestCase):
         self.assertNotIn("unreadable", body)
 
     def test_get_empty_file_is_empty_slack(self):
-        open(self.path, "w").close()
+        with open(self.path, "w"):
+            pass
         code, body = api_server.integrations_get_response()
         self.assertEqual(code, 200)
         self.assertIn("slack", body)
@@ -600,10 +611,11 @@ class TestSaveIntegrations(unittest.TestCase):
             self.assertEqual(f.read(), "{not json")
 
     def test_get_readable_is_redacted(self):
-        json.dump({
-            "slack": {"enabled": True, "bot_token": "xoxb-secret", "channel_id": "C1"},
-            "mqtt": {"password": "s3cret"},
-        }, open(self.path, "w"))
+        with open(self.path, "w") as f:
+            json.dump({
+                "slack": {"enabled": True, "bot_token": "xoxb-secret", "channel_id": "C1"},
+                "mqtt": {"password": "s3cret"},
+            }, f)
         code, body = api_server.integrations_get_response()
         self.assertEqual(code, 200)
         self.assertTrue(body["slack"]["enabled"])
@@ -627,7 +639,8 @@ class TestMediaSample(unittest.TestCase):
             paths = []
             for i in range(50):
                 p = os.path.join(d, f"f{i}.jpg")
-                open(p, "w").close()
+                with open(p, "w"):
+                    pass
                 paths.append(p)
             paths.append(os.path.join(d, "missing.jpg"))  # nonexistent -> filtered out
             out = media._sample(paths, cap=10)
@@ -637,7 +650,8 @@ class TestMediaSample(unittest.TestCase):
     def test_under_cap_returns_existing_only(self):
         with tempfile.TemporaryDirectory() as d:
             p = os.path.join(d, "a.jpg")
-            open(p, "w").close()
+            with open(p, "w"):
+                pass
             self.assertEqual(media._sample([p, "nope.jpg"]), [p])
 
 
@@ -646,13 +660,15 @@ class TestRecordDelivery(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             intg.STATE_FILE = os.path.join(d, "state.json")
             intg._record_delivery("slack", "burst", True, "posted clip.gif")
-            st = json.load(open(intg.STATE_FILE))
+            with open(intg.STATE_FILE) as f:
+                st = json.load(f)
             self.assertTrue(st["slack"]["last_delivery"]["ok"])
             self.assertEqual(st["slack"]["last_delivery"]["kind"], "burst")
             self.assertIn("last_ok", st["slack"])
 
             intg._record_delivery("slack", "alert", False, "boom")
-            st = json.load(open(intg.STATE_FILE))
+            with open(intg.STATE_FILE) as f:
+                st = json.load(f)
             self.assertFalse(st["slack"]["last_delivery"]["ok"])
             self.assertIn("last_error", st["slack"])
 
@@ -667,7 +683,8 @@ class TestInferenceMetrics(unittest.TestCase):
                 {"started": now, "ok": True, "duration_s": 30, "model": "google/gemma-4-31b-it"},
                 {"started": now - 99999, "ok": True, "duration_s": 5, "model": "x"},  # outside window
             ]
-            json.dump(log, open(os.path.join(d, "inference_log.json"), "w"))
+            with open(os.path.join(d, "inference_log.json"), "w") as f:
+                json.dump(log, f)
             orig = api_server.BASE_DIR
             api_server.BASE_DIR = d
             try:
@@ -1155,10 +1172,12 @@ class TestNImagesCount(unittest.TestCase):
             # a distinct, slightly older timestamp like real captures.
             for i in range(3):
                 p = os.path.join(d, f"prior{i}.jpg")
-                open(p, "w").close()
+                with open(p, "w"):
+                    pass
                 os.utime(p, (now - (4 - i) * 60, now - (4 - i) * 60))
             cur = os.path.join(d, "current.jpg")
-            open(cur, "w").close()
+            with open(cur, "w"):
+                pass
             os.utime(cur, (now, now))
             timeline = analyze_images.collect_timeline_images(d, "current.jpg")
             # max_images default is 3: 2 priors + current
@@ -1175,7 +1194,8 @@ class TestNImagesCount(unittest.TestCase):
             try:
                 analyze_images.log_inference("a.jpg", "gemma4:12b", time.time(), 1.0,
                                              {"person": True}, True, "person", n_images=4)
-                log = json.load(open(analyze_images.INFERENCE_LOG))
+                with open(analyze_images.INFERENCE_LOG) as f:
+                    log = json.load(f)
                 self.assertEqual(log[-1]["n_images"], 4)
             finally:
                 analyze_images.INFERENCE_LOG = orig
@@ -1421,7 +1441,8 @@ class TestCameraOfflineHours(unittest.TestCase):
     def test_status_stale_uses_24h_when_key_missing(self):
         with tempfile.TemporaryDirectory() as d:
             img = os.path.join(d, "x.jpg")
-            open(img, "w").close()
+            with open(img, "w"):
+                pass
             now = time.time()
             os.utime(img, (now - 13 * 3600, now - 13 * 3600))
             orig = api_server.WATCH_DIRS

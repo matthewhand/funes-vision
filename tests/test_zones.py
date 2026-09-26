@@ -86,9 +86,10 @@ class TestPorchGate(unittest.TestCase):
     @unittest.skipUnless(os.path.exists(SETTINGS_PATH), "live settings.json not present")
     def test_settings_porch_quad_matches_this_box(self):
         import json
-        settings = json.load(open(os.path.join(
+        with open(os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            "settings.json")))
+            "settings.json")) as f:
+            settings = json.load(f)
         regions = settings.get("ignore_regions") or []
         self.assertEqual(zones.gated_scan_ids("front", regions), {"porch"})
         self.assertTrue(zones.scan_gate_flags(
@@ -105,9 +106,10 @@ class TestIgnoreRegionsValid(unittest.TestCase):
     @unittest.skipUnless(os.path.exists(SETTINGS_PATH), "live settings.json not present")
     def test_settings_default_triangle_matches_this_box(self):
         import json
-        settings = json.load(open(os.path.join(
+        with open(os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            "settings.json")))
+            "settings.json")) as f:
+            settings = json.load(f)
         regions = settings.get("ignore_regions") or []
         self.assertTrue(zones.detection_ignored("car", 0.055, 0.43, "front", regions))
         self.assertFalse(zones.detection_ignored("car", 0.158, 0.216, "front", regions))
