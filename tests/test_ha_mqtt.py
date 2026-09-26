@@ -3,6 +3,7 @@ import json
 import os
 import sys
 import unittest
+from datetime import datetime, timedelta, timezone
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -123,6 +124,22 @@ class TestPayload(unittest.TestCase):
         self.assertFalse(p["_llm"])
         self.assertEqual(p["skip_reason"], "low_mem")
         self.assertIsNone(p["_llm_model"])
+
+
+class TestRecordTs(unittest.TestCase):
+    def test_fallback_now_is_tz_aware_iso8601(self):
+        with mock.patch.object(ha_mqtt, "display_tz", return_value=None):
+            ts = ha_mqtt.record_ts("no-timestamp-here.jpg")
+        parsed = datetime.fromisoformat(ts)
+        self.assertIsNotNone(parsed.tzinfo)
+        self.assertEqual(parsed.tzinfo.utcoffset(parsed), timedelta(0))
+        self.assertRegex(ts, r"\+00:00$")
+
+    def test_display_tz_branch_is_tz_aware_iso8601(self):
+        with mock.patch.object(ha_mqtt, "display_tz", return_value=timezone.utc):
+            ts = ha_mqtt.record_ts("no-timestamp-here.jpg")
+        parsed = datetime.fromisoformat(ts)
+        self.assertIsNotNone(parsed.tzinfo)
 
 
 class TestLatest(unittest.TestCase):

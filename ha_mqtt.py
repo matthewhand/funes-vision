@@ -11,7 +11,7 @@ import os
 import re
 import socket
 import struct
-from datetime import datetime
+from datetime import datetime, timezone
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 CONFIG_FILE = os.path.join(ROOT, "integrations.json")
@@ -89,7 +89,7 @@ def record_ts(img_name, image_path=None):
     if image_path and os.path.exists(image_path):
         dt = datetime.fromtimestamp(os.path.getmtime(image_path), tz=tz)
         return dt.isoformat()
-    now = datetime.now(tz=tz) if tz else datetime.utcnow()
+    now = datetime.now(tz=tz) if tz else datetime.now(timezone.utc)
     return now.isoformat()
 
 
