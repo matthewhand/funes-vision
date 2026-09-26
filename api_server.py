@@ -879,26 +879,59 @@ class Handler(BaseHTTPRequestHandler):
         safe = re.sub(r"[^A-Za-z0-9_.-]", "_", str(stem))[:60] or "visit"
         return f"{safe}.{ext}"
 
+    @staticmethod
+    def _clip_width(value):
+        """Requested downscale width clamped to [160, 960]; None means "use the
+        builder default". Unparseable input is ignored, not an error."""
+        try:
+            return max(160, min(960, int(float(value))))
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _clip_fps(value):
+        """Requested MP4 fps clamped to [0.5, 30]; None means "derive from the
+        sampled cadence". Unparseable input is ignored, not an error."""
+        try:
+            fps = float(value)
+        except (TypeError, ValueError):
+            return None
+        if fps != fps or fps in (float("inf"), float("-inf")) or fps <= 0:
+            return None
+        return max(0.5, min(30.0, fps))
+
     def _serve_clip(self, payload):
-        """POST /api/clip {files:[name,...], format:"gif"|"mp4"} -> the assembled
-        clip as a download. Read-only: filenames are validated against the camera
-        dirs (no traversal) and the bytes are built on the fly via media.py."""
+        """POST /api/clip {files:[name,...], format:"gif"|"mp4", width?, fps?} ->
+        the assembled clip as a download. Read-only: filenames are validated
+        against the camera dirs (no traversal) and the bytes are built on the fly
+        via media.py. ``width``/``fps`` are optional and clamped; frames carry
+        their filename-clock timestamps so playback follows the capture cadence."""
         files = payload.get("files") if isinstance(payload, dict) else None
         if not isinstance(files, list) or not files:
             self._send(400, {"error": "files[] required"})
             return
         ext, ctype = self._clip_meta(payload.get("format"))
+        width = self._clip_width(payload.get("width"))
+        fps = self._clip_fps(payload.get("fps"))
         frames = self._clip_resolve(files, find_image)
         if not frames:
             self._send(404, {"error": "no valid frames for that selection"})
             return
         import tempfile
         from integrations import media
+        timestamps = [media.parse_frame_timestamp(os.path.basename(f)) for f in frames]
+        extra = {}
+        if width is not None:
+            extra["width"] = width
+        if any(t is not None for t in timestamps):
+            extra["timestamps"] = timestamps
+        if ext == "mp4" and fps is not None:
+            extra["fps"] = fps
         tmp = tempfile.NamedTemporaryFile(suffix="." + ext, delete=False)
         tmp.close()
         try:
-            built = (media.build_mp4(frames, tmp.name) if ext == "mp4"
-                     else media.build_gif(frames, tmp.name))
+            built = (media.build_mp4(frames, tmp.name, **extra) if ext == "mp4"
+                     else media.build_gif(frames, tmp.name, **extra))
             if not built or not os.path.exists(tmp.name) or os.path.getsize(tmp.name) == 0:
                 self._send(500, {"error": f"{ext} build failed (ffmpeg/PIL available?)"})
                 return
