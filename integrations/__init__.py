@@ -18,6 +18,10 @@ import json
 import os
 import time
 
+from log_config import get_logger
+
+logger = get_logger(__name__)
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CONFIG_FILE = os.path.join(ROOT, "integrations.json")
 # Delivery observability (read by api_server for the Integrations panel)
@@ -52,8 +56,8 @@ def _record_delivery(name, kind, ok, detail):
     try:
         with open(STATE_FILE, "w") as f:
             json.dump(state, f, indent=1)
-    except OSError:
-        pass
+    except OSError as e:
+        logger.warning("could not write integration state %s: %s", STATE_FILE, e)
 
 
 # Notification modes (per integration, key "notify_mode"):

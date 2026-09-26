@@ -18,6 +18,10 @@ from datetime import datetime, timedelta
 import re
 import fcntl
 
+from log_config import get_logger
+
+logger = get_logger(__name__)
+
 # CONFIGURATION (defaults; override in settings.json next to this script)
 MODEL_CLOUD = "google/gemma-4-31b-it"
 MODEL_LOCAL = "gemma4:e2b"  # Ollama tag; settings.json model_primary overrides
@@ -74,44 +78,99 @@ IGNORE_REGIONS = []
 CAMERA_OFFLINE_HOURS_DEFAULT = 24
 
 _settings_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "settings.json")
+# Last settings mapping applied. Kept as a mutable module global because
+# configured_tz_name() and tests read it directly.
 _s = {}
-if os.path.exists(_settings_path):
+
+
+def load_settings(path=None):
+    """Read settings.json into a dict.
+
+    Returns ``{}`` for a missing/unreadable/non-object file so callers always
+    get a mapping and never an exception; a genuinely broken file is logged so
+    the failure is not silent.
+    """
+    path = path if path is not None else _settings_path
     try:
-        with open(_settings_path) as _f:
-            _s = json.load(_f)
-        BURST_THRESHOLD_SECONDS = _s.get("burst_threshold_seconds", BURST_THRESHOLD_SECONDS)
-        MAX_AGE_DAYS = _s.get("max_age_days", MAX_AGE_DAYS)
-        MAX_DIR_GB = _s.get("max_dir_gb", MAX_DIR_GB)
-        PERSIST_BUDGET_PCT = _s.get("persist_budget_pct", PERSIST_BUDGET_PCT)
-        MIN_MEM_FOR_LOCAL_GB = _s.get("min_mem_for_local_gb", MIN_MEM_FOR_LOCAL_GB)
-        ALLOW_CLOUD = _s.get("allow_cloud", ALLOW_CLOUD)
-        OLLAMA_URL = _s.get("ollama_url", OLLAMA_URL)
-        OLLAMA_KEEP_ALIVE = str(_s.get("ollama_keep_alive", OLLAMA_KEEP_ALIVE) or "24h")
-        MAX_DEEP_PASSES = _s.get("max_deep_passes", MAX_DEEP_PASSES)
-        DEEP_CONCURRENCY = _s.get("deep_concurrency", DEEP_CONCURRENCY)
-        MODEL_LOCAL = _s.get("model_local", MODEL_LOCAL)
-        MODEL_PRIMARY = _s.get("model_primary", MODEL_LOCAL)  # default to model_local
-        MODEL_FALLBACK = _s.get("model_fallback", "")
-        FAST_PASS_ENGINE = _s.get("fast_pass_engine", FAST_PASS_ENGINE)
-        DEEP_BACKFILL = _s.get("deep_backfill", DEEP_BACKFILL)
-        DEEP_PASSES_ENABLED = _s.get("deep_passes_enabled", DEEP_PASSES_ENABLED)
-        BURST_SUMMARIES_ENABLED = _s.get("burst_summaries_enabled", BURST_SUMMARIES_ENABLED)
-        MULTI_IMAGE_ENABLED = _s.get("multi_image_enabled", MULTI_IMAGE_ENABLED)
-        MULTI_IMAGE_2H = float(_s.get("multi_image_2h_minutes", MULTI_IMAGE_2H))
-        MULTI_IMAGE_3H = float(_s.get("multi_image_3h_minutes", MULTI_IMAGE_3H))
-        try:
-            import scans as _scans_mod
-            _scans_mod.MAX_SCANS_PER_IMAGE = int(_s.get(
-                "max_scans_per_image", _scans_mod.MAX_SCANS_PER_IMAGE))
-        except Exception:
-            pass
-        GATE_IGNORE_LABELS = _s.get("gate_ignore_labels", GATE_IGNORE_LABELS)
-        IGNORE_REGIONS = _s.get("ignore_regions") or []
-        WATCH_DIRS = _s.get("watch_dirs", WATCH_DIRS)
-        CAMERAS = _s.get("cameras") or []
-        YOLO_DIR = _s.get("yolo_dir", YOLO_DIR)
-    except (ValueError, OSError) as e:
-        print(f"Warning: could not read settings.json ({e}); using defaults")
+        with open(path) as f:
+            cfg = json.load(f)
+    except FileNotFoundError:
+        return {}
+    except (OSError, ValueError) as e:
+        logger.warning("could not read settings %s (%s); using current values", path, e)
+        return {}
+    if not isinstance(cfg, dict):
+        logger.warning("settings %s is not a JSON object; using current values", path)
+        return {}
+    return cfg
+
+
+def apply_settings(cfg=None):
+    """Merge a settings mapping into the runtime globals.
+
+    Called once at import to seed defaults and again at the start of every
+    sweep, so a value changed through /api/settings takes effect on the next
+    sweep without a restart. A key absent from *cfg* keeps the current value,
+    preserving the existing default and precedence rules. Returns the applied
+    mapping.
+    """
+    global BURST_THRESHOLD_SECONDS, MAX_AGE_DAYS, MAX_DIR_GB
+    global PERSIST_BUDGET_PCT, MIN_MEM_FOR_LOCAL_GB, ALLOW_CLOUD
+    global OLLAMA_URL, OLLAMA_KEEP_ALIVE, MAX_DEEP_PASSES, DEEP_CONCURRENCY
+    global MODEL_LOCAL, MODEL_PRIMARY, MODEL_FALLBACK, FAST_PASS_ENGINE
+    global DEEP_BACKFILL, DEEP_PASSES_ENABLED, BURST_SUMMARIES_ENABLED
+    global MULTI_IMAGE_ENABLED, MULTI_IMAGE_2H, MULTI_IMAGE_3H
+    global GATE_IGNORE_LABELS, IGNORE_REGIONS, WATCH_DIRS, CAMERAS, YOLO_DIR
+    global _s
+
+    if cfg is None:
+        cfg = load_settings()
+    if not isinstance(cfg, dict):
+        cfg = {}
+    _s = cfg
+
+    BURST_THRESHOLD_SECONDS = cfg.get("burst_threshold_seconds", BURST_THRESHOLD_SECONDS)
+    MAX_AGE_DAYS = cfg.get("max_age_days", MAX_AGE_DAYS)
+    MAX_DIR_GB = cfg.get("max_dir_gb", MAX_DIR_GB)
+    PERSIST_BUDGET_PCT = cfg.get("persist_budget_pct", PERSIST_BUDGET_PCT)
+    MIN_MEM_FOR_LOCAL_GB = cfg.get("min_mem_for_local_gb", MIN_MEM_FOR_LOCAL_GB)
+    ALLOW_CLOUD = cfg.get("allow_cloud", ALLOW_CLOUD)
+    OLLAMA_URL = cfg.get("ollama_url", OLLAMA_URL)
+    OLLAMA_KEEP_ALIVE = str(cfg.get("ollama_keep_alive", OLLAMA_KEEP_ALIVE) or "24h")
+    MAX_DEEP_PASSES = cfg.get("max_deep_passes", MAX_DEEP_PASSES)
+    DEEP_CONCURRENCY = cfg.get("deep_concurrency", DEEP_CONCURRENCY)
+    MODEL_LOCAL = cfg.get("model_local", MODEL_LOCAL)
+    MODEL_PRIMARY = cfg.get("model_primary", MODEL_LOCAL)  # default to model_local
+    MODEL_FALLBACK = cfg.get("model_fallback", "")
+    FAST_PASS_ENGINE = cfg.get("fast_pass_engine", FAST_PASS_ENGINE)
+    DEEP_BACKFILL = cfg.get("deep_backfill", DEEP_BACKFILL)
+    DEEP_PASSES_ENABLED = cfg.get("deep_passes_enabled", DEEP_PASSES_ENABLED)
+    BURST_SUMMARIES_ENABLED = cfg.get("burst_summaries_enabled", BURST_SUMMARIES_ENABLED)
+    MULTI_IMAGE_ENABLED = cfg.get("multi_image_enabled", MULTI_IMAGE_ENABLED)
+    MULTI_IMAGE_2H = float(cfg.get("multi_image_2h_minutes", MULTI_IMAGE_2H))
+    MULTI_IMAGE_3H = float(cfg.get("multi_image_3h_minutes", MULTI_IMAGE_3H))
+    GATE_IGNORE_LABELS = cfg.get("gate_ignore_labels", GATE_IGNORE_LABELS)
+    # `or []` semantics: preserve the empty default and let an explicit
+    # null/[] in settings.json clear the list, but never clobber a value on
+    # reload merely because the key was omitted.
+    if "ignore_regions" in cfg:
+        IGNORE_REGIONS = cfg.get("ignore_regions") or []
+    WATCH_DIRS = cfg.get("watch_dirs", WATCH_DIRS)
+    if "cameras" in cfg:
+        CAMERAS = cfg.get("cameras") or []
+    YOLO_DIR = cfg.get("yolo_dir", YOLO_DIR)
+
+    try:
+        import scans as _scans_mod
+        _scans_mod.MAX_SCANS_PER_IMAGE = int(cfg.get(
+            "max_scans_per_image", _scans_mod.MAX_SCANS_PER_IMAGE))
+    except (ImportError, ValueError, TypeError) as e:
+        logger.warning("could not apply max_scans_per_image: %s", e)
+
+    return cfg
+
+
+apply_settings()
 
 # Haar is legacy fallback only; do not fail import if OpenCV is missing.
 face_cascade = body_cascade = cat_cascade = None
@@ -205,7 +264,8 @@ def fast_pass_yolo(image_path):
         kind = camera_kind(image_path)
         try:
             import zones
-        except Exception:
+        except Exception as e:
+            logger.debug("zones unavailable (%s); spatial ignore regions disabled", e)
             zones = None
         centres = {}
         best_area = {}
@@ -253,8 +313,8 @@ def encode_image(image_path):
             ok, buf = cv2.imencode(".jpg", img, [int(cv2.IMWRITE_JPEG_QUALITY), 85])
             if ok:
                 return base64.b64encode(buf.tobytes()).decode("utf-8")
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("cv2 re-encode failed for %s (%s); sending raw bytes", image_path, e)
     with open(image_path, "rb") as image_file:
         return base64.b64encode(image_file.read()).decode("utf-8")
 
@@ -894,8 +954,8 @@ def set_inference_status(payload):
     try:
         with _IO_LOCK:
             _atomic_write_json(INFERENCE_STATUS, payload or {})
-    except OSError:
-        pass
+    except OSError as e:
+        logger.warning("could not write inference status %s: %s", INFERENCE_STATUS, e)
 
 def log_inference(image, model, started, duration, labels, ok, trigger, n_images=None):
     with _IO_LOCK:
@@ -915,8 +975,8 @@ def log_inference(image, model, started, duration, labels, ok, trigger, n_images
         log.append(entry)
         try:
             _atomic_write_json(INFERENCE_LOG, log[-200:], indent=1)
-        except OSError:
-            pass
+        except OSError as e:
+            logger.warning("could not write inference log %s: %s", INFERENCE_LOG, e)
 
 def merge_llm_into_fastpass(fp_results, llm_result, skip_reason=None, model=None, duration_s=None, raw=None, schema=None):
     """Keep YOLO/detector flags; attach structured LLM flags or a skip reason.
@@ -1427,8 +1487,8 @@ def _thumb_sizes(image_dir):
                     thumbs[e.name] = e.stat().st_size
                 except OSError:
                     continue
-    except OSError:
-        pass
+    except OSError as e:
+        logger.debug("could not scan thumbs in %s: %s", image_dir, e)
     return thumbs
 
 
@@ -1453,8 +1513,8 @@ def dir_image_usage(image_dir):
                 count += 1
                 total += st.st_size + thumbs.get(e.name, 0)
                 newest = max(newest, st.st_mtime)
-    except OSError:
-        pass
+    except OSError as e:
+        logger.debug("could not scan image dir %s: %s", image_dir, e)
     return newest, count, total
 
 RETENTION_LOG = os.path.join(BASE_DIR, "retention_log.json")
@@ -1468,8 +1528,8 @@ def _log_retention(image_dir, count, bytes_freed):
                 "count": count, "bytes_freed": bytes_freed})
     try:
         _atomic_write_json(RETENTION_LOG, log[-100:], indent=1)
-    except OSError:
-        pass
+    except OSError as e:
+        logger.warning("could not write retention log %s: %s", RETENTION_LOG, e)
 
 ALERT_STATE = os.path.join(BASE_DIR, "alert_state.json")
 # Belt-and-braces Slack rate limiting for health alerts (esp. disk/space spam)
@@ -1586,7 +1646,8 @@ def run_health_checks(watch_dirs, api_key):
 
     try:
         from integrations import notify_alert
-    except Exception:
+    except Exception as e:
+        logger.warning("integrations.notify_alert unavailable (%s); alerts will not be sent", e)
         notify_alert = None
 
     def send(msg, update_ts=None):
@@ -1693,8 +1754,8 @@ def run_health_checks(watch_dirs, api_key):
 
     try:
         _atomic_write_json(ALERT_STATE, state, indent=1)
-    except OSError:
-        pass
+    except OSError as e:
+        logger.warning("could not write alert state %s: %s", ALERT_STATE, e)
 
 def apply_retention(image_dir, analysis_data, pins):
     """Delete images to honor the age, persist-cap, and disk budgets.
@@ -1735,8 +1796,8 @@ def apply_retention(image_dir, analysis_data, pins):
         for path in (os.path.join(image_dir, f), os.path.join(image_dir, "thumbs", f)):
             try:
                 os.remove(path)
-            except OSError:
-                pass
+            except OSError as e:
+                logger.debug("retention could not remove %s: %s", path, e)
         deleted.add(f)
 
     def is_persistable(f):
@@ -1864,6 +1925,7 @@ def generate_thumbnails(image_dir, images):
 
 def main(retention_only=False, rescan_days=None):
     global RATE_LIMITED
+    apply_settings()  # re-read settings.json so /api/settings changes land this sweep
     RATE_LIMITED = False  # fresh budget each sweep; a throttle only pauses one sweep
     api_key = os.getenv("OPENROUTER_API_KEY")
     if not WATCH_DIRS:
@@ -2223,8 +2285,8 @@ def main(retention_only=False, rescan_days=None):
                     try:
                         import pipeline_events
                         pipeline_events.emit("new-burst", id=burst_id, summary=summary)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.warning("could not emit new-burst event: %s", e)
                     # Fan the new contextual analysis out to integrations
                     # (Slack, ...). Prefer thumbnails for a lightweight clip;
                     # fully guarded so a notifier never breaks the sweep.

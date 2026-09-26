@@ -32,7 +32,10 @@ import urllib.request
 from urllib.parse import quote
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+from log_config import get_logger
 from taxonomy import resolve_timezone
+
+logger = get_logger(__name__)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PINS_FILE = os.path.join(BASE_DIR, "pins.json")
@@ -1265,8 +1268,10 @@ class Handler(BaseHTTPRequestHandler):
                          os.path.join(image_dir, "thumbs", filename)):
                 try:
                     os.remove(path)
-                except OSError:
-                    pass
+                except FileNotFoundError:
+                    logger.debug("delete: %s already gone", path)
+                except OSError as e:
+                    logger.warning("delete: could not remove %s: %s", path, e)
             pins = load_pins(camera_id)
             if filename in pins:
                 pins.discard(filename)

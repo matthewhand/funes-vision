@@ -9,6 +9,10 @@ import os
 import threading
 import time
 
+from log_config import get_logger
+
+logger = get_logger(__name__)
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 EVENTS_FILE = os.path.join(BASE_DIR, "events.jsonl")
 
@@ -43,7 +47,7 @@ def emit(event, **payload):
             if size > MAX_BYTES or _writes >= MAX_LINES:
                 _rotate_locked()
     except Exception as exc:
-        print(f"[pipeline_events] emit failed: {exc}")
+        logger.warning("emit(%s) failed: %s", event, exc)
 
 
 def iter_since(offset):
