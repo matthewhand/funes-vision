@@ -189,7 +189,17 @@ The 50 most recent LLM audit entries, newest first.
 Build and download a visit/sequence as an animated clip, on the fly (reuses the
 `integrations/media.py` builders). Read-only: each filename is validated against
 the camera dirs (no traversal) and capped at 300; the builder samples ≤24 frames.
-- **Body** `{"files": ["<name>", ...], "format": "gif" | "mp4"}` (default `gif`)
+- **Body** `{"files": ["<name>", ...], "format": "gif" | "mp4", "width": <px>, "fps": <n>}`
+  (`format` defaults to `gif`; `width` and `fps` are optional)
+- **`width`** — downscale width in px, clamped to `160..960`; frames narrower
+  than it are never upscaled. Omit to keep the builder default (480).
+- **`fps`** — MP4 playback rate; clamped to `0.5..30`. Omit to derive it from
+  the sampled cadence (median inter-frame gap).
+- **Cadence** — frames are timed by the camera filename clock
+  (`_YYYYMMDDHHMMSSmmm_`). GIF holds each frame for its real inter-frame gap,
+  clamped to `80..4000 ms`, and falls back to `400 ms` when timestamps are
+  absent/unparseable, so motion plays at true speed rather than the fixed
+  flipbook rate.
 - **200** → the clip bytes, `Content-Type: image/gif` or `video/mp4`,
   `Content-Disposition: attachment; filename="visit.gif"`
 - **400** → `{"error": "files[] required"}`
