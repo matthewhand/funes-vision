@@ -2,12 +2,12 @@
 # tools/htpasswd.sh — manage /etc/nginx/.htpasswd for the public webcam/dogcam
 # vhosts.
 #
-# Why this exists: the public hosts (webcam./dogcam.example.duckdns.org)
-# proxy /api/ to the write API on :8190 behind basic-auth. The auth file was
-# a hand-maintained /etc/nginx/.htpasswd dated Jul 2023 whose `matthewh`
-# entry no longer authenticated (401 on every write-API call), so pin/delete/
-# settings/clip were silently dead for anyone visiting the real URL. Nothing
-# in the repo managed it, so it drifted and nobody noticed.
+# Why this exists: the public webcam/dogcam vhosts proxy /api/ to the write
+# API on :8190 behind basic-auth. The auth file was a hand-maintained
+# /etc/nginx/.htpasswd whose single user entry no longer authenticated (401 on
+# every write-API call), so pin/delete/settings/clip were silently dead for
+# anyone visiting the real URL. Nothing in the repo managed it, so it drifted
+# and nobody noticed.
 #
 # Usage:
 #   tools/htpasswd.sh                 # verify current file

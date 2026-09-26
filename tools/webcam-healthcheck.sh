@@ -10,7 +10,8 @@
 # reports "active" can still be running a dead container's wait process.
 set -uo pipefail
 
-COMPOSE="/usr/bin/docker compose -f /home/user/webcam/docker-compose.yml"
+REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+COMPOSE=(docker compose -f "$REPO_DIR/docker-compose.yml")
 CONTAINER="gallery"
 URL="http://127.0.0.1:8180/"
 
@@ -32,10 +33,9 @@ check_alias_roots() {
   [ -n "$roots" ] || return 0
   # bind-mount targets from docker-compose.yml: `<host>:<target>:ro`.
   # Run from the repo dir — the compose file path is relative.
-  local tfile compose_dir
-  compose_dir="$(cd "$(dirname "$0")/.." && pwd)"
+  local tfile
   tfile=$(mktemp)
-  grep -oE ':[^:]+:ro$' "$compose_dir/docker-compose.yml" \
+  grep -oE ':[^:]+:ro$' "$REPO_DIR/docker-compose.yml" \
     | sed -E 's/^://; s/:ro$//' | sort -u > "$tfile"
   # Match against a temp file rather than a case pattern: the targets list
   # contains newlines, and case globs don't match across them.
@@ -79,7 +79,7 @@ fi
 
 # 3. Down — restart it.
 echo "webcam healthcheck: container down, restarting" >&2
-${COMPOSE} up -d "${CONTAINER}" 2>&1 >&2
+"${COMPOSE[@]}" up -d "${CONTAINER}" 2>&1 >&2
 sleep 3
 if curl -fsS -o /dev/null --max-time 5 "${URL}" 2>/dev/null; then
   echo "webcam healthcheck: gallery back up" >&2

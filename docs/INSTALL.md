@@ -2,7 +2,8 @@
 
 How to stand up the funes-vision pipeline on a host. The reference
 deployment is **Linux + systemd** (Debian/Ubuntu family; the units and
-`systemd/install.sh` assume a dedicated service user such as `user`).
+`systemd/install.sh` use a dedicated service user configured via
+`/etc/webcam/webcam.env` — see `systemd/webcam.env.example`).
 macOS/Windows are not supported for the watcher/retention services.
 
 The pipeline itself is Python 3 (stdlib + a few third-party packages);

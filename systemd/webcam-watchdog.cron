@@ -8,5 +8,7 @@ SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
 MAILTO=""
 
-*/15 * * * * user /home/user/webcam/tools/watchdog.sh check >> /home/user/webcam/watchdog.log 2>&1
-5 * * * * user /home/user/webcam/tools/watchdog.sh retention >> /home/user/webcam/watchdog.log 2>&1
+# __WEBCAM_USER__ / __WEBCAM_DIR__ are substituted by systemd/install.sh from
+# /etc/webcam/webcam.env (cron does not expand environment variables itself).
+*/15 * * * * __WEBCAM_USER__ __WEBCAM_DIR__/tools/watchdog.sh check >> __WEBCAM_DIR__/watchdog.log 2>&1
+5 * * * * __WEBCAM_USER__ __WEBCAM_DIR__/tools/watchdog.sh retention >> __WEBCAM_DIR__/watchdog.log 2>&1

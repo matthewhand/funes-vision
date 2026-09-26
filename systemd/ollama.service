@@ -1,16 +1,19 @@
 [Unit]
-Description=Ollama local LLM server (binary on /mnt/models)
+Description=Ollama local LLM server
 After=network.target remote-fs.target
+
+# WEBCAM_OLLAMA_BIN and the OLLAMA_* runtime settings come from
+# /etc/webcam/webcam.env (systemd/install.sh; see systemd/webcam.env.example).
+# User=/Group=/HOME= are install-time tokens because systemd cannot expand
+# environment variables there.
+EnvironmentFile=-/etc/webcam/webcam.env
 
 [Service]
 Type=simple
-User=user
-Group=user
-Environment=HOME=/home/user
-Environment=OLLAMA_MODELS=/mnt/models/ollama/models
-Environment=OLLAMA_HOST=127.0.0.1:11434
-Environment=OLLAMA_KEEP_ALIVE=24h
-ExecStart=/mnt/models/ollama-bin/bin/ollama serve
+User=__WEBCAM_USER__
+Group=__WEBCAM_GROUP__
+Environment=HOME=__WEBCAM_HOME__
+ExecStart=${WEBCAM_OLLAMA_BIN} serve
 Restart=always
 RestartSec=10
 # Lowest CPU priority: inference soaks all 4 cores for ~5 min per

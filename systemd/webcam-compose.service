@@ -24,7 +24,10 @@ Type=simple
 Restart=always
 RestartSec=5
 TimeoutStartSec=120
-ExecStart=/usr/bin/bash /home/user/webcam/tools/webcam-compose-run.sh
+# WEBCAM_DIR comes from /etc/webcam/webcam.env, created by systemd/install.sh
+# (see systemd/webcam.env.example). No User= here: docker needs root.
+EnvironmentFile=-/etc/webcam/webcam.env
+ExecStart=/usr/bin/bash ${WEBCAM_DIR}/tools/webcam-compose-run.sh
 
 [Install]
 WantedBy=multi-user.target

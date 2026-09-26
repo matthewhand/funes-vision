@@ -1,13 +1,18 @@
 [Unit]
-Description=Webcam analysis pipeline for /mnt/models/%i
+Description=Webcam analysis pipeline for %i
 After=network.target remote-fs.target
+
+# Identity/paths from /etc/webcam/webcam.env (systemd/install.sh; see
+# systemd/webcam.env.example). User=/Group=/HOME= are install-time tokens
+# because systemd cannot expand environment variables there.
+EnvironmentFile=-/etc/webcam/webcam.env
 
 [Service]
 Type=simple
-User=user
-Group=user
-Environment=HOME=/home/user
-ExecStart=/home/user/webcam/create-index.sh /mnt/models/%i
+User=__WEBCAM_USER__
+Group=__WEBCAM_GROUP__
+Environment=HOME=__WEBCAM_HOME__
+ExecStart=${WEBCAM_DIR}/create-index.sh ${WEBCAM_MODELS_DIR}/%i
 Restart=always
 RestartSec=10
 Nice=10

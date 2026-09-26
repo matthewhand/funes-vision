@@ -36,8 +36,31 @@ Installed by `sudo bash systemd/install.sh`:
 | `webcam-api` | write API on :8190 |
 | `ollama` | local LLM server |
 
-All run as user **user** (cv2 is installed only for that user — as
-root the pipeline dies with `ModuleNotFoundError: cv2`).
+All run as the configured service user (**`WEBCAM_USER`**, no default baked
+in) — cv2/OpenCV must be importable by that user, otherwise as root the
+pipeline dies with `ModuleNotFoundError: cv2`.
+
+### Host configuration (`/etc/webcam/webcam.env`)
+
+Host identity and paths are **not** committed. `systemd/install.sh` resolves
+them from `/etc/webcam/webcam.env` (see the documented template
+`systemd/webcam.env.example`); on first run it derives defaults from the
+invoking user and this checkout and writes the file.
+
+| Variable | Purpose |
+|----------|---------|
+| `WEBCAM_USER` | service account that owns pipelines/API/Ollama |
+| `WEBCAM_GROUP` | primary group for `WEBCAM_USER` |
+| `WEBCAM_HOME` | home directory for `WEBcam_USER` |
+| `WEBCAM_DIR` | absolute path to this checkout |
+| `WEBCAM_CAMERAS` | camera names to enable as `webcam-pipeline@<name>` |
+| `WEBCAM_MODELS_DIR` | parent of the per-camera image dirs |
+| `WEBCAM_OLLAMA_BIN` | path to the `ollama` binary |
+| `OLLAMA_MODELS`, `OLLAMA_HOST`, `OLLAMA_KEEP_ALIVE` | Ollama runtime settings |
+
+systemd cannot expand environment variables inside `User=`, `Group=`, and
+`HOME=`, so `install.sh` substitutes those three at install time; every other
+path expands at runtime from the `EnvironmentFile`.
 
 ### Cron watchdog (safety net)
 
@@ -53,17 +76,17 @@ Full behaviour, env vars, and decision rules:
 #### Install
 
 ```bash
-sudo bash /home/user/webcam/systemd/install.sh
-# or only the cron file:
-sudo install -m 644 /home/user/webcam/systemd/webcam-watchdog.cron \
-  /etc/cron.d/webcam-watchdog
-chmod +x /home/user/webcam/tools/watchdog.sh
+sudo bash systemd/install.sh
+# or only the cron file (substitute WEBCAM_USER / WEBCAM_DIR first):
+sudo install -m 644 systemd/webcam-watchdog.cron /etc/cron.d/webcam-watchdog
+chmod +x tools/watchdog.sh
 ```
 
 `install.sh` also strips legacy `@reboot create-index.sh` lines from the
-`user` user crontab (systemd owns those) and any old
+configured `WEBCAM_USER` crontab (systemd owns those) and any old
 `webcam/tools/watchdog` user-crontab entries (the system cron.d file is
-canonical).
+canonical). It never edits another user's crontab and never deletes system
+paths.
 
 #### Schedule (`/etc/cron.d/webcam-watchdog`)
 
@@ -72,16 +95,15 @@ canonical).
 | Every 15 minutes | `tools/watchdog.sh check` | Restart dead units; if `/tmp/webcam_analysis.lastrun` (or API `last_sweep_age_s`) is older than **2 hours**, restart both pipeline units (at most once per 2h — anti-thrash file `/tmp/webcam_watchdog_last_restart`) |
 | Minute 5 of every hour | `tools/watchdog.sh retention` | Run `analyze_images.py --retention-only` under `/tmp/webcam_analysis.lock`, using **settings.json** (`max_age_days`, `max_dir_gb`) and **pins.json**. Not a blind `find -mtime` wipe |
 
-Both run as user **user**, append to
-`/home/user/webcam/watchdog.log`, and also log with syslog tag
-`webcam-watchdog`.
+Both run as `WEBCAM_USER`, append to `$WEBCAM_DIR/watchdog.log`, and also log
+with syslog tag `webcam-watchdog`.
 
 #### Manual
 
 ```bash
-/home/user/webcam/tools/watchdog.sh check
-/home/user/webcam/tools/watchdog.sh retention
-/home/user/webcam/tools/watchdog.sh auto   # check + retention if thresholds trip
+"$WEBCAM_DIR"/tools/watchdog.sh check
+"$WEBCAM_DIR"/tools/watchdog.sh retention
+"$WEBCAM_DIR"/tools/watchdog.sh auto   # check + retention if thresholds trip
 ```
 
 #### Verify
@@ -95,16 +117,16 @@ curl -sS http://127.0.0.1:8190/api/health | jq .
 curl -sS http://127.0.0.1:8190/api/status | jq '{trigger, cameras, retention, filesystem}'
 
 # Watchdog log
-tail -50 /home/user/webcam/watchdog.log
+tail -50 "$WEBCAM_DIR/watchdog.log"
 journalctl -t webcam-watchdog -n 50
 
 # Force cleanup now
-/home/user/webcam/tools/watchdog.sh retention
+"$WEBCAM_DIR"/tools/watchdog.sh retention
 ```
 
 #### Prerequisites on this box
 
-- Passwordless `sudo systemctl restart …` for user `user` (unit restarts).
+- Passwordless `sudo systemctl restart …` for `WEBCAM_USER` (unit restarts).
   Without it, check still runs retention logic but logs restart failures.
 - `curl`, `python3`, `flock`, `fuser` (psmisc) on `PATH`.
 - API listening on `127.0.0.1:8190` by default (`webcam-api.service`).
@@ -115,16 +137,19 @@ journalctl -t webcam-watchdog -n 50
 ## Ollama (local LLM)
 
 Standalone binary — NOT the official installer, NOT docker:
-- binary: `/mnt/models/ollama-bin/bin/ollama` (v0.30.7 arm64 tarball)
-- blobs: `/mnt/models/ollama/models` via `OLLAMA_MODELS` (pinned in the
-  unit; the 45G root disk cannot hold models)
+- binary: `WEBCAM_OLLAMA_BIN` (reference host: a v0.30.7 arm64 tarball under
+  `/mnt/models/ollama-bin/bin/ollama`)
+- blobs: `OLLAMA_MODELS` (reference host `/mnt/models/ollama/models`; kept
+  off the 45G root disk)
 - model on this box: **`gemma4:e2b`**, about **~40 s/image** on this 4-core
   ARM CPU (Nice=19 so it never starves the box). `gemma4:12b` at
   ~5.5 min/image is **not** the live tag here.
 
 The official install script was once run by accident: it puts ~2GB in
-`/usr/local/lib/ollama` and installs a broken unit (nonexistent
-`ollama` user). `systemd/install.sh` removes those leftovers.
+`/usr/local/lib/ollama` and installs a unit that expects an `ollama` user.
+`install.sh` no longer deletes those leftovers — remove them by hand if you
+want the disk space back (`sudo rm -rf /usr/local/lib/ollama` is a deliberate
+manual action, never automated).
 
 ## YOLO model files
 
@@ -154,9 +179,9 @@ AlexeyAB/darknet GitHub releases; path configured as `yolo_dir`.
 - Two cameras at budget ≈ 10 GB of JPEGs; the rest of `/mnt/models` is
   models and other data. Host ENOSPC can still happen while each camera
   looks “under budget”.
-- Control-plane JSON (`analysis.json` etc.) lives under
-  `/home/user/webcam` on **`/`**. Atomic rewrites need free space on
-  root; a full root disk is how catalogs used to truncate mid-write.
+- Control-plane JSON (`analysis.json` etc.) lives under `WEBCAM_DIR` on
+  **`/`**. Atomic rewrites need free space on root; a full root disk is how
+  catalogs used to truncate mid-write.
 - Hourly `tools/watchdog.sh retention` is the rock-solid cleanup path
   when the long analyze holds the flock for hours.
 
