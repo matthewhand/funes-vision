@@ -4,7 +4,13 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#080c14">
-  <title>Camera Stream Viewer</title>
+  <title>funes-vision — Camera Stream Viewer</title>
+  <meta name="description" content="funes-vision — a local, self-hosted AI camera gallery. Browse a queryable timeline of who and what your home cameras saw, with detections, zones and nightly insights.">
+  <meta property="og:title" content="funes-vision — Camera Stream Viewer">
+  <meta property="og:description" content="A local, self-hosted AI camera gallery: a queryable timeline of who and what your home cameras saw.">
+  <meta property="og:image" content="docs/guide/img/all-grid.png">
+  <meta property="og:type" content="website">
+  <meta name="twitter:card" content="summary_large_image">
   <link rel="icon" href="favicon.ico" sizes="any">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="manifest" href="manifest.json">
@@ -1630,7 +1636,7 @@
     }
 
     .badge-generic {
-      background: #4b5563;
+      background: #334155;
       color: white;
     }
     /* "Clear" = scanned, nothing detected (tokenized; was an inline style). */
@@ -1705,7 +1711,7 @@
     /* status indicator dot (e.g. the AI/pipeline dot); state colors override via class */
     .status-dot {
       width: 8px; height: 8px; border-radius: var(--radius-round);
-      background: #6b7280; display: inline-block; flex-shrink: 0;
+      background: var(--text-secondary); display: inline-block; flex-shrink: 0;
     }
     #ai-live-dot.inferring {
       background: #f59e0b !important;
@@ -5717,7 +5723,7 @@
     // Final fallback for a genuinely-missing frame (deleted via the app or a
     // cleanup race) so a card shows a calm "unavailable" glyph, not the browser's
     // broken-image icon. Muted image-off mark on the dark card background.
-    const IMG_UNAVAILABLE = "data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='80'%20height='52'%3E%3Crect%20width='80'%20height='52'%20fill='%230b0f14'/%3E%3Cg%20stroke='%234b5563'%20stroke-width='1.5'%20fill='none'%20stroke-linecap='round'%20stroke-linejoin='round'%3E%3Crect%20x='29'%20y='17'%20width='22'%20height='18'%20rx='2'/%3E%3Cpath%20d='M31%2032l5-5%204%203'/%3E%3Cline%20x1='25'%20y1='13'%20x2='55'%20y2='39'/%3E%3C/g%3E%3C/svg%3E";
+    const IMG_UNAVAILABLE = "data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='80'%20height='52'%3E%3Crect%20width='80'%20height='52'%20fill='%230b0f14'/%3E%3Cg%20stroke='%2364748b'%20stroke-width='1.5'%20fill='none'%20stroke-linecap='round'%20stroke-linejoin='round'%3E%3Crect%20x='29'%20y='17'%20width='22'%20height='18'%20rx='2'/%3E%3Cpath%20d='M31%2032l5-5%204%203'/%3E%3Cline%20x1='25'%20y1='13'%20x2='55'%20y2='39'/%3E%3C/g%3E%3C/svg%3E";
     window.IMG_UNAVAILABLE = IMG_UNAVAILABLE;
 
     const imageObserver = new IntersectionObserver((entries, observer) => {
