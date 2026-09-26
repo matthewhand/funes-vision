@@ -42,6 +42,31 @@ Pillow's median-cut quantizer (`optimize=True`). Keep the `.png` extensions:
 `tests/test_screenshot_proxy.py` asserts `timeline.png` still serves
 PNG/JPEG bytes.
 
+## Regenerate the showcase GIFs
+
+`make_gifs.py` builds the animated GIFs embedded in `README.md` and
+`docs/USER-GUIDE.md`, plus `tools/demo/demo.gif`. It reads the synthetic
+`fixtures/gallery` (stills + `analysis.json`) and assembles frames with
+`integrations.media.build_gif` — the same helper the in-app **Download GIF**
+uses — so the committed clips match the export (2.5 fps, `optimize=True`).
+
+```sh
+python3 tools/screenshots/make_gifs.py
+```
+
+This rewrites, in place and with no network access:
+
+| Output | Frames | Source |
+|--------|--------|--------|
+| `docs/guide/img/timeline-flipbook.gif` | whole gallery | `images.json` order |
+| `docs/guide/img/visit-player.gif` | person + dog visits | `analysis.json` flags |
+| `tools/demo/demo.gif` | person + dog visits | same, 320 px demo width |
+
+Widths are tuned (`TIMELINE_WIDTH`/`VISIT_WIDTH`/`DEMO_WIDTH`) so each file
+stays well under ~1.5 MB. The script prints frame counts and byte sizes and
+exits non-zero if any output is not actually animated (Pillow frame count
+`< 2`). `--out DIR` and `--no-demo` are available for scratch runs.
+
 ## Env
 
 | Var | Default | Meaning |

@@ -61,6 +61,15 @@ SSE bridge is a 3 s file-mtime poll). See [ROADMAP.md](ROADMAP.md) and
 
 *Screenshot from the synthetic fixture gallery — never real camera footage.*
 
+### See it in action
+
+![Timeline flipbook cycling through the synthetic fixture gallery](docs/guide/img/timeline-flipbook.gif)
+
+The flipbook and visit-player animations are generated from the synthetic
+fixture gallery (never real footage) by `tools/screenshots/make_gifs.py`;
+larger clips live in [docs/guide/img](docs/guide/img) and
+[docs/USER-GUIDE.md](docs/USER-GUIDE.md).
+
 ## Why not Frigate / Agent DVR?
 
 | | funes-vision | Frigate | Agent DVR |

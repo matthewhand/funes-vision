@@ -149,6 +149,10 @@ def build(out: Path = OUT) -> Path:
     for name in ("images.json", "analysis.json", "bursts.json", "pins.json"):
         shutil.copy2(FIXTURE_GALLERY / name, out / name)
 
+    demo_gif = DEMO_SRC / "demo.gif"
+    if demo_gif.is_file():
+        shutil.copy2(demo_gif, out / "demo.gif")
+
     shutil.copy2(DEMO_SRC / "static" / "demo-shim.src.js", out / "static" / "demo-shim.js")
     shutil.copy2(DEMO_SRC / "static" / "demo-banner.css", out / "static" / "demo-banner.css")
     shutil.copy2(DEMO_SRC / "static" / "demo-banner.html", out / "static" / "demo-banner.html")

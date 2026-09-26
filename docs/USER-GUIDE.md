@@ -137,6 +137,8 @@ The default tab is **Timeline**.
 
 ![Timeline with a dog visit and a person visit](guide/img/timeline.png)
 
+![Timeline flipbook cycling through the synthetic fixture gallery](guide/img/timeline-flipbook.gif)
+
 | Tab | What it is |
 |-----|------------|
 | **Timeline** | Object *visits* — a run of stills grouped into one card you can play |
@@ -320,6 +322,8 @@ label, never the FTP filename.
 Tap a Timeline card or its play button.
 
 ![Visit player with play, GIF download, and copy-link](guide/img/visit-player.png)
+
+![Animated person and dog visit flipbook](guide/img/visit-player.gif)
 
 You get:
 
