@@ -33,5 +33,12 @@ analysis.json.tmp.*
 /dist/
 
 # Tooling and subagent artifacts — never commit.
-.kilo/          # tool config dir (has its own .gitignore for node_modules)
-logs/           # subagent rollcall/debug logs
+.kilo/
+/logs/
+
+# Subagent tool artifacts.
+.grok/
+.pytest_cache/
+
+# User-local settings — commit the template settings.example.json instead.
+/settings.json

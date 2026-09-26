@@ -1,0 +1,35 @@
+{
+  "watch_dirs": [
+    "/path/to/camera1",
+    "/path/to/camera2"
+  ],
+  "yolo_dir": "/path/to/yolo",
+  "burst_threshold_seconds": 300,
+  "idle_sweep_seconds": 60,
+  "max_age_days": 30,
+  "camera_offline_hours": 24,
+  "timezone": "Australia/Sydney",
+  "max_dir_gb": 5.0,
+  "persist_budget_pct": 20,
+  "min_mem_for_local_gb": 6.0,
+  "allow_cloud": false,
+  "ollama_url": "http://localhost:11434",
+  "ollama_keep_alive": "24h",
+  "model_local": "gemma4:e2b",
+  "model_primary": "gemma4:e2b",
+  "model_fallback": "",
+  "max_deep_passes": 30,
+  "max_scans_per_image": 2,
+  "deep_concurrency": 1,
+  "fast_pass_engine": "yolo",
+  "deep_passes_enabled": true,
+  "deep_backfill": false,
+  "burst_summaries_enabled": false,
+  "multi_image_enabled": false,
+  "multi_image_2h_minutes": 5.0,
+  "multi_image_3h_minutes": 10.0,
+  "gate_ignore_labels": [
+    "car"
+  ],
+  "ignore_regions": []
+}

@@ -490,6 +490,8 @@ move → verify) lives in [ROADMAP.md](ROADMAP.md).
 
 ## settings.json reference
 
+> **User-local file.** `settings.json` holds deployment-specific paths and camera geometry, so it is **gitignored** — every install keeps its own copy. Copy the tracked template [`settings.example.json`](settings.example.json) (generic placeholder paths, empty `ignore_regions`, documented defaults) to `settings.json` and edit it for your box. The table below lists the keys and their documented defaults.
+
 | Key | Default | Meaning |
 |-----|---------|---------|
 | `burst_threshold_seconds` | 300 | max gap between burst frames |
