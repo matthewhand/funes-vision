@@ -27,6 +27,21 @@ The proxy refuses to start if `SCREENSHOT_ROOT` points at a live camera
 directory. `/api` is stubbed from `fixtures/api/` so pin/delete/settings
 cannot mutate the real box.
 
+## Optimize the guide PNGs
+
+Playwright captures are 24-bit RGB PNGs (~0.5-1 MB each). Before committing,
+re-encode them to 256-colour PNGs — visually unchanged at guide size and
+roughly 63% smaller:
+
+```sh
+python3 tools/screenshots/optimize_guide_img.py
+```
+
+The script rewrites every `*.png` in `docs/guide/img/` in place using
+Pillow's median-cut quantizer (`optimize=True`). Keep the `.png` extensions:
+`tests/test_screenshot_proxy.py` asserts `timeline.png` still serves
+PNG/JPEG bytes.
+
 ## Env
 
 | Var | Default | Meaning |
