@@ -19,10 +19,13 @@ Endpoints (JSON unless noted):
   POST /api/clip                  -> GIF (player) or MP4 (API-only) from frame names
   GET  /api/events                -> SSE stream: image.new / new-detection / detection.preliminary / new-burst
 """
+import base64
+import hmac
 import json
 import os
 import re
 import subprocess
+import threading
 import time
 import urllib.request
 from urllib.parse import quote
@@ -42,6 +45,78 @@ try:
 except (OSError, ValueError):
     WATCH_DIRS = []
 PORT = 8190
+
+# --- Exposure hardening (#44) ----------------------------------------------
+# The write API has no auth unless a token is configured, so it binds loopback
+# by default: reaching delete/settings/clip off-host used to be a one-line
+# curl. Set WEBCAM_API_HOST=0.0.0.0 only behind a proxy that does its own auth.
+API_HOST = os.environ.get("WEBCAM_API_HOST", "127.0.0.1")
+
+
+def api_token():
+    """Shared secret gating mutating endpoints, or "" when auth is disabled.
+
+    Env WEBCAM_API_TOKEN wins; otherwise an "api_token" key in settings.json
+    lets a deployment keep the secret beside the rest of its config. Unset
+    (the default) preserves the localhost-only, no-auth workflow."""
+    tok = os.environ.get("WEBCAM_API_TOKEN")
+    if tok:
+        return tok.strip()
+    try:
+        with open(SETTINGS_FILE) as f:
+            return str(json.load(f).get("api_token") or "").strip()
+    except (OSError, ValueError, AttributeError):
+        return ""
+
+
+def cors_origins():
+    """Allowed browser origins for CORS, comma-separated via env.
+
+    Defaults to the local gallery. There is deliberately no wildcard: the old
+    `Access-Control-Allow-Origin: *` let any page a user visited POST deletes
+    at the LAN host. Read per-call so tests (and ops) can change it live."""
+    raw = os.environ.get("WEBCAM_CORS_ORIGIN",
+                         "http://localhost:8180,http://127.0.0.1:8180")
+    # "*" is dropped even if configured: echoing it while credentials are
+    # allowed is both invalid and the exact hole this replaced.
+    return [o.strip() for o in raw.split(",") if o.strip() and o.strip() != "*"]
+
+
+# --- SSE resource limits (#71) ---------------------------------------------
+def _env_int(name, default):
+    try:
+        return int(os.environ.get(name, "") or default)
+    except ValueError:
+        return default
+
+
+_SSE_LOCK = threading.Lock()
+_sse_active = 0
+
+
+def sse_try_acquire():
+    """Reserve a stream slot. False when WEBCAM_SSE_MAX_CLIENTS is reached
+    (0 disables the cap). Each accepted /api/events connection holds one."""
+    global _sse_active
+    limit = _env_int("WEBCAM_SSE_MAX_CLIENTS", 8)
+    with _SSE_LOCK:
+        if limit > 0 and _sse_active >= limit:
+            return False
+        _sse_active += 1
+        return True
+
+
+def sse_release():
+    global _sse_active
+    with _SSE_LOCK:
+        if _sse_active > 0:
+            _sse_active -= 1
+
+
+def sse_active():
+    with _SSE_LOCK:
+        return _sse_active
+
 
 # --- Camera registry -------------------------------------------------------
 # Single source of truth for camera dirs / labels / ids. Derived from
@@ -578,14 +653,60 @@ def health_summary():
 
 
 class Handler(BaseHTTPRequestHandler):
+    def _cors(self):
+        """Emit CORS headers scoped to the configured gallery origin.
+
+        The request's Origin is echoed only when it is allowlisted; no Origin
+        (same-origin / non-browser) or an unknown one gets no grant. A wildcard
+        is never sent, so credentials stay safe."""
+        origin = (self.headers.get("Origin") if self.headers else None) or ""
+        allowed = cors_origins()
+        if origin:
+            if origin not in allowed:
+                return
+            chosen = origin
+        else:
+            if not allowed:
+                return
+            chosen = allowed[0]
+        self.send_header("Access-Control-Allow-Origin", chosen)
+        self.send_header("Vary", "Origin")
+        self.send_header("Access-Control-Allow-Credentials", "true")
+
+    def _authorized(self):
+        """True when no token is configured, or the request presents it.
+
+        Accepts a Bearer credential, or Basic with the shared secret as either
+        the username or the password (so `curl -u :SECRET` and `-u SECRET:`
+        both work). Compared in constant time."""
+        token = api_token()
+        if not token:
+            return True
+        hdr = (self.headers.get("Authorization", "") if self.headers else "") or ""
+        scheme, _, credential = hdr.partition(" ")
+        scheme = scheme.lower()
+        if scheme == "bearer":
+            supplied = credential.strip()
+        elif scheme == "basic":
+            try:
+                decoded = base64.b64decode(credential.strip()).decode("utf-8")
+            except (ValueError, UnicodeDecodeError):
+                return False
+            user, _, password = decoded.partition(":")
+            supplied = password or user
+        else:
+            return False
+        return bool(supplied) and hmac.compare_digest(
+            supplied.encode("utf-8", "replace"), token.encode("utf-8", "replace"))
+
     def _send(self, code, obj):
         body = json.dumps(obj).encode()
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self._cors()
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
         self.end_headers()
         self.wfile.write(body)
 
@@ -773,7 +894,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Content-Disposition",
                              f'attachment; filename="{self._clip_filename("visit", ext)}"')
-            self.send_header("Access-Control-Allow-Origin", "*")
+            self._cors()
             self.end_headers()
             self.wfile.write(body)
         except Exception as e:
@@ -827,10 +948,27 @@ class Handler(BaseHTTPRequestHandler):
         return out
 
     def _sse(self, event, data):
+        if event != "ping":
+            self._last_event_ts = time.monotonic()
         self.wfile.write(f"event: {event}\ndata: {json.dumps(data)}\n\n".encode())
         self.wfile.flush()
 
     def stream_events(self):
+        """Admit a bounded number of concurrent SSE streams (#71).
+
+        Past WEBCAM_SSE_MAX_CLIENTS the caller gets 503 instead of another
+        unbounded thread, so a page that reconnects in a loop cannot pin the
+        box. The slot is always released, even on a write error."""
+        if not sse_try_acquire():
+            self._send(503, {"error": "too many event streams; retry later",
+                             "limit": _env_int("WEBCAM_SSE_MAX_CLIENTS", 8)})
+            return
+        try:
+            self._run_event_stream()
+        finally:
+            sse_release()
+
+    def _run_event_stream(self):
         """Long-lived text/event-stream emitting new-detection /
         detection.preliminary / new-burst as the pipeline writes analysis.json /
         bursts.json. Cheap: it polls file mtimes and only re-reads on change.
@@ -841,7 +979,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-cache")
         self.send_header("Connection", "keep-alive")
         self.send_header("X-Accel-Buffering", "no")  # ask any proxy not to buffer
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self._cors()
         self.end_headers()
 
         analysis_path = os.path.join(BASE_DIR, "analysis.json")
@@ -859,6 +997,10 @@ class Handler(BaseHTTPRequestHandler):
                 ev_off = 0
         except Exception:
             pipeline_events = None
+        heartbeat_s = max(1, _env_int("WEBCAM_SSE_HEARTBEAT_S", 15))
+        idle_s = _env_int("WEBCAM_SSE_IDLE_TIMEOUT_S", 600)
+        self._last_event_ts = time.monotonic()
+        last_heartbeat = self._last_event_ts
         try:
             while True:
                 # Primary bus: append-only events.jsonl (pipeline emit).
@@ -937,11 +1079,19 @@ class Handler(BaseHTTPRequestHandler):
                     seen_bursts = set(bursts)
 
                 seeded = True
-                # Named heartbeat (every ~3s) the client can observe to detect a
-                # silently-stalled connection (a bare ": ping" comment is invisible
-                # to EventSource); also keeps proxies from buffering.
-                self._sse("ping", {})
-                self.wfile.flush()
+                now = time.monotonic()
+                # Named heartbeat the client can observe to detect a silently
+                # stalled connection (a bare ": ping" comment is invisible to
+                # EventSource); also keeps proxies from buffering. Decoupled
+                # from the poll interval so idle ticks stay quiet.
+                if now - last_heartbeat >= heartbeat_s:
+                    self._sse("ping", {})
+                    last_heartbeat = now
+                # Reap connections that saw no traffic for too long, bounding
+                # lifetime CPU/memory. 0 disables the idle timeout.
+                if idle_s > 0 and now - self._last_event_ts >= idle_s:
+                    self._sse("close", {"reason": "idle_timeout"})
+                    return
                 # Tail the event log often; mtime fallback still catches
                 # catalogs written by an older pipeline that did not emit.
                 time.sleep(1 if pipeline_events is not None else 3)
@@ -949,6 +1099,12 @@ class Handler(BaseHTTPRequestHandler):
             return  # client went away
 
     def do_POST(self):
+        # Every POST mutates state or spends resources (settings/integrations/
+        # clip/pin/delete), so gate them all before any parsing when a token is
+        # configured. GETs stay open for the read-only gallery.
+        if not self._authorized():
+            self._send(401, {"error": "unauthorized"})
+            return
         # Parse `?camera=<id>` off the path first, then dispatch on the bare
         # path — otherwise every scoped request falls through to 404 because
         # "/api/pin?camera=back" != "/api/pin". The write endpoints re-read
@@ -1108,5 +1264,6 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    print(f"Webcam API listening on :{PORT}")
-    ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
+    auth = "auth=token" if api_token() else "auth=off"
+    print(f"Webcam API listening on {API_HOST}:{PORT} ({auth})")
+    ThreadingHTTPServer((API_HOST, PORT), Handler).serve_forever()

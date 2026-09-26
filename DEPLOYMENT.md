@@ -107,7 +107,10 @@ journalctl -t webcam-watchdog -n 50
 - Passwordless `sudo systemctl restart …` for user `user` (unit restarts).
   Without it, check still runs retention logic but logs restart failures.
 - `curl`, `python3`, `flock`, `fuser` (psmisc) on `PATH`.
-- API listening on `127.0.0.1:8190` (`webcam-api.service`).
+- API listening on `127.0.0.1:8190` by default (`webcam-api.service`).
+  Override the bind with `WEBCAM_API_HOST` (e.g. `0.0.0.0` only behind an
+  authenticating proxy), require the mutation token via `WEBCAM_API_TOKEN`,
+  and scope browser access with `WEBCAM_CORS_ORIGIN`.
 
 ## Ollama (local LLM)
 
