@@ -661,8 +661,14 @@ Run both suites from the repo root:
 
 ```sh
 python3 -m unittest discover -s tests   # backend pure helpers
-node tests/*.js                          # SPA pure helpers (one file each)
+bash tests/run.sh                        # SPA pure helpers (all tests/*.js suites)
 ```
+
+`bash tests/run.sh` is the canonical way to run the Node suites: `node
+tests/*.js` would only execute the first file (the shell passes the rest as
+`argv`), silently skipping the others. The runner loops over every sorted
+`tests/*.js`, prints `PASS <file>` / `FAIL <file>`, stops at the first failure
+with a non-zero exit, and prints a final passed/total count.
 
 - **Python** (`tests/test_helpers.py`) imports `api_server` + the `integrations`
   package and covers the pure logic: settings validation, timezone resolution,

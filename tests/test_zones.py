@@ -15,6 +15,10 @@ PORCH_REGION = {
     "id": "porch", "camera": "front", "mode": "gate", "scan": "porch",
     "labels": ["person", "face", "body"], "polygon": PORCH, "enabled": True,
 }
+# The live site config is deliberately not committed; the two "matches_this_box"
+# tests below can only assert against it when it exists (e.g. on a dev host).
+SETTINGS_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "settings.json")
 
 
 class TestPointInPolygon(unittest.TestCase):
@@ -79,6 +83,7 @@ class TestPorchGate(unittest.TestCase):
     def test_dog_only_does_not_emit_porch(self):
         self.assertEqual(zones.scan_gate_flags("front", {"dog": (0.88, 0.45)}, [PORCH_REGION]), {})
 
+    @unittest.skipUnless(os.path.exists(SETTINGS_PATH), "live settings.json not present")
     def test_settings_porch_quad_matches_this_box(self):
         import json
         settings = json.load(open(os.path.join(
@@ -97,6 +102,7 @@ class TestIgnoreRegionsValid(unittest.TestCase):
         self.assertTrue(zones.ignore_regions_valid([REGION]))
         self.assertTrue(zones.ignore_regions_valid([]))
 
+    @unittest.skipUnless(os.path.exists(SETTINGS_PATH), "live settings.json not present")
     def test_settings_default_triangle_matches_this_box(self):
         import json
         settings = json.load(open(os.path.join(
