@@ -69,9 +69,11 @@ IGNORE_REGIONS = []
 CAMERA_OFFLINE_HOURS_DEFAULT = 24
 
 _settings_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "settings.json")
+_s = {}
 if os.path.exists(_settings_path):
     try:
-        _s = json.load(open(_settings_path))
+        with open(_settings_path) as _f:
+            _s = json.load(_f)
         BURST_THRESHOLD_SECONDS = _s.get("burst_threshold_seconds", BURST_THRESHOLD_SECONDS)
         MAX_AGE_DAYS = _s.get("max_age_days", MAX_AGE_DAYS)
         MAX_DIR_GB = _s.get("max_dir_gb", MAX_DIR_GB)
@@ -498,7 +500,52 @@ def max_tokens_for_kind(kind):
 _FNAME_TS = re.compile(r"_(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})\d{3}_")
 
 
-def filename_within_days(name, days, now=None, tz_name="Australia/Sydney"):
+def configured_tz_name():
+    """Camera/report timezone: WEBCAM_TZ env > settings.json `timezone`
+    > "Australia/Sydney" (delegates to api_server.resolve_timezone so the
+    retaining sweep and the API agree on one clock)."""
+    settings_val = _s.get("timezone") if isinstance(_s, dict) else None
+    try:
+        from api_server import resolve_timezone
+        return resolve_timezone(os.getenv("WEBCAM_TZ"), settings_val)
+    except Exception:
+        for v in (os.getenv("WEBCAM_TZ"), settings_val):
+            if isinstance(v, str) and v.strip():
+                return v.strip()
+        return "Australia/Sydney"
+
+
+def filename_datetime(name, tz_name="Australia/Sydney", fold=0):
+    """Parse the Hikvision filename clock into an aware datetime.
+
+    Ambiguous wall-clock times occur on DST fall-back, when the local clock
+    repeats an hour. `fold` picks the occurrence: 0 (default) = first pass,
+    i.e. the earlier UTC instant (the pre-transition, larger UTC offset);
+    1 = second pass, the later UTC instant. Unambiguous times and
+    non-DST zones ignore `fold`. Returns None when the name has no embedded
+    timestamp or the fields do not form a real date."""
+    m = _FNAME_TS.search(str(name)) if name else None
+    if not m:
+        return None
+    y, mo, d, h, mi, s = map(int, m.groups())
+    try:
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo(tz_name)
+    except Exception:
+        tz = None
+    try:
+        return datetime(y, mo, d, h, mi, s, tzinfo=tz, fold=fold)
+    except ValueError:
+        return None
+
+
+def filename_epoch(name, tz_name="Australia/Sydney", fold=0):
+    """Filename clock as a UTC epoch float, or None if unparseable."""
+    dt = filename_datetime(name, tz_name, fold)
+    return None if dt is None else dt.timestamp()
+
+
+def filename_within_days(name, days, now=None, tz_name="Australia/Sydney", fold=0):
     """True if the Hikvision filename clock is within the last `days` days."""
     try:
         days = int(days)
@@ -506,21 +553,17 @@ def filename_within_days(name, days, now=None, tz_name="Australia/Sydney"):
         return False
     if days < 1 or not name:
         return False
-    m = _FNAME_TS.search(str(name))
-    if not m:
+    dt = filename_datetime(name, tz_name, fold)
+    if dt is None:
         return False
-    y, mo, d, h, mi, s = map(int, m.groups())
-    try:
-        from zoneinfo import ZoneInfo
-        tz = ZoneInfo(tz_name)
-        dt = datetime(y, mo, d, h, mi, s, tzinfo=tz)
-        now = now or datetime.now(tz)
-    except Exception:
-        try:
-            dt = datetime(y, mo, d, h, mi, s)
-        except ValueError:
-            return False
-        now = now.replace(tzinfo=None) if now is not None else datetime.now()
+    if dt.tzinfo is not None:
+        now = now or datetime.now(dt.tzinfo)
+        if now.tzinfo is None:
+            now = now.replace(tzinfo=dt.tzinfo)
+    else:
+        now = now or datetime.now()
+        if now.tzinfo is not None:
+            now = now.replace(tzinfo=None)
     try:
         return timedelta(0) <= (now - dt) <= timedelta(days=days)
     except TypeError:
@@ -800,7 +843,11 @@ def set_inference_status(payload):
 def log_inference(image, model, started, duration, labels, ok, trigger, n_images=None):
     with _IO_LOCK:
         try:
-            log = json.load(open(INFERENCE_LOG)) if os.path.exists(INFERENCE_LOG) else []
+            if os.path.exists(INFERENCE_LOG):
+                with open(INFERENCE_LOG) as _lf:
+                    log = json.load(_lf)
+            else:
+                log = []
         except (OSError, ValueError):
             log = []
         entry = {"image": image, "model": model, "trigger": trigger,
@@ -1468,7 +1515,8 @@ def run_health_checks(watch_dirs, api_key):
                                       f"of the {MAX_DIR_GB:g}GB budget — retention is deleting images.")
 
     try:
-        log = json.load(open(INFERENCE_LOG))
+        with open(INFERENCE_LOG) as _lf:
+            log = json.load(_lf)
     except (OSError, ValueError):
         log = []
     fails = sum(1 for e in log if now - e.get("started", 0) <= 3600 and not e.get("ok"))
@@ -1595,8 +1643,9 @@ def apply_retention(image_dir, analysis_data, pins):
     """Delete images to honor the age, persist-cap, and disk budgets.
 
     Rules: pinned images are never deleted.
-    Pass 1 (age): unpinned images older than max_age_days, except LLM-verified
-    timeline visits (persistable).
+    Pass 1 (age): unpinned images whose camera clock (filename timestamp,
+    falling back to mtime when unparseable) is older than max_age_days,
+    except LLM-verified timeline visits (persistable).
     Pass 2 (persist cap): age-expired persistable frames may occupy at most
     persist_budget_pct of max_dir_gb (default 20%). Oldest extra go first.
     This is a ceiling, not a reservation — the rolling window always has
@@ -1608,6 +1657,7 @@ def apply_retention(image_dir, analysis_data, pins):
     now = time.time()
     deleted = set()
     thumbs = _thumb_sizes(image_dir)
+    tz_name = configured_tz_name()
 
     entries = []
     for f in os.listdir(image_dir):
@@ -1618,7 +1668,11 @@ def apply_retention(image_dir, analysis_data, pins):
         except OSError:
             continue
         charged = st.st_size + thumbs.get(f, 0)
-        entries.append((f, st.st_mtime, charged))
+        # Age by the camera clock embedded in the filename (DST-aware,
+        # configured tz); mtime is only a fallback when it cannot be parsed
+        # (e.g. copies, re-encodes, names without a Hikvision timestamp).
+        clock = filename_epoch(f, tz_name)
+        entries.append((f, st.st_mtime if clock is None else clock, charged))
 
     def delete(f):
         for path in (os.path.join(image_dir, f), os.path.join(image_dir, "thumbs", f)):
@@ -1824,7 +1878,7 @@ def main(retention_only=False, rescan_days=None):
             # Detections only (person/dog/cat/bird). Empties and car-only stay put.
             queue = [
                 i for i in images
-                if filename_within_days(i, rescan_days)
+                if filename_within_days(i, rescan_days, tz_name=configured_tz_name())
                 and rec_is_urgent_detection(analysis_data.get(i) or {})
                 # Resume: rows already written by this scan path have `_scans`.
                 and not isinstance((analysis_data.get(i) or {}).get("_scans"), list)
