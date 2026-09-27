@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>[DIAGRAM TITLE] · funes-vision</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --color-paper:       #080c14;
+      --color-paper-2:     #0f172a;
+      --color-ink:         #f8fafc;
+      --color-muted:       #94a3b8;
+      --color-soft:        #64748b;
+      --color-rule:        rgba(248,250,252,0.12);
+      --color-rule-solid:  rgba(148,163,184,0.30);
+      --color-accent:      #3b82f6;
+      --color-accent-tint: rgba(59,130,246,0.12);
+      --color-link:        #60a5fa;
+      --font-sans:   'Geist', system-ui, sans-serif;
+      --font-serif:  'Instrument Serif', 'Times New Roman', serif;
+      --font-mono:   'Geist Mono', ui-monospace, Menlo, monospace;
+    }
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      color: var(--color-ink);
+      min-height: 100vh;
+      padding: 3rem 2rem;
+    }
+    .container { max-width: 1200px; margin: 0 auto; }
+    .header { margin-bottom: 2.5rem; }
+    .header-eyebrow {
+      font-family: var(--font-mono); font-size: 0.66rem; font-weight: 500;
+      letter-spacing: 0.18em; text-transform: uppercase; color: var(--color-muted);
+      margin-bottom: 0.75rem;
+    }
+    h1 {
+      font-family: var(--font-serif); font-size: clamp(1.75rem, 3vw + 1rem, 2.5rem);
+      font-weight: 400; letter-spacing: -0.02em; line-height: 1.1;
+      color: var(--color-ink); margin-bottom: 0.5rem;
+    }
+    .subtitle {
+      font-size: 1rem; line-height: 1.55; color: var(--color-muted); max-width: 60ch;
+    }
+    .diagram-container { background: transparent; border: none; padding: 0; overflow-x: auto; }
+    svg { width: 100%; min-width: 900px; display: block; }
+    .cards { display: grid; grid-template-columns: 1.1fr 1fr 0.9fr; gap: 1rem; margin-top: 1.5rem; }
+    @media (max-width: 900px) { .cards { grid-template-columns: 1fr; } }
+    .card {
+      background: var(--color-paper-2);
+      border: 1px solid var(--color-rule);
+      border-radius: 6px;
+      padding: 1.25rem;
+    }
+    .card-header {
+      display: flex; align-items: center; gap: 0.6rem;
+      margin-bottom: 0.875rem; padding-bottom: 0.875rem;
+      border-bottom: 1px solid var(--color-rule);
+    }
+    .card-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .card-dot.ink   { background: var(--color-ink); }
+    .card-dot.muted { background: var(--color-muted); }
+    .card-dot.coral { background: var(--color-accent); }
+    .card-dot.link  { background: var(--color-link); }
+    .card-dot.soft  { background: var(--color-soft); }
+    .card h3 { font-size: 0.875rem; font-weight: 600; color: var(--color-ink); }
+    .card ul { list-style: none; color: var(--color-muted); font-size: 0.8125rem; line-height: 1.55; }
+    .card li { margin-bottom: 0.3rem; padding-left: 0.875rem; position: relative; }
+    .card li::before { content: '—'; position: absolute; left: 0; color: var(--color-soft); font-size: 0.75rem; }
+    .footer {
+      margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid var(--color-rule);
+      font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.06em;
+      color: var(--color-soft); display: flex; justify-content: space-between;
+      flex-wrap: wrap; gap: 0.5rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <p class="header-eyebrow">[TYPE] · funes-vision</p>
+      <h1>[Diagram title]</h1>
+      <p class="subtitle">[One-sentence description.]</p>
+    </div>
+
+    <div class="diagram-container">
+      <!-- Replace [diagram-slug] with the file slug everywhere before finishing. -->
+      <svg viewBox="0 0 1000 720" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="[diagram-slug]-title [diagram-slug]-desc">
+        <title id="[diagram-slug]-title">[Diagram title]</title>
+        <desc id="[diagram-slug]-desc">[One sentence describing what the diagram shows.]</desc>
+        <defs>
+          <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#94a3b8"/>
+          </marker>
+          <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#3b82f6"/>
+          </marker>
+          <marker id="arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#60a5fa"/>
+          </marker>
+          <marker id="arrow-danger" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#ef4444"/>
+          </marker>
+        </defs>
+
+        <rect width="100%" height="100%" fill="#080c14"/>
+
+        <!-- Draw zones, then arrows, then boxes/labels (document order = z-order). -->
+
+      </svg>
+    </div>
+
+    <!-- Optional: vary card widths; never 3 identical generic cards. -->
+    <div class="cards">
+      <div class="card">
+        <div class="card-header"><span class="card-dot coral"></span><h3>[Focal point]</h3></div>
+        <ul><li>[..]</li></ul>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-dot muted"></span><h3>[..]</h3></div>
+        <ul><li>[..]</li></ul>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-dot link"></span><h3>[..]</h3></div>
+        <ul><li>[..]</li></ul>
+      </div>
+    </div>
+
+    <div class="footer">
+      <span>funes-vision · docs/diagrams</span>
+      <span>Source: [file:line refs]</span>
+    </div>
+  </div>
+</body>
+</html>
