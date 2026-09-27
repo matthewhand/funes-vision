@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Person-visit swimlane · funes-vision</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --color-paper:       #080c14;
+      --color-paper-2:     #0f172a;
+      --color-ink:         #f8fafc;
+      --color-muted:       #94a3b8;
+      --color-soft:        #64748b;
+      --color-rule:        rgba(248,250,252,0.12);
+      --color-rule-solid:  rgba(148,163,184,0.30);
+      --color-accent:      #3b82f6;
+      --color-accent-tint: rgba(59,130,246,0.12);
+      --color-link:        #60a5fa;
+      --font-sans:   'Geist', system-ui, sans-serif;
+      --font-serif:  'Instrument Serif', 'Times New Roman', serif;
+      --font-mono:   'Geist Mono', ui-monospace, Menlo, monospace;
+    }
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      color: var(--color-ink);
+      min-height: 100vh;
+      padding: 3rem 2rem;
+    }
+    .container { max-width: 1640px; margin: 0 auto; }
+    .header { margin-bottom: 2.5rem; }
+    .header-eyebrow {
+      font-family: var(--font-mono); font-size: 0.66rem; font-weight: 500;
+      letter-spacing: 0.18em; text-transform: uppercase; color: var(--color-muted);
+      margin-bottom: 0.75rem;
+    }
+    h1 {
+      font-family: var(--font-serif); font-size: clamp(1.75rem, 3vw + 1rem, 2.5rem);
+      font-weight: 400; letter-spacing: -0.02em; line-height: 1.1;
+      color: var(--color-ink); margin-bottom: 0.5rem;
+    }
+    .subtitle {
+      font-size: 1rem; line-height: 1.55; color: var(--color-muted); max-width: 78ch;
+    }
+    .diagram-container { background: transparent; border: none; padding: 0; overflow-x: auto; }
+    svg { width: 100%; min-width: 1080px; display: block; }
+    .cards { display: grid; grid-template-columns: 1.15fr 1fr 0.85fr; gap: 1rem; margin-top: 1.5rem; }
+    @media (max-width: 900px) { .cards { grid-template-columns: 1fr; } }
+    .card {
+      background: var(--color-paper-2);
+      border: 1px solid var(--color-rule);
+      border-radius: 6px;
+      padding: 1.25rem;
+    }
+    .card-header {
+      display: flex; align-items: center; gap: 0.6rem;
+      margin-bottom: 0.875rem; padding-bottom: 0.875rem;
+      border-bottom: 1px solid var(--color-rule);
+    }
+    .card-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .card-dot.ink   { background: var(--color-ink); }
+    .card-dot.muted { background: var(--color-muted); }
+    .card-dot.coral { background: var(--color-accent); }
+    .card-dot.link  { background: var(--color-link); }
+    .card-dot.soft  { background: var(--color-soft); }
+    .card h3 { font-size: 0.875rem; font-weight: 600; color: var(--color-ink); }
+    .card ul { list-style: none; color: var(--color-muted); font-size: 0.8125rem; line-height: 1.55; }
+    .card li { margin-bottom: 0.3rem; padding-left: 0.875rem; position: relative; }
+    .card li::before { content: '—'; position: absolute; left: 0; color: var(--color-soft); font-size: 0.75rem; }
+    .footer {
+      margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid var(--color-rule);
+      font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.06em;
+      color: var(--color-soft); display: flex; justify-content: space-between;
+      flex-wrap: wrap; gap: 0.5rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <p class="header-eyebrow">Swimlane · funes-vision</p>
+      <h1>A porch visit, lane by lane</h1>
+      <p class="subtitle">A motion still is dropped over FTP, queued, gated by a fast YOLO pass, enriched by a local Ollama deep pass that attaches Home Assistant flags, merged into <span style="font-family:var(--font-mono);font-size:0.9em">analysis.json</span> and grouped into a visit in <span style="font-family:var(--font-mono);font-size:0.9em">bursts.json</span>, then surfaced live over SSE. Slack and HA MQTT are optional egress; pin-aware retention keeps the visit unless it is pinned.</p>
+    </div>
+
+    <div class="diagram-container">
+      <svg viewBox="0 0 1600 820" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="visit-swimlane-title visit-swimlane-desc">
+        <title id="visit-swimlane-title">funes-vision person-visit swimlane</title>
+        <desc id="visit-swimlane-desc">Swimlane process with five lanes: a Camera drops a motion still over FTP; the Pipeline queues it, runs a fast YOLO pass, then a deep Ollama pass that attaches Home Assistant flags, and merges the record; the Catalog store holds analysis.json and bursts.json; the Gallery and API surface the visit live over SSE; the Integrations lane optionally notifies Slack and publishes retained HA MQTT flags, while pin-aware retention keeps the visit unless pinned.</desc>
+        <defs>
+          <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#94a3b8"/>
+          </marker>
+          <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#3b82f6"/>
+          </marker>
+          <marker id="arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#60a5fa"/>
+          </marker>
+          <marker id="arrow-danger" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#ef4444"/>
+          </marker>
+        </defs>
+
+        <rect width="100%" height="100%" fill="#080c14"/>
+
+        <!-- LANES (drawn first) -->
+        <!-- L1 Camera -->
+        <rect x="40" y="96" width="1520" height="88" rx="6" fill="rgba(248,250,252,0.02)" stroke="rgba(248,250,252,0.10)" stroke-width="1"/>
+        <rect x="40" y="96" width="140" height="88" fill="rgba(248,250,252,0.02)"/>
+        <text x="56" y="134" fill="rgba(248,250,252,0.55)" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.16em">CAMERA</text>
+        <text x="56" y="152" fill="#64748b" font-size="7" font-family="'Geist Mono', monospace" letter-spacing="0.08em">motion stills · FTP</text>
+        <!-- L2 Pipeline -->
+        <rect x="40" y="196" width="1520" height="176" rx="6" fill="rgba(248,250,252,0.02)" stroke="rgba(248,250,252,0.10)" stroke-width="1"/>
+        <rect x="40" y="196" width="140" height="176" fill="rgba(248,250,252,0.02)"/>
+        <text x="56" y="276" fill="rgba(248,250,252,0.55)" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.16em">PIPELINE</text>
+        <text x="56" y="294" fill="#64748b" font-size="7" font-family="'Geist Mono', monospace" letter-spacing="0.08em">analyze_images.py</text>
+        <text x="56" y="306" fill="#64748b" font-size="7" font-family="'Geist Mono', monospace" letter-spacing="0.08em">create-index.sh</text>
+        <!-- L3 Catalog store -->
+        <rect x="40" y="384" width="1520" height="96" rx="6" fill="rgba(248,250,252,0.02)" stroke="rgba(248,250,252,0.10)" stroke-width="1"/>
+        <rect x="40" y="384" width="140" height="96" fill="rgba(248,250,252,0.02)"/>
+        <text x="56" y="426" fill="rgba(248,250,252,0.55)" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.16em">CATALOG STORE</text>
+        <text x="56" y="444" fill="#64748b" font-size="7" font-family="'Geist Mono', monospace" letter-spacing="0.08em">analysis.json · bursts</text>
+        <!-- L4 Gallery / API -->
+        <rect x="40" y="492" width="1520" height="96" rx="6" fill="rgba(248,250,252,0.02)" stroke="rgba(248,250,252,0.10)" stroke-width="1"/>
+        <rect x="40" y="492" width="140" height="96" fill="rgba(248,250,252,0.02)"/>
+        <text x="56" y="534" fill="rgba(248,250,252,0.55)" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.16em">GALLERY / API</text>
+        <text x="56" y="552" fill="#64748b" font-size="7" font-family="'Geist Mono', monospace" letter-spacing="0.08em">api_server.py · index.html</text>
+        <!-- L5 Integrations -->
+        <rect x="40" y="600" width="1520" height="96" rx="6" fill="rgba(248,250,252,0.02)" stroke="rgba(248,250,252,0.10)" stroke-width="1"/>
+        <rect x="40" y="600" width="140" height="96" fill="rgba(248,250,252,0.02)"/>
+        <text x="56" y="642" fill="rgba(248,250,252,0.55)" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.16em">INTEGRATIONS</text>
+        <text x="56" y="660" fill="#64748b" font-size="7" font-family="'Geist Mono', monospace" letter-spacing="0.08em">Slack · HA MQTT (optional)</text>
+
+        <!-- ARROWS (before nodes) -->
+        <!-- A1 camera -> queue -->
+        <line x1="280" y1="176" x2="280" y2="248" stroke="#94a3b8" stroke-width="1" marker-end="url(#arrow)"/>
+        <rect x="288" y="196" width="56" height="12" rx="2" fill="#080c14"/>
+        <text x="316" y="205" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">FTP STILL</text>
+        <!-- A2 queue -> fast yolo -->
+        <line x1="360" y1="284" x2="432" y2="284" stroke="#94a3b8" stroke-width="1" marker-end="url(#arrow)"/>
+        <rect x="372" y="264" width="48" height="12" rx="2" fill="#080c14"/>
+        <text x="396" y="273" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">FRAME</text>
+        <!-- A3 fast yolo -> deep (person hit) -->
+        <line x1="592" y1="284" x2="664" y2="284" stroke="#94a3b8" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+        <rect x="604" y="264" width="48" height="12" rx="2" fill="#080c14"/>
+        <text x="628" y="273" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">PERSON</text>
+        <!-- A4 fast yolo -> merge (detector row, routed below the row) -->
+        <path d="M512,320 L512,344 Q512,352 520,352 L920,352 Q928,352 928,344 L928,320" fill="none" stroke="#94a3b8" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+        <rect x="704" y="332" width="64" height="12" rx="2" fill="#080c14"/>
+        <text x="736" y="341" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">DETECTOR</text>
+        <!-- A5 deep -> merge (HA flags, focal) -->
+        <line x1="824" y1="284" x2="896" y2="284" stroke="#3b82f6" stroke-width="1.2" marker-end="url(#arrow-accent)"/>
+        <rect x="832" y="264" width="56" height="12" rx="2" fill="#080c14"/>
+        <text x="860" y="273" fill="#3b82f6" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">HA FLAGS</text>
+        <!-- A6 merge -> store -->
+        <line x1="992" y1="320" x2="992" y2="400" stroke="#94a3b8" stroke-width="1" marker-end="url(#arrow)"/>
+        <rect x="1000" y="348" width="56" height="12" rx="2" fill="#080c14"/>
+        <text x="1028" y="357" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">PERSIST</text>
+        <!-- A7 store -> api -->
+        <line x1="960" y1="464" x2="960" y2="508" stroke="#94a3b8" stroke-width="1" marker-end="url(#arrow)"/>
+        <rect x="968" y="478" width="40" height="12" rx="2" fill="#080c14"/>
+        <text x="988" y="487" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">READ</text>
+        <!-- A8 retention -> store (prune) -->
+        <path d="M1208,320 L1208,424 Q1208,432 1200,432 L1056,432" fill="none" stroke="#94a3b8" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+        <rect x="1216" y="368" width="48" height="12" rx="2" fill="#080c14"/>
+        <text x="1240" y="377" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">PRUNE</text>
+        <!-- A9 api -> integrations (opt-in egress) -->
+        <path d="M1056,540 L1432,540 Q1440,540 1440,548 L1440,616" fill="none" stroke="#60a5fa" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#arrow-link)"/>
+        <rect x="1216" y="520" width="48" height="12" rx="2" fill="#080c14"/>
+        <text x="1240" y="529" fill="#60a5fa" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">OPT-IN</text>
+
+        <!-- NODES -->
+        <!-- N1 Camera JPEG -->
+        <g>
+          <rect x="200" y="104" width="160" height="72" rx="6" fill="#080c14"/>
+          <rect x="200" y="104" width="160" height="72" rx="6" fill="rgba(148,163,184,0.10)" stroke="#64748b" stroke-width="1"/>
+          <rect x="208" y="110" width="32" height="12" rx="2" fill="transparent" stroke="rgba(148,163,184,0.40)" stroke-width="0.8"/>
+          <text x="224" y="119" fill="#94a3b8" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">CAM</text>
+          <text x="280" y="144" fill="#f8fafc" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Motion JPEG</text>
+          <text x="280" y="160" fill="#94a3b8" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">FTP → watched dir</text>
+        </g>
+        <!-- N2 Queue -->
+        <g>
+          <rect x="200" y="248" width="160" height="72" rx="6" fill="#080c14"/>
+          <rect x="200" y="248" width="160" height="72" rx="6" fill="#0f172a" stroke="#f8fafc" stroke-width="1"/>
+          <rect x="208" y="254" width="40" height="12" rx="2" fill="transparent" stroke="rgba(248,250,252,0.40)" stroke-width="0.8"/>
+          <text x="228" y="263" fill="#94a3b8" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">QUEUE</text>
+          <text x="280" y="288" fill="#f8fafc" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Create index</text>
+          <text x="280" y="304" fill="#94a3b8" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">inotifywait · queue</text>
+        </g>
+        <!-- N3 Fast YOLO -->
+        <g>
+          <rect x="432" y="248" width="160" height="72" rx="6" fill="#080c14"/>
+          <rect x="432" y="248" width="160" height="72" rx="6" fill="#0f172a" stroke="#f8fafc" stroke-width="1"/>
+          <rect x="440" y="254" width="32" height="12" rx="2" fill="transparent" stroke="rgba(248,250,252,0.40)" stroke-width="0.8"/>
+          <text x="456" y="263" fill="#94a3b8" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">FAST</text>
+          <text x="512" y="288" fill="#f8fafc" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Fast YOLO</text>
+          <text x="512" y="304" fill="#94a3b8" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">yolov4-tiny · person</text>
+        </g>
+        <!-- N4 Deep Ollama (focal) -->
+        <g>
+          <rect x="664" y="248" width="160" height="72" rx="6" fill="#080c14"/>
+          <rect x="664" y="248" width="160" height="72" rx="6" fill="rgba(59,130,246,0.12)" stroke="#3b82f6" stroke-width="1.2"/>
+          <rect x="672" y="254" width="32" height="12" rx="2" fill="transparent" stroke="rgba(59,130,246,0.50)" stroke-width="0.8"/>
+          <text x="688" y="263" fill="#60a5fa" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">DEEP</text>
+          <text x="744" y="288" fill="#f8fafc" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Deep Ollama</text>
+          <text x="744" y="304" fill="#94a3b8" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">HA flags · :11434</text>
+        </g>
+        <!-- N5 Merge + group visit -->
+        <g>
+          <rect x="896" y="248" width="160" height="72" rx="6" fill="#080c14"/>
+          <rect x="896" y="248" width="160" height="72" rx="6" fill="#0f172a" stroke="#f8fafc" stroke-width="1"/>
+          <rect x="904" y="254" width="40" height="12" rx="2" fill="transparent" stroke="rgba(248,250,252,0.40)" stroke-width="0.8"/>
+          <text x="924" y="263" fill="#94a3b8" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">MERGE</text>
+          <text x="976" y="288" fill="#f8fafc" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Merge + visit</text>
+          <text x="976" y="304" fill="#94a3b8" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">YOLO + HA flags</text>
+        </g>
+        <!-- N6 Retention -->
+        <g>
+          <rect x="1128" y="248" width="160" height="72" rx="6" fill="#080c14"/>
+          <rect x="1128" y="248" width="160" height="72" rx="6" fill="#0f172a" stroke="#f8fafc" stroke-width="1"/>
+          <rect x="1136" y="254" width="48" height="12" rx="2" fill="transparent" stroke="rgba(248,250,252,0.40)" stroke-width="0.8"/>
+          <text x="1160" y="263" fill="#94a3b8" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">RETAIN</text>
+          <text x="1208" y="288" fill="#f8fafc" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Retention</text>
+          <text x="1208" y="304" fill="#94a3b8" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">max_age_days · pins</text>
+        </g>
+        <!-- N7 Catalog store -->
+        <g>
+          <rect x="896" y="400" width="160" height="64" rx="6" fill="#080c14"/>
+          <rect x="896" y="400" width="160" height="64" rx="6" fill="rgba(248,250,252,0.05)" stroke="#94a3b8" stroke-width="1"/>
+          <rect x="904" y="406" width="40" height="12" rx="2" fill="transparent" stroke="rgba(148,163,184,0.40)" stroke-width="0.8"/>
+          <text x="924" y="415" fill="#94a3b8" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">STORE</text>
+          <text x="976" y="428" fill="#f8fafc" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Catalog store</text>
+          <text x="976" y="444" fill="#94a3b8" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">analysis.json · bursts</text>
+        </g>
+        <!-- N8 API + SPA -->
+        <g>
+          <rect x="896" y="508" width="160" height="64" rx="6" fill="#080c14"/>
+          <rect x="896" y="508" width="160" height="64" rx="6" fill="#0f172a" stroke="#f8fafc" stroke-width="1"/>
+          <rect x="904" y="514" width="32" height="12" rx="2" fill="transparent" stroke="rgba(248,250,252,0.40)" stroke-width="0.8"/>
+          <text x="920" y="523" fill="#94a3b8" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">API</text>
+          <text x="976" y="540" fill="#f8fafc" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">API + SPA</text>
+          <text x="976" y="556" fill="#94a3b8" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">SSE /api/events</text>
+        </g>
+        <!-- N9 Slack / HA MQTT (optional) -->
+        <g>
+          <rect x="1360" y="616" width="160" height="64" rx="6" fill="#080c14"/>
+          <rect x="1360" y="616" width="160" height="64" rx="6" fill="rgba(248,250,252,0.02)" stroke="rgba(248,250,252,0.20)" stroke-width="1" stroke-dasharray="4,3"/>
+          <rect x="1368" y="622" width="32" height="12" rx="2" fill="transparent" stroke="rgba(248,250,252,0.30)" stroke-width="0.8"/>
+          <text x="1384" y="631" fill="#94a3b8" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">EXT</text>
+          <text x="1440" y="648" fill="#f8fafc" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Slack / HA MQTT</text>
+          <text x="1440" y="664" fill="#94a3b8" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">notify · retained flags</text>
+        </g>
+
+        <!-- LEGEND (bottom strip) -->
+        <line x1="40" y1="744" x2="1560" y2="744" stroke="rgba(248,250,252,0.12)" stroke-width="0.8"/>
+        <text x="40" y="764" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">LEGEND</text>
+        <rect x="120" y="754" width="16" height="12" rx="2" fill="#0f172a" stroke="#f8fafc" stroke-width="1"/>
+        <text x="144" y="764" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.06em">SERVICE / STEP</text>
+        <rect x="380" y="754" width="16" height="12" rx="2" fill="rgba(248,250,252,0.05)" stroke="#94a3b8" stroke-width="1"/>
+        <text x="404" y="764" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.06em">STORE / STATE</text>
+        <rect x="640" y="754" width="16" height="12" rx="2" fill="rgba(59,130,246,0.12)" stroke="#3b82f6" stroke-width="1.2"/>
+        <text x="664" y="764" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.06em">FOCAL</text>
+        <rect x="820" y="754" width="16" height="12" rx="2" fill="rgba(248,250,252,0.02)" stroke="rgba(248,250,252,0.20)" stroke-width="1" stroke-dasharray="4,3"/>
+        <text x="844" y="764" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.06em">OPTIONAL / ASYNC</text>
+        <line x1="1060" y1="760" x2="1100" y2="760" stroke="#60a5fa" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#arrow-link)"/>
+        <text x="1108" y="764" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.06em">HTTP / API EGRESS</text>
+      </svg>
+    </div>
+
+    <div class="cards">
+      <div class="card">
+        <div class="card-header"><span class="card-dot coral"></span><h3>Focal handoff</h3></div>
+        <ul>
+          <li>Deep Ollama run attaches the HA flags (<span style="font-family:var(--font-mono)">postal_delivery</span>, <span style="font-family:var(--font-mono)">porch_access</span>)</li>
+          <li>Only real YOLO hits reach the LLM — car-only frames are skipped</li>
+          <li>Served by local Ollama at <span style="font-family:var(--font-mono)">localhost:11434</span></li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-dot muted"></span><h3>Pipeline &amp; store</h3></div>
+        <ul>
+          <li>Fast YOLOv4-tiny pass on every frame</li>
+          <li>Merge keeps detector flags, attaches LLM flags</li>
+          <li>Visits grouped by time into <span style="font-family:var(--font-mono)">bursts.json</span></li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-dot link"></span><h3>Optional egress</h3></div>
+        <ul>
+          <li>SSE pushes detections to the SPA live</li>
+          <li>Slack notify is opted in</li>
+          <li>HA Compare topics are MQTT-retained</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="footer">
+      <span>funes-vision · docs/diagrams</span>
+      <span>Source: README.md:14 · create-index.sh:10 · analyze_images.py:40,248,358,368,981,1045,1760,1937,2120,2226,2294 · api_server.py:832,1026 · index.html:6519 · integrations/slack.py:19 · ha_mqtt.py:62</span>
+      <span>Assumption: Slack/HA MQTT are fired by the pipeline (analyze_images.py:2120,2294); the Integrations arrow is drawn from the API/SSE step per the requested visit-narrative order. FTP transport and the create-index queue are taken from README.md:14.</span>
+    </div>
+  </div>
+</body>
+</html>
