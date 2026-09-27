@@ -16,6 +16,8 @@ here, then add an ``enabled`` dispatch block in ``notify_burst`` below.
 """
 import json
 import os
+import re
+import threading
 import time
 
 from log_config import get_logger
@@ -26,6 +28,52 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CONFIG_FILE = os.path.join(ROOT, "integrations.json")
 # Delivery observability (read by api_server for the Integrations panel)
 STATE_FILE = os.path.join(ROOT, "integrations_state.json")
+
+# read + mutate + write of the state file is serialized, and the write is
+# atomic at 0600: a delivery detail can quote the response Slack sent back
+# (a signed upload URL carrying the bot token), the file is read by
+# api_server, and a crash mid-write used to leave it truncated and world-
+# readable.
+_STATE_LOCK = threading.Lock()
+
+_URL_RE = re.compile(r"https?://\S+")
+_QUERY_SECRET_RE = re.compile(r"\b(token|sig|signature|secret|key)=[^\s&]+",
+                              re.IGNORECASE)
+_BARE_SECRET_RE = re.compile(r"\bxox[abposr]-[A-Za-z0-9-]+")
+
+
+def redact_detail(detail):
+    """Delivery detail safe to persist and to serve unauthenticated.
+
+    Keeps the host and path (that is the useful half of "posted to
+    files.slack.com/..."), drops the query string and anything token-shaped,
+    so the Slack bot token cannot outlive the delivery in a file that
+    GET /api/integrations returns to any caller."""
+    text = str(detail or "")[:200]
+    text = _BARE_SECRET_RE.sub("[redacted]", text)
+    text = _QUERY_SECRET_RE.sub(lambda m: f"{m.group(1)}=[redacted]", text)
+    text = _URL_RE.sub(lambda m: m.group(0).split("?")[0], text)
+    return text
+
+
+def _write_state(state):
+    """Atomic 0600 write: the mode is set before the rename, so there is no
+    window in which the file exists world-readable."""
+    tmp = f"{STATE_FILE}.tmp.{os.getpid()}"
+    try:
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as f:
+            json.dump(state, f, indent=1)
+            f.flush()
+            os.fsync(f.fileno())
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, STATE_FILE)
+    except Exception:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def load_config():
@@ -41,21 +89,24 @@ def _record_delivery(name, kind, ok, detail):
     """Persist the last send result per integration so the UI can show
     'last delivered / last error' for the channel you rely on while away."""
     try:
-        if os.path.exists(STATE_FILE):
-            with open(STATE_FILE) as f:
-                state = json.load(f)
-        else:
-            state = {}
-    except (OSError, ValueError):
-        state = {}
-    entry = state.get(name) or {}
-    stamp = {"ts": time.time(), "kind": kind, "ok": bool(ok), "detail": (detail or "")[:200]}
-    entry["last_delivery"] = stamp
-    entry["last_error" if not ok else "last_ok"] = stamp
-    state[name] = entry
-    try:
-        with open(STATE_FILE, "w") as f:
-            json.dump(state, f, indent=1)
+        with _STATE_LOCK:
+            try:
+                if os.path.exists(STATE_FILE):
+                    with open(STATE_FILE) as f:
+                        state = json.load(f)
+                else:
+                    state = {}
+            except (OSError, ValueError):
+                state = {}
+            if not isinstance(state, dict):
+                state = {}
+            entry = state.get(name) or {}
+            stamp = {"ts": time.time(), "kind": kind, "ok": bool(ok),
+                     "detail": redact_detail(detail)}
+            entry["last_delivery"] = stamp
+            entry["last_error" if not ok else "last_ok"] = stamp
+            state[name] = entry
+            _write_state(state)
     except OSError as e:
         logger.warning("could not write integration state %s: %s", STATE_FILE, e)
 

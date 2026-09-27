@@ -59,10 +59,20 @@ class TestCameraAPI(unittest.TestCase):
                     fh.write("x")
         cls._orig_dirs = api_server.WATCH_DIRS
         api_server.WATCH_DIRS = [cls.front, cls.back]
+        # Pin auth off. A deployed settings.json next to the script (or a
+        # WEBCAM_API_TOKEN exported on the developer's shell) would otherwise
+        # turn every pin POST below into a 401 and make these assertions
+        # environment-dependent. Same guard as test_api_endpoints.EndpointTestCase.
+        cls._orig_settings = api_server.SETTINGS_FILE
+        cls._orig_token = os.environ.pop("WEBCAM_API_TOKEN", None)
+        api_server.SETTINGS_FILE = os.path.join(cls.tmp, "no_settings.json")
 
     @classmethod
     def tearDownClass(cls):
         api_server.WATCH_DIRS = cls._orig_dirs
+        api_server.SETTINGS_FILE = cls._orig_settings
+        if cls._orig_token is not None:
+            os.environ["WEBCAM_API_TOKEN"] = cls._orig_token
         shutil.rmtree(cls.tmp, ignore_errors=True)
 
     def setUp(self):
