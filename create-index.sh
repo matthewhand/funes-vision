@@ -71,24 +71,15 @@ run_analysis() {
                 end
             ' "$src" > "$dest.tmp" && mv "$dest.tmp" "$dest"
         }
-        slice_array_catalog() {
-            local src="$1" dest="$2"
-            [ -f "$src" ] && [ -f "$IMAGE_DIR/images.json" ] || return 1
-            jq --slurpfile imgs "$IMAGE_DIR/images.json" '
-              ($imgs[0] // []) as $list
-              | ($list | map({(.): true}) | add // {}) as $want
-              | if ($want | type) != "object" then .
-                else map(select($want[.] == true))
-                end
-            ' "$src" > "$dest.tmp" && mv "$dest.tmp" "$dest"
-        }
         slice_object_catalog "$BASE_DIR/analysis.json" "$IMAGE_DIR/analysis.json" \
             || { [ -f "$BASE_DIR/analysis.json" ] && cp "$BASE_DIR/analysis.json" "$IMAGE_DIR/analysis.json"; } || true
         slice_object_catalog "$BASE_DIR/bursts.json" "$IMAGE_DIR/bursts.json" \
             || { [ -f "$BASE_DIR/bursts.json" ] && cp "$BASE_DIR/bursts.json" "$IMAGE_DIR/bursts.json"; } || true
-        slice_array_catalog "$BASE_DIR/pins.json" "$IMAGE_DIR/pins.json" \
-            || { [ -f "$BASE_DIR/pins.json" ] && cp "$BASE_DIR/pins.json" "$IMAGE_DIR/pins.json"; } || true
-
+        # pins.json is deliberately NOT synced. It is per camera and owned by
+        # the API (api_server._pins_path); the repo-root copy here predates
+        # per-camera scoping, and writing it over a camera's pins.json deleted
+        # the user's pins. Retention reads each camera's own file plus the
+        # repo-root one read-only (analyze_images.retention_pins).
         if [ "$analysis_rc" -eq 0 ]; then
             touch "$MARKER"
             echo "$(date): Analysis and sync complete."
