@@ -218,6 +218,15 @@ Mitigations now in code:
   `analysis.json`, `bursts.json`, `retention_log.json`, `alert_state.json`
   (same pattern already used for inference audit files).
 - **create-index.sh** — does not stamp `lastrun` on Python failure.
+- **`load_settings(strict=True)`** — a `settings.json` that cannot be read or
+  parsed raises `SettingsError`, and `main()` returns **exit 3** before taking
+  the lock, before `apply_settings`, and before touching any catalog. A
+  *missing* file (fresh install) and a valid object with no `watch_dirs` are
+  still the benign exit 0. The old behaviour degraded a corrupt file to `{}`,
+  which looked identical to "unconfigured": nothing swept, nothing deleted,
+  no health alert, exit 0, `lastrun` stamped — dead retention on a box the
+  watchdog read as healthy. Journal line to grep:
+  `ERROR … could not read settings …`.
 
 Journal lines to grep: `Retention: removed`, `Recovered … analysis.json`,
 `Warning: … is corrupt`, `Pruned N stale analysis entries`.

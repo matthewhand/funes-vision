@@ -21,6 +21,27 @@ SETTINGS_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "settings.json")
 
 
+def live_settings():
+    """This box's own settings.json, or None when it cannot be read.
+
+    "Matches this box" asserts real `ignore_regions`, so it needs a *readable*
+    file, not just an existing one. A corrupt settings.json is a fault for the
+    pipeline to report loudly (#27) and a skip reason here -- the alternative is
+    turning a local-config test into a red error for a box that is merely
+    misconfigured.
+    """
+    import json
+    try:
+        with open(SETTINGS_PATH) as f:
+            settings = json.load(f)
+    except (OSError, ValueError):
+        return None
+    return settings if isinstance(settings, dict) else None
+
+
+LIVE_SETTINGS = live_settings()
+
+
 class TestPointInPolygon(unittest.TestCase):
     def test_parked_suv_centre_is_inside(self):
         self.assertTrue(zones.point_in_polygon(0.055, 0.436, BAY))
@@ -83,14 +104,9 @@ class TestPorchGate(unittest.TestCase):
     def test_dog_only_does_not_emit_porch(self):
         self.assertEqual(zones.scan_gate_flags("front", {"dog": (0.88, 0.45)}, [PORCH_REGION]), {})
 
-    @unittest.skipUnless(os.path.exists(SETTINGS_PATH), "live settings.json not present")
+    @unittest.skipUnless(LIVE_SETTINGS is not None, "no readable live settings.json")
     def test_settings_porch_quad_matches_this_box(self):
-        import json
-        with open(os.path.join(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            "settings.json")) as f:
-            settings = json.load(f)
-        regions = settings.get("ignore_regions") or []
+        regions = LIVE_SETTINGS.get("ignore_regions") or []
         self.assertEqual(zones.gated_scan_ids("front", regions), {"porch"})
         self.assertTrue(zones.scan_gate_flags(
             "front", {"person": (0.88, 0.45)}, regions)["porch_access"])
@@ -103,14 +119,9 @@ class TestIgnoreRegionsValid(unittest.TestCase):
         self.assertTrue(zones.ignore_regions_valid([REGION]))
         self.assertTrue(zones.ignore_regions_valid([]))
 
-    @unittest.skipUnless(os.path.exists(SETTINGS_PATH), "live settings.json not present")
+    @unittest.skipUnless(LIVE_SETTINGS is not None, "no readable live settings.json")
     def test_settings_default_triangle_matches_this_box(self):
-        import json
-        with open(os.path.join(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            "settings.json")) as f:
-            settings = json.load(f)
-        regions = settings.get("ignore_regions") or []
+        regions = LIVE_SETTINGS.get("ignore_regions") or []
         self.assertTrue(zones.detection_ignored("car", 0.055, 0.43, "front", regions))
         self.assertFalse(zones.detection_ignored("car", 0.158, 0.216, "front", regions))
 

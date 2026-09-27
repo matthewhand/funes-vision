@@ -88,23 +88,48 @@ PIPELINE_LOCK = "/tmp/webcam_analysis.lock"
 _s = {}
 
 
-def load_settings(path=None):
+class SettingsError(Exception):
+    """settings.json exists but could not be read or parsed as a JSON object.
+
+    Deliberately distinct from the two *benign* unconfigured states: a missing
+    settings.json (fresh install) and a valid object that simply has no
+    ``watch_dirs`` yet. Only this one means the box is misconfigured, which the
+    caller must not paper over (#27).
+    """
+
+
+def load_settings(path=None, strict=False):
     """Read settings.json into a dict.
 
-    Returns ``{}`` for a missing/unreadable/non-object file so callers always
-    get a mapping and never an exception; a genuinely broken file is logged so
-    the failure is not silent.
+    Lenient by default: a missing/unreadable/non-object file degrades to ``{}``
+    with a warning, because ``apply_settings()`` runs at *import* time and
+    raising there would take the whole module down before the CLI could report
+    anything (#28).
+
+    ``strict=True`` raises ``SettingsError`` instead of degrading, and is what
+    the sweep entry point uses. A half-written settings.json (interrupted
+    write, full disk, an editor truncating on save) used to be indistinguishable
+    from an unconfigured one, so the sweep scanned nothing, deleted nothing,
+    fired no health alert and still exited 0 -- retention was dead and the disk
+    grew without bound while create-index.sh touched the success marker and the
+    watchdog read the box as healthy (#27). Failing loud is the only honest
+    answer; the caller then declines to analyse and declines to delete.
     """
     path = path if path is not None else _settings_path
     try:
         with open(path) as f:
             cfg = json.load(f)
     except FileNotFoundError:
+        # Fresh install: nothing configured yet is not a fault.
         return {}
     except (OSError, ValueError) as e:
+        if strict:
+            raise SettingsError(f"could not read settings {path}: {e}") from e
         logger.warning("could not read settings %s (%s); using current values", path, e)
         return {}
     if not isinstance(cfg, dict):
+        if strict:
+            raise SettingsError(f"settings {path} is not a JSON object")
         logger.warning("settings %s is not a JSON object; using current values", path)
         return {}
     return cfg
@@ -2082,8 +2107,22 @@ def take_pipeline_lock(blocking=False):
     return fh
 
 
+# Exit codes. 0 = the sweep ran, or was a clean skip (busy lock, nothing
+# configured yet); 2 = usage error, raised in __main__; 3 = settings.json could
+# not be read or parsed, so the sweep was refused. 3 is deliberately distinct
+# from 1/2: create-index.sh and tools/watchdog.sh stamp the lastrun marker
+# only on 0, so a misconfigured box stops reporting a successful sweep and the
+# watchdog's recent_sweep/ret_age heuristics go stale instead of reading the
+# box as healthy (#27).
+EXIT_OK = 0
+EXIT_SETTINGS_ERROR = 3
+
+
 def main(retention_only=False, rescan_days=None, settings_path=None):
     """Serialise every entry path on the global pipeline lock, then sweep.
+
+    Returns a process exit code: 0 when the sweep ran or was a clean skip,
+    ``EXIT_SETTINGS_ERROR`` when settings.json could not be read or parsed.
 
     The lock used to be taken only by the --rescan-days branch, so the cron
     --retention-only watchdog ran unlocked: it deleted frames while a live
@@ -2091,30 +2130,44 @@ def main(retention_only=False, rescan_days=None, settings_path=None):
     made the last writer win (#30). --rescan-days keeps its old blocking wait;
     every other path skips instead of deleting under a concurrent run.
     """
+    # Re-read settings.json so /api/settings changes land this sweep. An explicit
+    # settings_path aims the sweep at a specific file (tests, one-off tooling);
+    # None keeps reading the deployed settings.json, so production is unchanged.
+    #
+    # Read it BEFORE the lock, and strictly: a half-written settings.json is a
+    # fault, not a configuration, and must be reported as one even when another
+    # run happens to hold the lock (the lock-busy path is a benign exit 0).
+    # Bailing out here — before the lock, before apply_settings, before any
+    # catalog is read or written — is what makes "deletes nothing, writes
+    # nothing" structural rather than a promise (#27).
+    try:
+        cfg = load_settings(settings_path, strict=True)
+    except SettingsError as e:
+        logger.error("%s; refusing to sweep -- retention, health checks and "
+                     "every disk budget would be configured from nothing", e)
+        print(f"ERROR: {e}", file=sys.stderr)
+        return EXIT_SETTINGS_ERROR
     lock = take_pipeline_lock(blocking=bool(rescan_days))
     if lock is None:
         print(f"Pipeline lock {PIPELINE_LOCK} is held by another run; skipping "
               f"this sweep (nothing analysed, nothing deleted).")
-        return
+        return EXIT_OK
     try:
-        _run_sweep(retention_only=retention_only, rescan_days=rescan_days,
-                   settings_path=settings_path)
+        return _run_sweep(cfg, retention_only=retention_only,
+                          rescan_days=rescan_days)
     finally:
         fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
         lock.close()
 
 
-def _run_sweep(retention_only=False, rescan_days=None, settings_path=None):
+def _run_sweep(cfg, retention_only=False, rescan_days=None):
     global RATE_LIMITED
-    # Re-read settings.json so /api/settings changes land this sweep. An explicit
-    # settings_path aims the sweep at a specific file (tests, one-off tooling);
-    # None keeps reading the deployed settings.json, so production is unchanged.
-    apply_settings(load_settings(settings_path))
+    apply_settings(cfg)
     RATE_LIMITED = False  # fresh budget each sweep; a throttle only pauses one sweep
     api_key = os.getenv("OPENROUTER_API_KEY")
     if not WATCH_DIRS:
         print("No watch_dirs configured in settings.json - nothing to do.")
-        return
+        return EXIT_OK
     watch_dirs = WATCH_DIRS
     base_dir = BASE_DIR
     analysis_file = os.path.join(base_dir, "analysis.json")
@@ -2579,6 +2632,7 @@ def _run_sweep(retention_only=False, rescan_days=None, settings_path=None):
         run_health_checks(watch_dirs, api_key)
     except Exception as e:
         print(f"Health check failed: {e}")
+    return EXIT_OK
 
 if __name__ == "__main__":
     # --publish-latest: one-shot retained MQTT of newest FRONT/BACK analyses.
@@ -2604,9 +2658,11 @@ if __name__ == "__main__":
         print(f"Waiting for pipeline lock to rescan last {rescan_days}d of detections...")
         # main() takes the global pipeline lock (blocking for a rescan, which
         # is the one mode that legitimately waits for the current sweep).
-        main(rescan_days=rescan_days)
-        raise SystemExit(0)
+        # Its exit code IS the process exit code: a refused sweep must not be
+        # reported as a clean run (#27).
+        raise SystemExit(main(rescan_days=rescan_days))
     # --retention-only: apply settings.json age/disk budgets + prune catalogs,
     # then exit. Used by the cron watchdog so cleanup never depends solely on
-    # the long-lived create-index / analyze loop staying healthy.
-    main(retention_only=("--retention-only" in sys.argv))
+    # the long-lived create-index / analyze loop staying healthy. Same contract:
+    # the watchdog stamps its lastrun marker only on exit 0.
+    raise SystemExit(main(retention_only=("--retention-only" in sys.argv)))
