@@ -25,6 +25,9 @@ the app UI). The profile is selected by the `.diagram-design` marker at the repo
 | [`08-data-flow.html`](08-data-flow.html) | Data flow | devs / ops | How does frame data move, and where are the retention boundaries? | analyze_images.py, catalog.py, scans.py, settings.example.json |
 | [`09-security-boundaries.html`](09-security-boundaries.html) | Architecture | security | What are the trust zones, auth boundaries and secrets? | api_server.py:54-60,85-88,1007-1049, nginx.conf, SECURITY.md |
 | [`10-data-model.html`](10-data-model.html) | ER | devs | What do the JSON catalogs contain and how do they relate? | catalog.py, analyze_images.py, taxonomy.py, api_server.py:820 |
+| [`11-detection-states.html`](11-detection-states.html) | State machine | devs | How does an image move from unanalyzed to merged, pinned or deleted? | catalog.py:13-58, analyze_images.py:838,981,1201,1760 |
+| [`12-burst-timeline.html`](12-burst-timeline.html) | Timeline | devs / ops | What happens, and when, within one visit — and how long does the deep pass lag? | analyze_images.py, api_server.py:1019-1147, integrations/media.py:20 |
+| [`13-visit-swimlane.html`](13-visit-swimlane.html) | Swimlane | devs / ops | Which lane owns each handoff for one person visit, camera to notification? | create-index.sh:10, analyze_images.py:2120-2294, api_server.py, index.html |
 
 `_template.html` is the shared dark skeleton; `_conventions.md` holds the token table and
 connector rules. Neither is a deliverable in itself.
@@ -68,6 +71,12 @@ To re-skin the whole set, edit the profile at
 - `06-sequence-recovery` follows the brief that the healthcheck timer probes
   `/api/health`; the repo's `tools/webcam-healthcheck.sh` also guards the gallery
   container (noted as a follow-up).
+- `11-detection-states` folds the catalog's `no_trigger` into `detector-only`; idle
+  backfill (`deep_backfill`, off by default) is noted in a card rather than drawn.
+- `12-burst-timeline` uses an illustrative ~2 s frame cadence; the ~40 s deep-pass
+  latency is the reference 4-core box. Two axis breaks mark compressed time.
+- `13-visit-swimlane` draws the Integrations handoff from the API/SSE step for narrative
+  order, though `analyze_images.py` actually fires Slack/HA MQTT from the pipeline.
 
 ## Missing / uncertain information
 
@@ -78,7 +87,9 @@ To re-skin the whole set, edit the profile at
 
 ## Recommended future diagrams
 
-- **State machine**: detection lifecycle (`preliminary` → merged) and image states
-  (`analyzed`, `pinned`, `deleted`).
-- **Timeline**: a single burst's frame cadence through fast and deep passes.
-- **Swimlane**: owner → pipeline → integrations → Home Assistant for one person visit.
+The core set (hero, architecture, deployment, sequences, integrations, data flow,
+security, data model, state machine, timeline, swimlane) is complete. Possible additions:
+
+- **Quadrant or backlog chart**: retention pressure vs. detection value per camera.
+- **Dependency graph**: Python module fan-in across `analyze_images.py`, `api_server.py`,
+  `catalog.py`, `scans.py`, `taxonomy.py`.
