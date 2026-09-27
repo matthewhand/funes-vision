@@ -21,7 +21,8 @@ import scans
 
 class SettingsReloadTest(unittest.TestCase):
     GLOBALS = ("BASE_DIR", "WATCH_DIRS", "_settings_path", "_s",
-               "MAX_AGE_DAYS", "MAX_DIR_GB", "BURST_THRESHOLD_SECONDS")
+               "MAX_AGE_DAYS", "MAX_DIR_GB", "BURST_THRESHOLD_SECONDS",
+               "PIPELINE_LOCK")
 
     def setUp(self):
         self.td = tempfile.TemporaryDirectory()
@@ -34,6 +35,9 @@ class SettingsReloadTest(unittest.TestCase):
         ai.BASE_DIR = self.root
         ai._settings_path = self.settings_path
         ai.WATCH_DIRS = [self.img]
+        # main() serialises on the global pipeline lock; keep it in the
+        # throwaway tree so a live sweep cannot make this sweep skip (#30).
+        ai.PIPELINE_LOCK = os.path.join(self.root, "pipeline.lock")
         ollama = mock.patch.object(ai, "ollama_available", return_value=False)
         ollama.start()
         self.addCleanup(ollama.stop)

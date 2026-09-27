@@ -1,0 +1,179 @@
+"""#29: a partially recovered catalog must not make verified frames deletable.
+
+_recover_truncated_json salvages a valid prefix, and load_json_file used to
+rewrite analysis.json in place with it. Rows past the truncation point were
+gone for good, so the frames they referenced became "uncatalogued" — no longer
+persistable — and the age/budget passes deleted real LLM-verified evidence.
+
+Two guards now hold: the recovered prefix is parked in a ``.recovered``
+sidecar so the original bytes (and the truncated tail) survive, and while a
+catalog is a partial recovery retention treats uncatalogued frames as
+non-deletable rather than un-persistable.
+
+Run from the repo root:  python3 -m unittest discover -s tests
+"""
+import io
+import json
+import os
+import sys
+import tempfile
+import time
+import unittest
+from contextlib import redirect_stdout
+from unittest import mock
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import analyze_images
+
+VERIFIED = {"person": True, "_llm": {"porch_access": True}}
+
+
+class TestPartialCatalogRecovery(unittest.TestCase):
+    GLOBALS = ("BASE_DIR", "WATCH_DIRS", "_settings_path", "MAX_AGE_DAYS",
+               "MAX_DIR_GB", "PERSIST_BUDGET_PCT", "RETENTION_LOG",
+               "GATE_IGNORE_LABELS", "PIPELINE_LOCK")
+
+    def setUp(self):
+        self.td = tempfile.TemporaryDirectory()
+        self.root = self.td.name
+        self.img = os.path.join(self.root, "cam1")
+        os.makedirs(self.img)
+        self.analysis_file = os.path.join(self.root, "analysis.json")
+        self._saved = {n: getattr(analyze_images, n, None) for n in self.GLOBALS}
+        analyze_images.BASE_DIR = self.root
+        analyze_images._settings_path = os.path.join(self.root, "settings.json")
+        analyze_images.WATCH_DIRS = [self.img]
+        analyze_images.MAX_AGE_DAYS = 1
+        analyze_images.MAX_DIR_GB = 100
+        analyze_images.PERSIST_BUDGET_PCT = 20.0
+        analyze_images.RETENTION_LOG = os.path.join(self.root, "retention_log.json")
+        analyze_images.GATE_IGNORE_LABELS = ["car"]
+        analyze_images.PIPELINE_LOCK = os.path.join(self.root, "pipeline.lock")
+        self.addCleanup(self._clear_partial_marks)
+        patcher = mock.patch.object(analyze_images, "ollama_available", return_value=False)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def tearDown(self):
+        for name, value in self._saved.items():
+            setattr(analyze_images, name, value)
+        self.td.cleanup()
+
+    @staticmethod
+    def _clear_partial_marks():
+        """Never leak the partial-recovery mark into another test's retention."""
+        marks = getattr(analyze_images, "_PARTIAL_CATALOGS", None)
+        if marks is not None:
+            marks.clear()
+
+    def _seed(self, n=30, n_verified=10):
+        rows = {}
+        for i in range(n):
+            name = f"f{i:02d}.jpg"
+            with open(os.path.join(self.img, name), "wb") as f:
+                f.write(b"x" * 100)
+            stamp = time.time() - 200 * 86400     # far past max_age_days
+            os.utime(os.path.join(self.img, name), (stamp, stamp))
+            rows[name] = dict(VERIFIED) if i < n_verified else {"fast_pass": "negative"}
+        with open(self.analysis_file, "w") as f:
+            json.dump(rows, f, indent=2)
+        return rows
+
+    def _sweep(self):
+        settings = os.path.join(self.root, "settings.json")
+        with open(settings, "w") as f:
+            json.dump({"watch_dirs": [self.img], "max_age_days": 1,
+                       "max_dir_gb": 100}, f)
+        out = io.StringIO()
+        with redirect_stdout(out):
+            analyze_images.main(retention_only=True, settings_path=settings)
+        return out.getvalue()
+
+    def _kept_verified(self, n_verified=10):
+        return sum(1 for i in range(n_verified)
+                   if os.path.exists(os.path.join(self.img, f"f{i:02d}.jpg")))
+
+    def _truncate(self, frac=0.25):
+        with open(self.analysis_file) as f:
+            raw = f.read()
+        corrupt = raw[: int(len(raw) * frac)]
+        with open(self.analysis_file, "w") as f:
+            f.write(corrupt)
+        return corrupt
+
+    def test_intact_catalog_keeps_verified_frames(self):
+        self._seed()
+        self._sweep()
+        self.assertEqual(self._kept_verified(), 10)
+
+    def test_truncated_catalog_does_not_delete_lost_rows_frames(self):
+        """The regression: recovery used to drop the tail, then retention
+        deleted the frames whose rows were lost."""
+        self._seed()
+        self._truncate()
+
+        log = self._sweep()
+
+        self.assertIn("partial recovery", log)
+        self.assertIn("protected", log)
+        self.assertEqual(self._kept_verified(), 10)
+
+    def test_recovery_does_not_rewrite_the_original(self):
+        self._seed()
+        corrupt = self._truncate()
+
+        self._sweep()
+
+        with open(self.analysis_file) as f:
+            self.assertEqual(f.read(), corrupt)          # tail still on disk
+        sidecar = self.analysis_file + ".recovered"
+        self.assertTrue(os.path.exists(sidecar))
+        with open(sidecar) as f:
+            recovered = json.load(f)
+        self.assertTrue(recovered)
+        self.assertLess(len(recovered), 10)                # a prefix, not the whole thing
+
+    def test_partial_mark_set_and_cleared_on_clean_reload(self):
+        self._seed()
+        self._truncate()
+        self._sweep()
+        self.assertTrue(analyze_images.catalog_is_partial(self.analysis_file))
+        with open(self.analysis_file, "w") as f:
+            json.dump({"f00.jpg": dict(VERIFIED)}, f)
+        analyze_images.load_json_file(self.analysis_file, {}, catalog=True)
+        self.assertFalse(analyze_images.catalog_is_partial(self.analysis_file))
+
+    def test_non_catalog_files_do_not_arm_the_protection(self):
+        # A corrupt retention_log.json must not make every frame undeletable.
+        path = os.path.join(self.root, "retention_log.json")
+        with open(path, "w") as f:
+            f.write('[{"ts": 1, "cou')
+        analyze_images.load_json_file(path, [])
+        self.assertFalse(analyze_images.catalog_is_partial())
+        self.assertFalse(analyze_images.catalog_is_partial(path))
+
+    def test_categorued_rows_still_evict_while_partial(self):
+        """Fail-closed applies to the *unknown*, not to the known: rows that
+        survived the cut are still ordinary retention candidates."""
+        self._seed()
+        self._truncate()
+        self._sweep()
+        # f00.. are the surviving prefix (verified) -> kept by the persist cap;
+        # the 20 negatives had no rows past the cut and are protected as unknown.
+        left = sorted(f for f in os.listdir(self.img) if f.endswith(".jpg"))
+        self.assertGreaterEqual(len(left), 2)
+        self.assertIn("f00.jpg", left)
+
+    def test_protection_clears_once_the_catalog_is_repaired(self):
+        self._seed()
+        self._truncate()
+        self._sweep()
+        with open(self.analysis_file, "w") as f:
+            json.dump({"f00.jpg": dict(VERIFIED)}, f)
+        self._sweep()          # clean catalog: normal retention resumes
+        self.assertFalse(os.path.exists(os.path.join(self.img, "f01.jpg")))
+
+
+if __name__ == "__main__":
+    unittest.main()

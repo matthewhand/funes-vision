@@ -39,6 +39,11 @@ class AlertIntegrationTest(unittest.TestCase):
             mock.patch.object(ai, "ALERT_STATE", self.state_path),
             mock.patch.object(ai, "DEEP_PASSES_ENABLED", False),  # no llm_down
             mock.patch.object(ai, "INFERENCE_LOG", os.path.join(self.tmp.name, "empty.json")),
+            # Pin the disk budget: the 95%-of-budget fixture below must not
+            # depend on whatever max_dir_gb the ambient settings.json carries
+            # (a non-positive one is "no budget" since #22, which would make
+            # these drive the state machine with no disk alert at all).
+            mock.patch.object(ai, "MAX_DIR_GB", 5.0),
             mock.patch("integrations.notify_alert", side_effect=fake_notify),
         ]
         for p in self.patches:

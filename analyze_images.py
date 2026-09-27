@@ -2,6 +2,7 @@ import os
 import requests
 import json
 import base64
+import math
 import sys
 try:
     import cv2
@@ -78,6 +79,10 @@ IGNORE_REGIONS = []
 CAMERA_OFFLINE_HOURS_DEFAULT = 24
 
 _settings_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "settings.json")
+# Global pipeline lock. Every entry path (full sweep, --retention-only,
+# --rescan-days) serialises on it so retention can never delete a frame out
+# from under a live sweep, and two runs never race the catalog flush (#30).
+PIPELINE_LOCK = "/tmp/webcam_analysis.lock"
 # Last settings mapping applied. Kept as a mutable module global because
 # configured_tz_name() and tests read it directly.
 _s = {}
@@ -105,6 +110,43 @@ def load_settings(path=None):
     return cfg
 
 
+def setting_num(cfg, key, current, cast=float, lo=None, hi=None):
+    """Coerce one numeric settings.json key. Never raises.
+
+    settings.json is user-writable (via /api/settings) and survives restarts,
+    so a single hostile value -- ``null``, ``"abc"``, ``{}``, ``"5.0"`` -- must
+    never kill the pipeline. ``apply_settings`` runs at import *and* at the top
+    of every sweep, so an unguarded ``float()`` there raised TypeError at
+    import (rc=1, no output) or mid-sweep, and retention, catalog pruning and
+    the watchdog path never ran: the disk then grew unbounded (#28).
+
+    Mirrors the max_scans_per_image guard: log the bad value and keep the
+    previous one. An absent key keeps *current* too, so a reload never
+    clobbers a value the file does not mention. ``lo``/``hi`` clamp the
+    result. bools are rejected -- True is not a disk budget.
+    """
+    if key not in cfg:
+        return current
+    raw = cfg[key]
+    try:
+        if isinstance(raw, bool):
+            raise TypeError("bool is not a usable number here")
+        val = cast(raw)
+    except (TypeError, ValueError, OverflowError):
+        logger.warning("ignoring invalid %s=%r; keeping %r", key, raw, current)
+        return current
+    if isinstance(val, float) and not math.isfinite(val):
+        logger.warning("ignoring non-finite %s=%r; keeping %r", key, raw, current)
+        return current
+    if lo is not None and val < lo:
+        logger.warning("%s=%r is below %r; clamping", key, raw, lo)
+        val = lo
+    if hi is not None and val > hi:
+        logger.warning("%s=%r is above %r; clamping", key, raw, hi)
+        val = hi
+    return val
+
+
 def apply_settings(cfg=None):
     """Merge a settings mapping into the runtime globals.
 
@@ -129,16 +171,23 @@ def apply_settings(cfg=None):
         cfg = {}
     _s = cfg
 
-    BURST_THRESHOLD_SECONDS = cfg.get("burst_threshold_seconds", BURST_THRESHOLD_SECONDS)
-    MAX_AGE_DAYS = cfg.get("max_age_days", MAX_AGE_DAYS)
-    MAX_DIR_GB = cfg.get("max_dir_gb", MAX_DIR_GB)
-    PERSIST_BUDGET_PCT = cfg.get("persist_budget_pct", PERSIST_BUDGET_PCT)
-    MIN_MEM_FOR_LOCAL_GB = cfg.get("min_mem_for_local_gb", MIN_MEM_FOR_LOCAL_GB)
+    BURST_THRESHOLD_SECONDS = setting_num(cfg, "burst_threshold_seconds",
+                                         BURST_THRESHOLD_SECONDS, lo=0.0)
+    MAX_AGE_DAYS = setting_num(cfg, "max_age_days", MAX_AGE_DAYS, lo=0.0)
+    # Clamped to >= 0. A negative budget is read as "over budget" by every
+    # retention pass, and every category is evictable, so one sweep emptied
+    # the camera dir (#22). 0 now means "no disk budget" (eviction skipped),
+    # never "delete until empty".
+    MAX_DIR_GB = setting_num(cfg, "max_dir_gb", MAX_DIR_GB, lo=0.0)
+    PERSIST_BUDGET_PCT = setting_num(cfg, "persist_budget_pct", PERSIST_BUDGET_PCT,
+                                    lo=0.0, hi=100.0)
+    MIN_MEM_FOR_LOCAL_GB = setting_num(cfg, "min_mem_for_local_gb",
+                                       MIN_MEM_FOR_LOCAL_GB, lo=0.0)
     ALLOW_CLOUD = cfg.get("allow_cloud", ALLOW_CLOUD)
     OLLAMA_URL = cfg.get("ollama_url", OLLAMA_URL)
     OLLAMA_KEEP_ALIVE = str(cfg.get("ollama_keep_alive", OLLAMA_KEEP_ALIVE) or "24h")
-    MAX_DEEP_PASSES = cfg.get("max_deep_passes", MAX_DEEP_PASSES)
-    DEEP_CONCURRENCY = cfg.get("deep_concurrency", DEEP_CONCURRENCY)
+    MAX_DEEP_PASSES = setting_num(cfg, "max_deep_passes", MAX_DEEP_PASSES, cast=int, lo=0)
+    DEEP_CONCURRENCY = setting_num(cfg, "deep_concurrency", DEEP_CONCURRENCY, cast=int, lo=0)
     MODEL_LOCAL = cfg.get("model_local", MODEL_LOCAL)
     MODEL_PRIMARY = cfg.get("model_primary", MODEL_LOCAL)  # default to model_local
     MODEL_FALLBACK = cfg.get("model_fallback", "")
@@ -147,8 +196,8 @@ def apply_settings(cfg=None):
     DEEP_PASSES_ENABLED = cfg.get("deep_passes_enabled", DEEP_PASSES_ENABLED)
     BURST_SUMMARIES_ENABLED = cfg.get("burst_summaries_enabled", BURST_SUMMARIES_ENABLED)
     MULTI_IMAGE_ENABLED = cfg.get("multi_image_enabled", MULTI_IMAGE_ENABLED)
-    MULTI_IMAGE_2H = float(cfg.get("multi_image_2h_minutes", MULTI_IMAGE_2H))
-    MULTI_IMAGE_3H = float(cfg.get("multi_image_3h_minutes", MULTI_IMAGE_3H))
+    MULTI_IMAGE_2H = setting_num(cfg, "multi_image_2h_minutes", MULTI_IMAGE_2H, lo=0.0)
+    MULTI_IMAGE_3H = setting_num(cfg, "multi_image_3h_minutes", MULTI_IMAGE_3H, lo=0.0)
     GATE_IGNORE_LABELS = cfg.get("gate_ignore_labels", GATE_IGNORE_LABELS)
     # `or []` semantics: preserve the empty default and let an explicit
     # null/[] in settings.json clear the list, but never clobber a value on
@@ -162,9 +211,9 @@ def apply_settings(cfg=None):
 
     try:
         import scans as _scans_mod
-        _scans_mod.MAX_SCANS_PER_IMAGE = int(cfg.get(
-            "max_scans_per_image", _scans_mod.MAX_SCANS_PER_IMAGE))
-    except (ImportError, ValueError, TypeError) as e:
+        _scans_mod.MAX_SCANS_PER_IMAGE = setting_num(
+            cfg, "max_scans_per_image", _scans_mod.MAX_SCANS_PER_IMAGE, cast=int, lo=0)
+    except ImportError as e:
         logger.warning("could not apply max_scans_per_image: %s", e)
 
     return cfg
@@ -870,6 +919,20 @@ def _atomic_write_json(path, data, indent=None, mode=0o644):
         raise
 
 
+# Catalog paths whose last load recovered only a *prefix* of a truncated file
+# (see load_json_file). Rows past the cut are gone, so the frames they
+# described look like unanalysed backlog and stop being persistable — the age
+# and disk-budget passes then delete real LLM-verified evidence (#29). While a
+# catalog is partial, retention exempts uncatalogued frames. Module-level (not
+# a return value) so load_json_file keeps a single return type.
+_PARTIAL_CATALOGS = set()
+
+
+def catalog_is_partial(path=None):
+    """True when a catalog is a partial recovery — *path* if given, else any."""
+    return bool(_PARTIAL_CATALOGS) if path is None else path in _PARTIAL_CATALOGS
+
+
 def _recover_truncated_json(text, default):
     """Best-effort repair of a truncated JSON object/array (typical ENOSPC
     mid-write). Drops a trailing incomplete key/value and closes the root."""
@@ -909,11 +972,20 @@ def _recover_truncated_json(text, default):
     return default
 
 
-def load_json_file(path, default=None):
+def load_json_file(path, default=None, catalog=False):
     """Load JSON from disk. On corruption (e.g. truncated mid-write), attempt
-    recovery and rewrite a clean file so the next sweep does not re-fail.
-    Returns a fresh empty dict/list when the file is missing or unrecoverable
-    — never raises for parse errors."""
+    recovery. A *catalog* (analysis.json / bursts.json) that was only
+    partially recovered is never written back over the original: the tail past
+    the cut still holds the only record that the frames it described were
+    LLM-verified, and replacing the file with the recovered prefix made those
+    frames uncatalogued — after which retention deleted real verified
+    evidence (#29). The prefix is parked in a ``<path>.recovered`` sidecar, the
+    original bytes are kept, and the path is marked partial so retention
+    exempts uncatalogued frames until a full sweep rebuilds their rows.
+    ``catalog=True`` is set by the image catalogs only, so a corrupt
+    retention_log.json cannot arm the protection. Returns a fresh empty
+    dict/list when the file is missing or unrecoverable — never raises for
+    parse errors."""
     if default is None:
         default = {}
     empty = {} if isinstance(default, dict) else ([] if isinstance(default, list) else default)
@@ -927,6 +999,8 @@ def load_json_file(path, default=None):
         return empty
     if not raw.strip():
         return empty
+    if catalog:
+        _PARTIAL_CATALOGS.discard(path)
     try:
         return json.loads(raw)
     except (ValueError, TypeError) as e:
@@ -935,17 +1009,24 @@ def load_json_file(path, default=None):
     # Sentinel: recovery failed when we got back the empty default object we
     # passed in *and* the file clearly had substantial content we couldn't parse.
     n = len(recovered) if hasattr(recovered, "__len__") else 0
-    if n == 0 and len(raw) > 8:
-        # One more check: did recovery genuinely yield an empty container, or
-        # did _recover_truncated_json give up and return `empty`?
-        if recovered is empty:
-            print(f"Could not recover {path}; starting from empty")
-            return empty
-    print(f"Recovered {path}: retained {n} entries; rewriting clean copy")
+    if n == 0 and len(raw) > 8 and recovered is empty:
+        # Nothing at all came back, so the whole catalog is lost. Mark it
+        # partial anyway: every row is missing, so every frame looks
+        # unanalysed and the age/budget passes would delete the lot.
+        if catalog:
+            _PARTIAL_CATALOGS.add(path)
+        print(f"Could not recover {path}; starting from empty"
+              + ("" if catalog else " — uncatalogued frames are protected from retention"))
+        return empty
+    if catalog:
+        _PARTIAL_CATALOGS.add(path)
+    sidecar = f"{path}.recovered"
     try:
-        _atomic_write_json(path, recovered, indent=2)
+        _atomic_write_json(sidecar, recovered, indent=2)
     except OSError as we:
-        print(f"Warning: could not rewrite recovered {path}: {we}")
+        print(f"Warning: could not write recovered sidecar {sidecar}: {we}")
+    print(f"Recovered prefix of {path}: retained {n} entries; original left "
+          f"intact, prefix saved to {sidecar}")
     return recovered
 
 
@@ -1757,7 +1838,7 @@ def run_health_checks(watch_dirs, api_key):
     except OSError as e:
         logger.warning("could not write alert state %s: %s", ALERT_STATE, e)
 
-def apply_retention(image_dir, analysis_data, pins):
+def apply_retention(image_dir, analysis_data, pins, protect_unanalyzed=None):
     """Delete images to honor the age, persist-cap, and disk budgets.
 
     Rules: pinned images are never deleted.
@@ -1770,12 +1851,17 @@ def apply_retention(image_dir, analysis_data, pins):
     the remaining 80% so new detections cannot be starved.
     Pass 3 (budget): if images+thumbs still exceed max_dir_gb, delete oldest
     negatives (including car-only), then YOLO-only detections, then
-    persistable, then unanalyzed. Pins remain sacred.
+    persistable, then unanalyzed. Pins remain sacred. A non-positive
+    max_dir_gb disables passes 2 and 3 rather than emptying the dir (#22), and
+    while a catalog is only a partial recovery uncatalogued frames are exempt
+    too — a lost row must never read as "delete this verified frame" (#29).
     Returns the set of deleted filenames."""
     now = time.time()
     deleted = set()
     thumbs = _thumb_sizes(image_dir)
     tz_name = configured_tz_name()
+    if protect_unanalyzed is None:
+        protect_unanalyzed = catalog_is_partial()
 
     entries = []
     for f in os.listdir(image_dir):
@@ -1814,13 +1900,43 @@ def apply_retention(image_dir, analysis_data, pins):
                 and retention_is_keep_detection(analysis_data[f])
                 and not retention_is_persistable(analysis_data[f]))
 
+    # A frame with no row at all is "unanalysed backlog" — normally evictable.
+    # But when analysis.json was only partially recovered from a truncated
+    # file, the missing rows are lost data, not absent analysis: the frames
+    # they described were LLM-verified and age/budget passes were deleting
+    # real evidence (#29). Protect them until a full sweep rebuilds the rows.
+    def is_uncatalogued(f):
+        return protect_unanalyzed and f not in analysis_data
+
+    if protect_unanalyzed:
+        n_hidden = sum(1 for f in os.listdir(image_dir)
+                       if f.lower().endswith(('.jpg', '.jpeg', '.png', '.gif'))
+                       and f not in analysis_data)
+        if n_hidden:
+            print(f"Retention: {n_hidden} uncatalogued frame(s) in {image_dir} are "
+                  f"protected — the catalog is a partial recovery")
+
     cutoff = now - MAX_AGE_DAYS * 86400
-    budget = MAX_DIR_GB * 1024 ** 3
-    persist_budget = persist_budget_bytes()
+    # A budget of 0 (or, before the clamp in apply_settings, a negative one)
+    # means "no disk budget configured" -- NOT "over budget". Every category
+    # is evictable, so `total > budget` held for any non-empty dir and the pass
+    # removed every frame it could reach, emptying the archive in one sweep
+    # (#22). run_health_checks already guarded the same key with `if budget`;
+    # both call sites now agree: a non-positive budget disables enforcement.
+    try:
+        budget = max(0.0, float(MAX_DIR_GB)) * 1024 ** 3
+    except (TypeError, ValueError):
+        budget = 0.0  # unusable value -> fail closed, keep the frames
+    enforce_budget = budget > 0
+    if not enforce_budget:
+        logger.warning("max_dir_gb=%r leaves no disk budget; skipping the "
+                       "disk-budget retention passes for %s", MAX_DIR_GB, image_dir)
+    persist_budget = persist_budget_bytes() if enforce_budget else 0.0
 
     # Pass 1: max age — motion / YOLO-only / unanalyzed; keep LLM timeline
     for f, mtime, size in entries:
-        if mtime < cutoff and f not in pins and not is_persistable(f):
+        if (mtime < cutoff and f not in pins and not is_persistable(f)
+                and not is_uncatalogued(f)):
             delete(f)
 
     remaining = [e for e in entries if e[0] not in deleted]
@@ -1830,7 +1946,7 @@ def apply_retention(image_dir, analysis_data, pins):
         (e for e in remaining if e[1] < cutoff and is_persistable(e[0])),
         key=lambda e: e[1])
     archive_bytes = sum(s for _, _, s in archived)
-    if archive_bytes > persist_budget:
+    if enforce_budget and archive_bytes > persist_budget:
         if persist_budget >= 1024 ** 2:
             print(f"Retention: persist archive {archive_bytes / 1024 ** 3:.2f}GiB "
                   f"> {persist_budget / 1024 ** 3:.2f}GiB cap in {image_dir}")
@@ -1844,14 +1960,14 @@ def apply_retention(image_dir, analysis_data, pins):
     total = sum(s for _, _, s in remaining)
 
     # Pass 3: total dir budget — rolling window wins over the persist archive
-    if total > budget:
+    if enforce_budget and total > budget:
         negatives = sorted((e for e in remaining if is_deletable_negative(e[0])),
                            key=lambda e: e[1])
         yolo_only = sorted((e for e in remaining if is_yolo_only(e[0])),
                            key=lambda e: e[1])
         persistable = sorted((e for e in remaining if is_persistable(e[0])),
                              key=lambda e: e[1])
-        unanalyzed = sorted(
+        unanalyzed = [] if protect_unanalyzed else sorted(
             (e for e in remaining
              if e[0] not in pins and e[0] not in analysis_data),
             key=lambda e: e[1])
@@ -1923,7 +2039,55 @@ def generate_thumbnails(image_dir, images):
     if made:
         print(f"Generated {made} thumbnails in {thumb_dir}")
 
+def take_pipeline_lock(blocking=False):
+    """Take the global pipeline lock. Returns the held file, or None if the
+    lock is already held (or cannot be taken) — in which case the caller must
+    not touch the watch dirs.
+
+    Non-blocking by default on purpose: the cron --retention-only watchdog
+    firing while a multi-hour sweep owns the lock must skip and retry on its
+    next tick, not queue up behind the sweep and then run anyway. Returns None
+    when the lock file cannot be opened, which fails closed: without the lock
+    nothing can guarantee we are the only writer, so nothing gets deleted.
+    """
+    try:
+        fh = open(PIPELINE_LOCK, "a")
+    except OSError as e:
+        logger.warning("could not open pipeline lock %s (%s); skipping this run",
+                       PIPELINE_LOCK, e)
+        return None
+    flags = fcntl.LOCK_EX if blocking else fcntl.LOCK_EX | fcntl.LOCK_NB
+    try:
+        fcntl.flock(fh.fileno(), flags)
+    except OSError:
+        fh.close()
+        return None
+    return fh
+
+
 def main(retention_only=False, rescan_days=None, settings_path=None):
+    """Serialise every entry path on the global pipeline lock, then sweep.
+
+    The lock used to be taken only by the --rescan-days branch, so the cron
+    --retention-only watchdog ran unlocked: it deleted frames while a live
+    sweep was mid-cv2.imread on them, and the shared 1s-debounced catalog flush
+    made the last writer win (#30). --rescan-days keeps its old blocking wait;
+    every other path skips instead of deleting under a concurrent run.
+    """
+    lock = take_pipeline_lock(blocking=bool(rescan_days))
+    if lock is None:
+        print(f"Pipeline lock {PIPELINE_LOCK} is held by another run; skipping "
+              f"this sweep (nothing analysed, nothing deleted).")
+        return
+    try:
+        _run_sweep(retention_only=retention_only, rescan_days=rescan_days,
+                   settings_path=settings_path)
+    finally:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+        lock.close()
+
+
+def _run_sweep(retention_only=False, rescan_days=None, settings_path=None):
     global RATE_LIMITED
     # Re-read settings.json so /api/settings changes land this sweep. An explicit
     # settings_path aims the sweep at a specific file (tests, one-off tooling);
@@ -1943,10 +2107,18 @@ def main(retention_only=False, rescan_days=None, settings_path=None):
 
     # Resilient load: a truncated analysis.json must not abort the sweep
     # before retention runs (that was the ENOSPC → corrupt → no cleanup loop).
-    analysis_data = load_json_file(analysis_file, {})
+    analysis_data = load_json_file(analysis_file, {}, catalog=True)
     if not isinstance(analysis_data, dict):
         analysis_data = {}
-    burst_data = load_json_file(burst_file, {})
+    # A partial recovery means rows are missing, not that frames are
+    # unanalysed: exempt uncatalogued frames from retention for this sweep
+    # instead of deleting evidence whose row was lost (#29).
+    protect_unanalyzed = catalog_is_partial(analysis_file)
+    if protect_unanalyzed:
+        print(f"WARNING: {os.path.basename(analysis_file)} is a partial recovery "
+              f"(recovered prefix only). Frames with no row are protected from "
+              f"deletion until a full sweep re-analyses them.")
+    burst_data = load_json_file(burst_file, {}, catalog=True)
     if not isinstance(burst_data, dict):
         burst_data = {}
     pins_raw = load_json_file(pins_file, [])
@@ -1974,7 +2146,8 @@ def main(retention_only=False, rescan_days=None, settings_path=None):
         print(f"Scanning {image_dir}...")
         
         if not rescan_days:
-            apply_retention(image_dir, analysis_data, pins)
+            apply_retention(image_dir, analysis_data, pins,
+                            protect_unanalyzed=protect_unanalyzed)
 
         # Cron/watchdog path: honor age + disk budgets without re-entering
         # the multi-hour analysis queue (which can hold the global lock).
@@ -2313,20 +2486,39 @@ def main(retention_only=False, rescan_days=None, settings_path=None):
             except OSError as e:
                 print(f"Failed to write bursts (disk full?): {e}")
 
-    # Prune analysis entries for images deleted by retention or the API
+    # Prune analysis entries for images deleted by retention or the API.
+    # A watch dir that is absent right now (unmounted volume, NFS blip, a
+    # bind mount that is not up yet) makes every one of its frames look
+    # deleted. The per-dir scan tolerates that (continue), but committing the
+    # prune rewrote analysis.json to {} — destroying all HA flags, LLM
+    # summaries and burst links for that camera, permanently (#23). Postpone
+    # the prune until every configured dir is back.
+    absent_dirs = [d for d in watch_dirs if not os.path.exists(d)]
+    if absent_dirs:
+        print(f"Watch dir(s) absent, catalog prune postponed (rows kept): "
+              f"{', '.join(absent_dirs)}")
     existing = set()
     for d in watch_dirs:
         if os.path.exists(d):
             existing.update(os.listdir(d))
-    stale = [k for k in analysis_data if k not in existing]
+    catalog_partial = catalog_is_partial(analysis_file)
+    stale = [] if absent_dirs else [k for k in analysis_data if k not in existing]
     if stale:
         for k in stale:
             del analysis_data[k]
-        try:
-            _atomic_write_json(analysis_file, analysis_data, indent=2)
-            print(f"Pruned {len(stale)} stale analysis entries.")
-        except OSError as e:
-            print(f"Failed to write pruned analysis.json: {e}")
+        if catalog_partial:
+            # Only ever commit a fully parsed catalog: rewriting a partially
+            # recovered one in place discards the truncated tail for good
+            # (#29). A full sweep re-analyses the affected frames and commits
+            # the repaired catalog.
+            print(f"Pruned {len(stale)} stale rows in memory only; the partially "
+                  f"recovered {os.path.basename(analysis_file)} was not rewritten.")
+        else:
+            try:
+                _atomic_write_json(analysis_file, analysis_data, indent=2)
+                print(f"Pruned {len(stale)} stale analysis entries.")
+            except OSError as e:
+                print(f"Failed to write pruned analysis.json: {e}")
 
     # Prune burst entries that reference deleted images or that span
     # longer than the chain rule allows (false groups created before
@@ -2345,15 +2537,21 @@ def main(retention_only=False, rescan_days=None, settings_path=None):
         max_span = BURST_THRESHOLD_SECONDS * max(1, len(imgs) - 1)
         return bool(times) and (max(times) - min(times)) <= max_span
 
-    bad_bursts = [k for k, b in burst_data.items() if not burst_valid(b)]
+    bad_bursts = ([] if absent_dirs
+                  else [k for k, b in burst_data.items() if not burst_valid(b)])
     if bad_bursts:
         for k in bad_bursts:
             del burst_data[k]
-        try:
-            _atomic_write_json(burst_file, burst_data, indent=2)
-            print(f"Pruned {len(bad_bursts)} invalid burst entries.")
-        except OSError as e:
-            print(f"Failed to write pruned bursts.json: {e}")
+        if catalog_is_partial(burst_file):
+            print(f"Pruned {len(bad_bursts)} burst rows in memory only; the "
+                  f"partially recovered {os.path.basename(burst_file)} was not "
+                  f"rewritten.")
+        else:
+            try:
+                _atomic_write_json(burst_file, burst_data, indent=2)
+                print(f"Pruned {len(bad_bursts)} invalid burst entries.")
+            except OSError as e:
+                print(f"Failed to write pruned bursts.json: {e}")
 
     # Operational health alerts (debounced; pushed to Slack if configured)
     try:
@@ -2383,12 +2581,9 @@ if __name__ == "__main__":
             print("--rescan-days must be >= 1", file=sys.stderr)
             raise SystemExit(2)
         print(f"Waiting for pipeline lock to rescan last {rescan_days}d of detections...")
-        lock = open("/tmp/webcam_analysis.lock", "a")
-        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
-        try:
-            main(rescan_days=rescan_days)
-        finally:
-            fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+        # main() takes the global pipeline lock (blocking for a rescan, which
+        # is the one mode that legitimately waits for the current sweep).
+        main(rescan_days=rescan_days)
         raise SystemExit(0)
     # --retention-only: apply settings.json age/disk budgets + prune catalogs,
     # then exit. Used by the cron watchdog so cleanup never depends solely on
