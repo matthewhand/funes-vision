@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Data flow · funes-vision</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --color-paper:       #080c14;
+      --color-paper-2:     #0f172a;
+      --color-ink:         #f8fafc;
+      --color-muted:       #94a3b8;
+      --color-soft:        #64748b;
+      --color-rule:        rgba(248,250,252,0.12);
+      --color-rule-solid:  rgba(148,163,184,0.30);
+      --color-accent:      #3b82f6;
+      --color-accent-tint: rgba(59,130,246,0.12);
+      --color-link:        #60a5fa;
+      --font-sans:   'Geist', system-ui, sans-serif;
+      --font-serif:  'Instrument Serif', 'Times New Roman', serif;
+      --font-mono:   'Geist Mono', ui-monospace, Menlo, monospace;
+    }
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      color: var(--color-ink);
+      min-height: 100vh;
+      padding: 3rem 2rem;
+    }
+    .container { max-width: 1400px; margin: 0 auto; }
+    .header { margin-bottom: 2.5rem; }
+    .header-eyebrow {
+      font-family: var(--font-mono); font-size: 0.66rem; font-weight: 500;
+      letter-spacing: 0.18em; text-transform: uppercase; color: var(--color-muted);
+      margin-bottom: 0.75rem;
+    }
+    h1 {
+      font-family: var(--font-serif); font-size: clamp(1.75rem, 3vw + 1rem, 2.5rem);
+      font-weight: 400; letter-spacing: -0.02em; line-height: 1.1;
+      color: var(--color-ink); margin-bottom: 0.5rem;
+    }
+    .subtitle {
+      font-size: 1rem; line-height: 1.55; color: var(--color-muted); max-width: 66ch;
+    }
+    .diagram-container { background: transparent; border: none; padding: 0; overflow-x: auto; }
+    svg { width: 100%; min-width: 900px; display: block; }
+    .cards { display: grid; grid-template-columns: 1.1fr 1fr 0.9fr; gap: 1rem; margin-top: 1.5rem; }
+    @media (max-width: 900px) { .cards { grid-template-columns: 1fr; } }
+    .card {
+      background: var(--color-paper-2);
+      border: 1px solid var(--color-rule);
+      border-radius: 6px;
+      padding: 1.25rem;
+    }
+    .card-header {
+      display: flex; align-items: center; gap: 0.6rem;
+      margin-bottom: 0.875rem; padding-bottom: 0.875rem;
+      border-bottom: 1px solid var(--color-rule);
+    }
+    .card-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .card-dot.ink   { background: var(--color-ink); }
+    .card-dot.muted { background: var(--color-muted); }
+    .card-dot.coral { background: var(--color-accent); }
+    .card-dot.link  { background: var(--color-link); }
+    .card-dot.soft  { background: var(--color-soft); }
+    .card h3 { font-size: 0.875rem; font-weight: 600; color: var(--color-ink); }
+    .card ul { list-style: none; color: var(--color-muted); font-size: 0.8125rem; line-height: 1.55; }
+    .card li { margin-bottom: 0.3rem; padding-left: 0.875rem; position: relative; }
+    .card li::before { content: '—'; position: absolute; left: 0; color: var(--color-soft); font-size: 0.75rem; }
+    .footer {
+      margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid var(--color-rule);
+      font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.06em;
+      color: var(--color-soft); display: flex; justify-content: space-between;
+      flex-wrap: wrap; gap: 0.5rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <p class="header-eyebrow">Data flow · funes-vision</p>
+      <h1>Camera frame to retained record</h1>
+      <p class="subtitle">A JPEG lands in a watched directory, a fast YOLO pass writes a preliminary record, and a deep LLM pass on person/dog hits merges HA flags into <span style="font-family:var(--font-mono);font-size:0.9em">analysis.json</span>. Visits are grouped into <span style="font-family:var(--font-mono);font-size:0.9em">bursts.json</span>, the gallery and API publish the catalogs, and pin-aware retention deletes empty frames at 30 days or the 5 GB cap.</p>
+    </div>
+
+    <div class="diagram-container">
+      <svg viewBox="0 0 1320 820" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="dataflow-title dataflow-desc">
+        <title id="dataflow-title">funes-vision data flow from camera frame to retained record</title>
+        <desc id="dataflow-desc">Data flow diagram: a camera JPEG is watched and passed through fast YOLO detection, then deep LLM enrichment only on person or dog hits, merging into analysis.json; visits are grouped into bursts.json, published through the gallery and API catalogs, and expired by pin-aware retention. A dashed boundary marks the on-box sensitive domain and the single opt-in egress to Slack or HA MQTT.</desc>
+        <defs>
+          <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#94a3b8"/>
+          </marker>
+          <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#3b82f6"/>
+          </marker>
+          <marker id="arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#60a5fa"/>
+          </marker>
+          <marker id="arrow-danger" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#ef4444"/>
+          </marker>
+        </defs>
+
+        <rect width="100%" height="100%" fill="#080c14"/>
+
+        <!-- ZONE: on-box trust boundary (accent, drawn first) -->
+        <rect x="40" y="80" width="1000" height="560" rx="8" fill="rgba(59,130,246,0.05)" stroke="rgba(59,130,246,0.50)" stroke-width="1" stroke-dasharray="4,4"/>
+        <rect x="56" y="72" width="240" height="16" rx="2" fill="#080c14"/>
+        <text x="64" y="84" fill="#60a5fa" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">ON-BOX · SENSITIVE DATA DOMAIN</text>
+
+        <!-- ARROWS (before nodes) -->
+        <!-- A1 camera -> yolo -->
+        <line x1="272" y1="184" x2="344" y2="184" stroke="#94a3b8" stroke-width="1" marker-end="url(#arrow)"/>
+        <rect x="284" y="164" width="48" height="12" rx="2" fill="#080c14"/>
+        <text x="308" y="173" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">FRAME</text>
+        <!-- A2 yolo -> deep (conditional) -->
+        <line x1="544" y1="184" x2="616" y2="184" stroke="#94a3b8" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+        <rect x="556" y="164" width="48" height="12" rx="2" fill="#080c14"/>
+        <text x="580" y="173" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">ON HIT</text>
+        <!-- A3 yolo -> analysis.json -->
+        <path d="M400,236 L400,300 Q400,308 392,308 L180,308 Q172,308 172,316 L172,380" fill="none" stroke="#94a3b8" stroke-width="1" marker-end="url(#arrow)"/>
+        <rect x="256" y="288" width="56" height="12" rx="2" fill="#080c14"/>
+        <text x="284" y="297" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">RECORD</text>
+        <!-- A4 deep -> analysis.json (focal merge) -->
+        <path d="M716,236 L716,320 Q716,328 708,328 L240,328 Q232,328 232,336 L232,380" fill="none" stroke="#3b82f6" stroke-width="1.2" marker-end="url(#arrow-accent)"/>
+        <rect x="440" y="308" width="68" height="12" rx="2" fill="#080c14"/>
+        <text x="474" y="317" fill="#3b82f6" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">HA FLAGS</text>
+        <!-- A5 analysis.json -> bursts.json -->
+        <line x1="272" y1="432" x2="344" y2="432" stroke="#94a3b8" stroke-width="1" marker-end="url(#arrow)"/>
+        <rect x="284" y="412" width="48" height="12" rx="2" fill="#080c14"/>
+        <text x="308" y="421" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">VISITS</text>
+        <!-- A6 bursts.json -> gallery/API -->
+        <line x1="544" y1="432" x2="616" y2="432" stroke="#94a3b8" stroke-width="1" marker-end="url(#arrow)"/>
+        <rect x="552" y="412" width="56" height="12" rx="2" fill="#080c14"/>
+        <text x="580" y="421" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">PUBLISH</text>
+        <!-- A7 gallery/API -> retention -->
+        <line x1="820" y1="432" x2="880" y2="432" stroke="#94a3b8" stroke-width="1" marker-end="url(#arrow)"/>
+        <rect x="828" y="412" width="44" height="12" rx="2" fill="#080c14"/>
+        <text x="850" y="421" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">PRUNE</text>
+        <!-- A8 gallery/API -> opt-in egress -->
+        <path d="M760,380 L760,308 Q760,300 768,300 L1172,300 Q1180,300 1180,308 L1180,356" fill="none" stroke="#60a5fa" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#arrow-link)"/>
+        <rect x="936" y="280" width="68" height="12" rx="2" fill="#080c14"/>
+        <text x="970" y="289" fill="#60a5fa" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">OPT-IN</text>
+
+        <!-- ROW LABELS -->
+        <text x="64" y="120" fill="#94a3b8" font-size="7" font-family="'Geist Mono', monospace" letter-spacing="0.14em">CAMERA FRAMES · SENSITIVE</text>
+        <text x="64" y="372" fill="#94a3b8" font-size="7" font-family="'Geist Mono', monospace" letter-spacing="0.14em">DERIVED RECORDS · METADATA</text>
+
+        <!-- NODES -->
+        <!-- camera JPEG -->
+        <g>
+          <rect x="72" y="132" width="200" height="104" rx="6" fill="#080c14"/>
+          <rect x="72" y="132" width="200" height="104" rx="6" fill="rgba(248,250,252,0.03)" stroke="rgba(248,250,252,0.30)" stroke-width="1"/>
+          <rect x="80" y="138" width="32" height="12" rx="2" fill="transparent" stroke="rgba(248,250,252,0.30)" stroke-width="0.8"/>
+          <text x="96" y="147" fill="#94a3b8" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">CAM</text>
+          <text x="172" y="172" fill="#f8fafc" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Camera JPEG</text>
+          <text x="172" y="190" fill="#94a3b8" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">FTP → watched dir</text>
+        </g>
+        <!-- fast yolo -->
+        <g>
+          <rect x="344" y="132" width="200" height="104" rx="6" fill="#080c14"/>
+          <rect x="344" y="132" width="200" height="104" rx="6" fill="#0f172a" stroke="rgba(148,163,184,0.45)" stroke-width="1"/>
+          <rect x="352" y="138" width="36" height="12" rx="2" fill="transparent" stroke="rgba(148,163,184,0.45)" stroke-width="0.8"/>
+          <text x="370" y="147" fill="#94a3b8" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">FAST</text>
+          <text x="444" y="172" fill="#f8fafc" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Fast YOLO</text>
+          <text x="444" y="190" fill="#94a3b8" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">yolov4-tiny · conf ≥ 0.45</text>
+        </g>
+        <!-- deep llm -->
+        <g>
+          <rect x="616" y="132" width="200" height="104" rx="6" fill="#080c14"/>
+          <rect x="616" y="132" width="200" height="104" rx="6" fill="#0f172a" stroke="rgba(148,163,184,0.45)" stroke-width="1"/>
+          <rect x="624" y="138" width="36" height="12" rx="2" fill="transparent" stroke="rgba(148,163,184,0.45)" stroke-width="0.8"/>
+          <text x="642" y="147" fill="#94a3b8" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">DEEP</text>
+          <text x="716" y="172" fill="#f8fafc" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Deep LLM</text>
+          <text x="716" y="190" fill="#94a3b8" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">Ollama · HA flags (on hit)</text>
+        </g>
+        <!-- analysis.json (focal) -->
+        <g>
+          <rect x="72" y="380" width="200" height="104" rx="6" fill="#080c14"/>
+          <rect x="72" y="380" width="200" height="104" rx="6" fill="rgba(59,130,246,0.12)" stroke="#3b82f6" stroke-width="1"/>
+          <rect x="80" y="386" width="36" height="12" rx="2" fill="transparent" stroke="rgba(59,130,246,0.50)" stroke-width="0.8"/>
+          <text x="98" y="395" fill="#60a5fa" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">JSON</text>
+          <text x="172" y="420" fill="#f8fafc" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">analysis.json</text>
+          <text x="172" y="438" fill="#94a3b8" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">merged detection + HA</text>
+        </g>
+        <!-- bursts.json -->
+        <g>
+          <rect x="344" y="380" width="200" height="104" rx="6" fill="#080c14"/>
+          <rect x="344" y="380" width="200" height="104" rx="6" fill="#0f172a" stroke="rgba(148,163,184,0.45)" stroke-width="1"/>
+          <rect x="352" y="386" width="36" height="12" rx="2" fill="transparent" stroke="rgba(148,163,184,0.45)" stroke-width="0.8"/>
+          <text x="370" y="395" fill="#94a3b8" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">JSON</text>
+          <text x="444" y="420" fill="#f8fafc" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">bursts.json</text>
+          <text x="444" y="438" fill="#94a3b8" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">grouped visits · 5 min</text>
+        </g>
+        <!-- gallery + API -->
+        <g>
+          <rect x="616" y="380" width="204" height="104" rx="6" fill="#080c14"/>
+          <rect x="616" y="380" width="204" height="104" rx="6" fill="#0f172a" stroke="rgba(148,163,184,0.45)" stroke-width="1"/>
+          <rect x="624" y="386" width="36" height="12" rx="2" fill="transparent" stroke="rgba(148,163,184,0.45)" stroke-width="0.8"/>
+          <text x="642" y="395" fill="#94a3b8" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">API</text>
+          <text x="718" y="420" fill="#f8fafc" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Gallery + API</text>
+          <text x="718" y="438" fill="#94a3b8" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">images · inference_log</text>
+        </g>
+        <!-- retention -->
+        <g>
+          <rect x="880" y="380" width="136" height="104" rx="6" fill="#080c14"/>
+          <rect x="880" y="380" width="136" height="104" rx="6" fill="#0f172a" stroke="rgba(148,163,184,0.45)" stroke-width="1"/>
+          <rect x="888" y="386" width="28" height="12" rx="2" fill="transparent" stroke="rgba(148,163,184,0.45)" stroke-width="0.8"/>
+          <text x="902" y="395" fill="#94a3b8" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">GC</text>
+          <text x="948" y="420" fill="#f8fafc" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Retention</text>
+          <text x="948" y="438" fill="#94a3b8" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">30d · 5GB · pins</text>
+        </g>
+        <!-- opt-in egress -->
+        <g>
+          <rect x="1080" y="356" width="200" height="120" rx="6" fill="#080c14"/>
+          <rect x="1080" y="356" width="200" height="120" rx="6" fill="rgba(248,250,252,0.02)" stroke="rgba(248,250,252,0.20)" stroke-width="1" stroke-dasharray="4,3"/>
+          <rect x="1088" y="362" width="32" height="12" rx="2" fill="transparent" stroke="rgba(248,250,252,0.20)" stroke-width="0.8"/>
+          <text x="1104" y="371" fill="#64748b" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">EXT</text>
+          <text x="1180" y="412" fill="#f8fafc" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Slack / HA MQTT</text>
+          <text x="1180" y="432" fill="#94a3b8" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">opt-in egress</text>
+        </g>
+
+        <!-- CALLOUTS (editorial, italic serif) -->
+        <text x="64" y="600" fill="#64748b" font-size="12" font-family="'Instrument Serif', serif" font-style="italic">frames + occupancy timing never leave the box by default</text>
+        <text x="1080" y="520" fill="#64748b" font-size="12" font-family="'Instrument Serif', serif" font-style="italic">opt-in · off by default</text>
+
+        <!-- LEGEND -->
+        <line x1="40" y1="700" x2="1280" y2="700" stroke="rgba(248,250,252,0.12)" stroke-width="0.8"/>
+        <text x="40" y="724" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">LEGEND</text>
+        <line x1="120" y1="720" x2="148" y2="720" stroke="#94a3b8" stroke-width="1" marker-end="url(#arrow)"/>
+        <text x="160" y="724" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.06em">DATA HAND-OFF</text>
+        <line x1="320" y1="720" x2="348" y2="720" stroke="#94a3b8" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+        <text x="360" y="724" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.06em">CONDITIONAL (ON HIT)</text>
+        <line x1="560" y1="720" x2="588" y2="720" stroke="#60a5fa" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#arrow-link)"/>
+        <text x="600" y="724" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.06em">OPT-IN EGRESS</text>
+        <rect x="760" y="712" width="16" height="12" rx="3" fill="none" stroke="rgba(59,130,246,0.50)" stroke-width="1" stroke-dasharray="4,4"/>
+        <text x="784" y="724" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.06em">ON-BOX BOUNDARY</text>
+        <rect x="980" y="712" width="16" height="12" rx="3" fill="rgba(59,130,246,0.12)" stroke="#3b82f6" stroke-width="1"/>
+        <text x="1004" y="724" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.06em">FOCAL ARTIFACT</text>
+
+      </svg>
+    </div>
+
+    <div class="cards">
+      <div class="card">
+        <div class="card-header"><span class="card-dot coral"></span><h3>Sensitive by default</h3></div>
+        <ul>
+          <li>camera frames and occupancy timing stay on the host</li>
+          <li>the only egress is Slack / HA MQTT, off by default</li>
+          <li>cloud inference is gated by the allow_cloud switch</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-dot muted"></span><h3>Retention boundaries</h3></div>
+        <ul>
+          <li>Pass 1: unpinned frames older than max_age_days (30d)</li>
+          <li>Pass 2: timeline frames capped at persist_budget_pct (20%)</li>
+          <li>Pass 3: over max_dir_gb (5 GB) evicts negatives first</li>
+          <li>pinned frames are never deleted; deletions hit retention_log.json</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-dot link"></span><h3>Conditional enrichment</h3></div>
+        <ul>
+          <li>deep LLM runs only on person/dog hits</li>
+          <li>car-only frames are skipped as _llm_skip=no_trigger</li>
+          <li>detection entries are pruned only under disk pressure</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="footer">
+      <span>funes-vision · docs/diagrams</span>
+      <span>Source: create-index.sh, analyze_images.py:1760-1900 (apply_retention), analyze_images.py:1520 (retention_log), analyze_images.py:838 (inference_log), ha_mqtt.py, api_server.py:441-443, settings.example.json</span>
+    </div>
+    <p class="subtitle" style="margin-top:0.75rem;font-family:var(--font-mono);font-size:0.66rem;letter-spacing:0.06em;color:var(--color-soft)">Assumptions: the egress arrow represents ha_mqtt.publish_record and the Slack notifier; 5 GB and 30d are the settings.example.json defaults; the fast pass writes a preliminary record that the deep pass merges in place; car-only detections are retained until the 5 GB budget is hit.</p>
+  </div>
+</body>
+</html>
