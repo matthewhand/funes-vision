@@ -77,9 +77,71 @@ class TestCadence(unittest.TestCase):
         self.assertEqual(media._clamp_fps(100), media.FPS_MAX)
         self.assertEqual(media._clamp_fps(0.01), media.FPS_MIN)
 
+    def test_unusable_timestamps_degrade_to_the_filename_clock(self):
+        a, b = _timed_name(25, 0), _timed_name(25, 200)
+        for bad in (float("nan"), float("inf"), float("-inf"), "nope",
+                    object(), [], {}):
+            stamps = media._frame_timestamps([(a, bad), (b, bad)])
+            self.assertNotIn(None, stamps, bad)
+        # The supplied garbage is dropped, so the real gaps pace the clip.
+        self.assertEqual(
+            media._gif_durations([(a, float("nan")), (b, float("inf")),
+                                  (_timed_name(25, 400), "x")]),
+            [200, 200, 200])
+
+    def test_cadence_fps_skips_unusable_frames(self):
+        good = [_timed_name(25, i * 200) for i in range(3)]
+        pairs = [(good[0], None), ("plain.jpg", None)] + [(p, None) for p in good[1:]]
+        self.assertAlmostEqual(media._cadence_fps(pairs), 5.0, places=3)
+        # Junk supplied for a timed name is dropped, not fatal.
+        self.assertAlmostEqual(
+            media._cadence_fps([(p, float("nan")) for p in good]), 5.0, places=3)
+
+    def test_descending_timestamps_use_the_uniform_fallback(self):
+        # #34: images.json is newest-first, so every gap is negative and the
+        # uniform default is the only sane hold (as in the in-app frameDurations).
+        names = [_timed_name(25, ms) for ms in (800, 400, 0)]
+        self.assertEqual(media._gif_durations([(n, None) for n in names]),
+                         [media.FRAME_MS] * 3)
+        self.assertEqual(media._gif_durations([("a.jpg", 5.0), ("b.jpg", 4.0)]),
+                         [media.FRAME_MS] * 2)
+        self.assertEqual(media._gif_durations([("a.jpg", 5.0)]), [media.FRAME_MS])
+
+    def test_out_of_order_gaps_fall_back_one_frame_at_a_time(self):
+        # A single reversed pair takes the default hold; the real gaps around it
+        # keep their cadence rather than the whole clip collapsing to 80 ms.
+        self.assertEqual(
+            media._gif_durations([("a.jpg", 0.0), ("b.jpg", 0.2),
+                                  ("c.jpg", 0.9), ("d.jpg", 0.3)]),
+            [200, 700, media.FRAME_MS, 700])
+
+    def test_untimed_gap_voids_only_its_own_hold(self):
+        good = [_timed_name(25, i * 200) for i in range(4)]
+        pairs = [(good[0], None), ("plain.jpg", None)] + [(p, None) for p in good[1:]]
+        # The two gaps touching the unparseable name take FRAME_MS; the three
+        # real 200 ms gaps survive instead of the whole sequence falling back.
+        self.assertEqual(media._gif_durations(pairs),
+                         [media.FRAME_MS, media.FRAME_MS, 200, 200, 200])
+
+    def test_clamps_fall_back_instead_of_raising(self):
+        for bad in ("nope", None, float("nan"), float("inf"), object()):
+            self.assertEqual(media._clamp_int(bad, 2, 256, 256), 256)
+            self.assertEqual(media._clamp_width(bad), media.WIDTH)
+            self.assertEqual(media._clamp_ms(bad), media.FRAME_MS)
+        self.assertEqual(media._clamp_int(1, 2, 256, 256), 2)
+        self.assertEqual(media._clamp_int(9999, 2, 256, 256), 256)
+        self.assertEqual(media._clamp_width(0), media.WIDTH)
+        self.assertEqual(media._clamp_width(-3), media.WIDTH)
+        self.assertEqual(media._clamp_width(120), 120)
+        self.assertEqual(media._clamp_ms(10), media.MIN_FRAME_MS)
+        self.assertEqual(media._clamp_ms(99_999), media.MAX_FRAME_MS)
+        self.assertEqual(media._clamp_ms(250), 250)
+
 
 @unittest.skipUnless(HAS_PIL, "Pillow not installed")
-class TestBuildGif(unittest.TestCase):
+class _GifCase(unittest.TestCase):
+    """Scratch frames in a temp dir for the Pillow-backed GIF cases."""
+
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix="webcam_media_")
 
@@ -91,6 +153,13 @@ class TestBuildGif(unittest.TestCase):
         _save(path, color, size)
         return path
 
+    def _burst(self, count=3, step_ms=400, prefix=25):
+        """``count`` frames whose filename clock is ``step_ms`` apart."""
+        return [self._frame(_timed_name(prefix, i * step_ms), (i * 40, 20, 30))
+                for i in range(count)]
+
+
+class TestBuildGif(_GifCase):
     def test_empty_input_returns_none(self):
         out = os.path.join(self.tmp, "empty.gif")
         self.assertIsNone(media.build_gif([], out))
@@ -151,6 +220,74 @@ class TestBuildGif(unittest.TestCase):
         media.build_gif([small], out2, width=480)
         with Image.open(out2) as im:
             self.assertEqual(im.size[0], 40)
+
+
+class TestBuildGifRobustness(_GifCase):
+    """#36: a hostile /api/clip payload must degrade, not 500."""
+
+    def test_unusable_timestamps_still_build(self):
+        paths = self._burst()
+        cases = {
+            "nan": [float("nan"), 2.0, 3.0],
+            "inf": [1, 2, float("inf")],
+            "neg_inf": [1, float("-inf"), 3],
+            "text": ["a", "b", "c"],
+            "mixed": [None, "nope", 3.0],
+            "overflowing": [1e308, 1e308, 1e308],
+        }
+        for label, stamps in cases.items():
+            out = os.path.join(self.tmp, f"{label}.gif")
+            self.assertEqual(media.build_gif(paths, out, timestamps=stamps), out,
+                             label)
+            with Image.open(out) as im:
+                self.assertEqual(im.n_frames, len(paths), label)
+
+    def test_nan_timestamps_fall_back_to_the_filename_clock(self):
+        # The bad value is dropped, so the real 400 ms gaps still pace the clip.
+        out = os.path.join(self.tmp, "nan.gif")
+        media.build_gif(self._burst(), out,
+                        timestamps=[float("nan")] * 3)
+        self.assertEqual(_durations(out), [400, 400, 400])
+
+    def test_unusable_colors_and_width_fall_back(self):
+        paths = self._burst()
+        cases = {
+            "colors_text": {"colors": "nope"},
+            "colors_none": {"colors": None},
+            "colors_nan": {"colors": float("nan")},
+            "colors_inf": {"colors": float("inf")},
+            "width_text": {"width": "nope"},
+            "width_none": {"width": None},
+            "width_zero": {"width": 0},
+            "width_negative": {"width": -5},
+            "width_inf": {"width": float("inf")},
+        }
+        for label, kwargs in cases.items():
+            out = os.path.join(self.tmp, "fallback.gif")
+            self.assertEqual(media.build_gif(paths, out, **kwargs), out, label)
+            with Image.open(out) as im:
+                self.assertEqual(im.n_frames, len(paths), label)
+
+    def test_one_unparseable_name_keeps_the_burst_cadence(self):
+        good = self._burst(count=4, step_ms=200)
+        paths = [good[0], self._frame("plain.jpg", (1, 2, 3)),
+                 good[1], good[2], good[3]]
+        out = os.path.join(self.tmp, "burst.gif")
+        media.build_gif(paths, out)
+        durs = _durations(out)
+        self.assertEqual(len(durs), len(paths))
+        # Only the frame with no usable clock takes FRAME_MS; the rest keep the
+        # 200 ms cadence instead of the whole export falling back (or strobing).
+        self.assertEqual(durs[2:], [200, 200, 200])
+        self.assertNotEqual(set(durs), {media.MIN_FRAME_MS})
+
+    def test_frame_ms_pins_every_hold(self):
+        paths = self._burst()
+        out = os.path.join(self.tmp, "pinned.gif")
+        media.build_gif(paths, out, frame_ms=250)
+        self.assertEqual(_durations(out), [250, 250, 250])
+        media.build_gif(paths, out)
+        self.assertNotEqual(_durations(out), [250, 250, 250])
 
 
 class TestClipEndpointOptions(EndpointTestCase):

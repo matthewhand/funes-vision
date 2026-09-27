@@ -48,7 +48,7 @@ PNG/JPEG bytes.
 `docs/USER-GUIDE.md`, plus `tools/demo/demo.gif`. It reads the synthetic
 `fixtures/gallery` (stills + `analysis.json`) and assembles frames with
 `integrations.media.build_gif` — the same helper the in-app **Download GIF**
-uses — so the committed clips match the export (2.5 fps, `optimize=True`).
+uses — so the frame cap, widths and `optimize=True` palette match the export.
 
 ```sh
 python3 tools/screenshots/make_gifs.py
@@ -58,14 +58,19 @@ This rewrites, in place and with no network access:
 
 | Output | Frames | Source |
 |--------|--------|--------|
-| `docs/guide/img/timeline-flipbook.gif` | whole gallery | `images.json` order |
-| `docs/guide/img/visit-player.gif` | person + dog visits | `analysis.json` flags |
+| `docs/guide/img/timeline-flipbook.gif` | whole gallery | `images.json` order, oldest first |
+| `docs/guide/img/visit-player.gif` | person + dog visits | `analysis.json` flags, oldest first |
 | `tools/demo/demo.gif` | person + dog visits | same, 320 px demo width |
 
-Widths are tuned (`TIMELINE_WIDTH`/`VISIT_WIDTH`/`DEMO_WIDTH`) so each file
-stays well under ~1.5 MB. The script prints frame counts and byte sizes and
-exits non-zero if any output is not actually animated (Pillow frame count
-`< 2`). `--out DIR` and `--no-demo` are available for scratch runs.
+Frames are sorted ascending by the filename clock (the in-app flipbook's
+order) and the hold is pinned to the 2.5 fps flipbook rate, so the clips are
+reproducible instead of following the fixture gaps. Widths are tuned
+(`TIMELINE_WIDTH`/`VISIT_WIDTH`/`DEMO_WIDTH`) so each file stays well under
+~1.5 MB. The script prints frame counts, delays and byte sizes and exits
+non-zero if any output is not actually animated (Pillow frame count `< 2`).
+`--out DIR` and `--no-demo` are available for scratch runs, and `--check`
+validates the already-committed GIFs read-only (animated, one uniform hold,
+under budget) without rewriting them.
 
 ## Env
 
