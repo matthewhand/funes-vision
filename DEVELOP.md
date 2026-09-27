@@ -877,9 +877,12 @@ location /api/ {
 }
 ```
 
-This is what gives the API its auth — `:8190` itself is unauthenticated,
-so it must NOT be port-forwarded publicly; only the proxied `/api/` path
-should be reachable from outside the LAN.
+This is one of two auth layers, not the only one. The API has its own gate:
+`WEBCAM_API_TOKEN` (or the `api_token` key in `settings.json`) makes every
+`POST` require `Authorization: Bearer <token>` or HTTP Basic, and
+`WEBCAM_API_HOST` binds it to `127.0.0.1` by default. So `:8190` is only
+unauthenticated *when no token is configured*; treat the token as set and
+keep the port off the public internet regardless.
 
 ## Troubleshooting
 
@@ -914,8 +917,10 @@ should be reachable from outside the LAN.
   (symptom: the panel hangs at "checking…" because `/api/…` 404s or the
   old `:8190` origin isn't reachable). On the LAN, check the phone can
   reach `:8190` directly.
-- **False bursts spanning days** — the chronological sort in
-  analyze_images.py was removed at some point; see step 3 above.
+- **False bursts spanning days** — the sweep sorts frames by mtime before
+  burst detection, precisely so consecutive entries always have a positive gap.
+  If you see one anyway, the usual cause is a camera whose clock jumped
+  backwards mid-burst; check the filenames in the reported burst and see step 3.
 - Logs:
   - Pipeline: `journalctl -u webcam-pipeline@Webcam21 -f` (and `@Webcam22`,
     `webcam-api`, `ollama`)

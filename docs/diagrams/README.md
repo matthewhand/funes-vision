@@ -19,14 +19,14 @@ the app UI). The profile is selected by the `.diagram-design` marker at the repo
 | [`02-runtime-architecture.html`](02-runtime-architecture.html) | Architecture | devs / operators | What runs where, and which boundaries separate them? | api_server.py, analyze_images.py, systemd/*, nginx.conf |
 | [`03-deployment.html`](03-deployment.html) | Deployment | operators | How is it deployed on one host — ports, volumes, containers, cron? | docker-compose.yml, systemd/*, nginx.conf, tools/webcam-compose-run.sh |
 | [`04-sequence-ingest-analysis.html`](04-sequence-ingest-analysis.html) | Sequence | devs | How does a still move from FTP to a catalogued detection? | create-index.sh, analyze_images.py, scans.py, taxonomy.py |
-| [`05-sequence-live-sse.html`](05-sequence-live-sse.html) | Sequence | devs | How do browser, auth, API and the SSE stream interact? | api_server.py:784-1080, nginx.conf, index.html |
-| [`06-sequence-recovery.html`](06-sequence-recovery.html) | Sequence | operators | What happens on a stuck sweep, dead unit, or corrupt catalog? | tools/watchdog.sh, systemd/*, analyze_images.py, api_server.py |
+| [`05-sequence-live-sse.html`](05-sequence-live-sse.html) | Sequence | devs | How do browser, auth, API and the SSE stream interact? | api_server.py:684-720,1003-1147, pipeline_events.py, nginx.conf, index.html |
+| [`06-sequence-recovery.html`](06-sequence-recovery.html) | Sequence | operators | What happens on a stuck sweep, dead unit, or corrupt catalog? | tools/watchdog.sh, systemd/*, tools/webcam-healthcheck.sh, analyze_images.py, api_server.py |
 | [`07-integrations.html`](07-integrations.html) | DP integration | devs / ops | How do Slack, ntfy and HA MQTT get events, and what leaves the box? | integrations/*, ha_mqtt.py, api_server.py:805 |
 | [`08-data-flow.html`](08-data-flow.html) | Data flow | devs / ops | How does frame data move, and where are the retention boundaries? | analyze_images.py, catalog.py, scans.py, settings.example.json |
-| [`09-security-boundaries.html`](09-security-boundaries.html) | Architecture | security | What are the trust zones, auth boundaries and secrets? | api_server.py:54-60,85-88,1007-1049, nginx.conf, SECURITY.md |
-| [`10-data-model.html`](10-data-model.html) | ER | devs | What do the JSON catalogs contain and how do they relate? | catalog.py, analyze_images.py, taxonomy.py, api_server.py:820 |
+| [`09-security-boundaries.html`](09-security-boundaries.html) | Architecture | security | What are the trust zones, auth boundaries and secrets? | api_server.py:60,79-87,684-708, nginx.conf, SECURITY.md |
+| [`10-data-model.html`](10-data-model.html) | ER | devs | What do the JSON catalogs contain and how do they relate? | DEVELOP.md:449-474, analyze_images.py:1522,960,2286, create-index.sh:22, api_server.py:357 |
 | [`11-detection-states.html`](11-detection-states.html) | State machine | devs | How does an image move from unanalyzed to merged, pinned or deleted? | catalog.py:13-58, analyze_images.py:838,981,1201,1760 |
-| [`12-burst-timeline.html`](12-burst-timeline.html) | Timeline | devs / ops | What happens, and when, within one visit — and how long does the deep pass lag? | analyze_images.py, api_server.py:1019-1147, integrations/media.py:20 |
+| [`12-burst-timeline.html`](12-burst-timeline.html) | Timeline | devs / ops | What happens, and when, within one visit — and how long does the deep pass lag? | analyze_images.py, api_server.py:1003-1147, pipeline_events.py, integrations/media.py:20 |
 | [`13-visit-swimlane.html`](13-visit-swimlane.html) | Swimlane | devs / ops | Which lane owns each handoff for one person visit, camera to notification? | create-index.sh:10, analyze_images.py:2120-2294, api_server.py, index.html |
 
 `_template.html` is the shared dark skeleton; `_conventions.md` holds the token table and
@@ -64,17 +64,35 @@ To re-skin the whole set, edit the profile at
   defaults (`settings.example.json`: 30 days, 5 GB per camera, 20% persist budget).
 - `04-sequence-ingest-analysis` merges the YOLO fast pass and the Ollama deep pass into
   one lifeline to stay within the sequence budget; both are named in the messages.
+- `08-data-flow` conditions the deep pass on the real rule: any detector hit
+  whose only True labels are gate-ignored (default `car`) is persisted as
+  `_llm_skip=no_trigger` instead of queued, so person, dog, cat, bird and a car
+  sharing the frame all reach the LLM.
+- `05-sequence-live-sse` shows the API tailing `events.jsonl`; catalog-mtime
+  diffing is the fallback branch, and the 503 client cap is the failure exit.
 - `07-integrations` groups IO by provider and draws the dispatcher as the single fan-out
   seam; `ha_mqtt.py` actually publishes from the pipeline, not the API process.
-- `10-data-model` shows key fields only, not full schemas, and omits a FK line for
-  `retention_log` because retention acts on camera directories rather than an image.
-- `06-sequence-recovery` follows the brief that the healthcheck timer probes
-  `/api/health`; the repo's `tools/webcam-healthcheck.sh` also guards the gallery
-  container (noted as a follow-up).
-- `11-detection-states` folds the catalog's `no_trigger` into `detector-only`; idle
-  backfill (`deep_backfill`, off by default) is noted in a card rather than drawn.
+- `10-data-model` transcribes the real key sets from the writers
+  (`retention_log` = `{ts, dir, count, bytes_freed}`, `bursts` entries =
+  `{summary, images[]}`, `inference_log` = `{image, model, trigger, started,
+  duration_s, labels, ok}`) rather than showing invented columns, and it omits a
+  FK line for `retention_log` because retention acts on camera directories
+  rather than an image. `images.json` and `pins.json` are flat arrays of
+  filenames, so the `images` box labels the image each row stands for and says so
+  on the canvas.
+- `06-sequence-recovery` draws the 60s healthcheck timer against the **gallery
+  container**: `tools/webcam-healthcheck.sh` runs `docker ps` and then
+  `curl http://127.0.0.1:8180/`, and restarts the container with
+  `compose up -d gallery` if both miss. It does **not** call `/api/health` — that
+  is the cron watchdog's probe (`tools/watchdog.sh`). The two are drawn to
+  separate lifelines so the distinction survives.
+- `11-detection-states` folds the catalog's `no_trigger` into `detector-only`;
+  idle backfill is off by default and set by the `deep_backfill` setting key
+  (module constant `DEEP_BACKFILL`) — noted in a card rather than drawn.
 - `12-burst-timeline` uses an illustrative ~2 s frame cadence; the ~40 s deep-pass
   latency is the reference 4-core box. Two axis breaks mark compressed time.
+  The SSE leg is the pipeline's `events.jsonl` bus (1 s tail), not a 3 s mtime
+  poll; `ping` beats every 15 s.
 - `13-visit-swimlane` draws the Integrations handoff from the API/SSE step for narrative
   order, though `analyze_images.py` actually fires Slack/HA MQTT from the pipeline.
 

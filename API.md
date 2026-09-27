@@ -3,8 +3,46 @@
 The host write-API (`api_server.py`, port **8190**) — a stdlib
 `ThreadingHTTPServer`, the single write channel (the gallery itself is served by
 read-only nginx mounts). All responses are JSON (`Content-Type:
-application/json`) except the SSE stream. CORS is open (`Access-Control-Allow-Origin:
-*`); `OPTIONS` on any path returns `204`.
+application/json`) except the SSE stream. `OPTIONS` on any path returns `204`.
+
+**CORS is an origin allowlist, never a wildcard.** `Access-Control-Allow-Origin`
+is set only when the request's `Origin` is in `WEBCAM_CORS_ORIGIN` (comma-separated,
+default `http://localhost:8180,http://127.0.0.1:8180`); a request with no `Origin`
+gets the first configured origin so same-origin/non-browser callers still work.
+A literal `*` in the env var is **dropped** — the old wildcard let any page a
+user visited POST deletes at the LAN host. Allowed responses also carry
+`Vary: Origin` and `Access-Control-Allow-Credentials: true`.
+
+**Bind.** `WEBCAM_API_HOST` (default `127.0.0.1`) is the only exposure control;
+the startup line prints `auth=token` or `auth=off` so an operator can see at a
+glance whether the write API is gated.
+
+## Authentication
+
+Auth is **opt-in and off by default**, which is why the loopback bind is the
+default. `_authorized()` gates **every `POST`** (`/api/pin`, `/api/delete`,
+`/api/clip`, `/api/settings`, `/api/integrations`, `/api/integrations/test`)
+before any body is parsed; `GET` stays open so the read-only gallery keeps
+working without credentials.
+
+| Source | Precedence |
+|--------|------------|
+| `WEBCAM_API_TOKEN` env var | wins when set and non-blank |
+| `api_token` key in `settings.json` | fallback (keeps the secret beside the rest of the config) |
+| neither set | auth disabled — `_authorized()` returns `True` for everything |
+
+With no token configured, POSTs are open. With a token configured, supply it as
+either:
+
+- `Authorization: Bearer` followed by the token, or
+- HTTP Basic with the secret as **either** the username or the password, so
+  both `curl -u :SECRET` and `curl -u SECRET:` work.
+
+Comparison is constant-time (`hmac.compare_digest`). A missing, malformed, or
+wrong credential is **401** `{"error": "unauthorized"}`; `OPTIONS` is not gated
+(preflight must succeed for the browser to send the real request). The gallery
+SPA and nginx are a second, independent layer — see
+[SECURITY.md](SECURITY.md) and [DEPLOYMENT.md](DEPLOYMENT.md).
 
 In production the UI reaches this **same-origin at `/api/`** via the reverse
 proxy (basic-auth, TLS); it falls back to `http://<host>:8190` only when a page
@@ -216,26 +254,47 @@ A long-lived `text/event-stream` (sets `X-Accel-Buffering: no` so it survives
 the proxy un-buffered). The UI subscribes once via `EventSource` and falls back
 to polling if SSE is unsupported or the connection drops.
 
-**Bridge.** The API polls `analysis.json` / `bursts.json` mtimes every ~3 s and
-diffs them — it is *not* a true pipeline→API push, so latency is ~3 s. The first
+**Transport — `events.jsonl` is the primary bus.** The analyzer appends one JSON
+line per pipeline event to `events.jsonl` (`pipeline_events.emit()`, fsynced,
+rotated at 2 MB / 5000 writes) and the API tails it by **byte offset** with
+`pipeline_events.iter_since()`. So `image.new`, `new-detection`,
+`detection.preliminary` and `new-burst` are a genuine pipeline→API push with
+sub-second latency, emitted as each frame is persisted rather than at the end of
+a sweep. **Fallback:** `analysis.json` / `bursts.json` mtime diffing still runs
+so catalogs written by an older pipeline that does not emit are not lost; the
+tail loop runs every **1 s** with that bus and every **3 s** without it. The first
 pass seeds state **silently** (no backlog blast); only subsequent changes emit.
-A named `event: ping` heartbeat is sent each cycle.
+
+**Heartbeat and idle close.** A named `event: ping` is sent every
+`WEBCAM_SSE_HEARTBEAT_S` (default **15 s**, floored at 1 s) — a bare `: ping`
+comment is invisible to `EventSource`, so the client can detect a silently
+stalled connection and proxies stay unbuffered. A connection that sees no real
+event for `WEBCAM_SSE_IDLE_TIMEOUT_S` (default 600 s) is reaped with
+`event: close` and the socket ends; `0` disables the timeout.
+
+**Client cap.** Concurrent streams are bounded by `WEBCAM_SSE_MAX_CLIENTS`
+(default 8, `0` disables). Past the cap a new connection gets **503**
+`{"error": "too many event streams; retry later", "limit": <n>}` instead of
+another unbounded thread, so a page that reconnects in a loop cannot pin the box.
+The reserved slot is always released, even on a write error.
 
 **Events** (`event:` name + JSON `data:`):
 
 | Event | Payload | Fires when |
 |-------|---------|-----------|
-| `image.new` | `{"file": "<name>"}` | A frame first appears in `analysis.json` (right after the fast pass) — the earliest new-frame signal the API has. |
+| `image.new` | `{"file": "<name>"}` | The pipeline persisted a frame (`events.jsonl`); on the mtime fallback, a frame first appears in `analysis.json` (right after the fast pass). |
 | `detection.preliminary` | `{"file": "<name>", "labels": ["car", ...]}` | A detector-only hit (`fast_pass` present **or** `_llm_skip == "no_trigger"` with ≥1 YOLO True key) that is not `is_llm_verified`. Labels are `YOLO_PRESENCE_KEYS` only. Suppressed once promoted to verified. The only live detections while deep passes are off. Car-only `{car: true, _llm_skip: "no_trigger"}` is preliminary. |
 | `new-detection` | `{"file": "<name>", "labels": ["person", ...]}` | An image gains a successful LLM merge (`_llm` dict, no `_llm_skip`) with ≥1 true label. Absence of `fast_pass` is not a verdict. |
-| `ping` | `{}` | Heartbeat every ~3 s; lets the client detect a silently-stalled connection (also keeps proxies unbuffered). |
 | `new-burst` | `{"id": "<burst-id>", "summary": "<text>"}` | A new burst/visit is written to `bursts.json`. |
+| `ping` | `{}` | Heartbeat every ~15 s (`WEBCAM_SSE_HEARTBEAT_S`). |
+| `close` | `{"reason": "idle_timeout"}` | No event traffic for `WEBCAM_SSE_IDLE_TIMEOUT_S`; the server closes the stream. Reconnect with `EventSource` as usual. |
 
 ### Not yet implemented
 
-`analysis.llm` live token streaming ("AI is looking at this…" with the caption
-typing in) requires a streaming per-image Ollama call and a true pipeline→API
-push; see [ROADMAP.md](ROADMAP.md). `image.new` / `detection.preliminary` /
+`analysis.llm` live token streaming ("AI is looking at this…" with the flags
+typing in) requires a streaming per-image Ollama call; the pipeline→API push
+itself is done (see Transport above) and the remaining work is incremental DOM
+patching — see [ROADMAP.md](ROADMAP.md). `image.new` / `detection.preliminary` /
 `new-detection` patch in-memory state. Only `new-burst` still does a
 `loadData()` refetch.
 

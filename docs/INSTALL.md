@@ -7,7 +7,7 @@ deployment is **Linux + systemd** (Debian/Ubuntu family; the units and
 macOS/Windows are not supported for the watcher/retention services.
 
 The pipeline itself is Python 3 (stdlib + a few third-party packages);
-detection and captioning use OpenCV and a local Ollama server.
+detection and HA flag inference use OpenCV and a local Ollama server.
 
 ## 1. System packages
 
@@ -78,7 +78,8 @@ If the weights are missing, `fast_pass_engine: "yolo"` logs
 
 ## 4. Ollama and the vision model
 
-Captioning goes through Ollama at the **`ollama_url`** setting
+The deep pass's HA flag inference goes through Ollama at the **`ollama_url`**
+setting
 (default `http://localhost:11434`). Install it, then pull the model named by
 **`model_local`** / **`model_primary`** (default `gemma4:e2b`; set
 `model_fallback` for an optional secondary tag and `allow_cloud` stays
@@ -113,24 +114,31 @@ models automatically.
    ```bash
    sudo bash systemd/install.sh
    ```
-   This enables `webcam-pipeline@<dir>` per camera, `webcam-api`, and
-   `ollama`, and installs the watchdog cron.
+   This enables `webcam-pipeline@<dir>` per camera, `webcam-api`, `ollama`,
+   `webcam-compose` (the gallery container) and the
+   `webcam-healthcheck.{service,timer}` pair, and installs the watchdog cron.
 3. Serve the gallery via `docker-compose.yml` (nginx, read-only mounts) or
    your own web root.
 
 ## 6. Tests
 
-The suite is Python `unittest` and needs no Node:
+Two suites, both runnable from a clean checkout after
+`pip install -r requirements.txt` (the Python tests import `cv2`):
 
 ```bash
-python3 -m unittest discover -s tests
+python3 -m unittest discover -s tests   # backend helpers
+bash tests/run.sh                       # SPA helper suites + inline-JS syntax gate
 ```
 
-Install `nodejs`/`npm` only if you run the optional JS tooling or rebuild
-the static demo bundle (`tools/demo/`). Two zone tests read the
-deployment-specific, gitignored `settings.json`; without it they report
-`FileNotFoundError` and the run ends `FAILED (errors=2)` — that is expected
-in a clean checkout and unrelated to the code.
+`tests/run.sh` additionally needs `nodejs`; install `nodejs`/`npm` only if you
+run the JS tooling, the screenshot harness, or rebuild the static demo bundle
+(`tools/demo/`).
+
+A clean checkout reports `Ran 405 tests … OK (skipped=2)`. The two skips are
+`test_zones` cases that assert this box's actual zone triangles and are skipped
+with `live settings.json not present` — the deployment-specific `settings.json`
+is gitignored, so that is the expected result off-host, not a failure. Copy your
+own `settings.json` in and they run for real.
 
 ## 7. Ingest contract (any tool that writes JPEGs)
 

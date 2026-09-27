@@ -379,7 +379,8 @@ the end of the sweep). The API tails that log about once a second
 | `detection.preliminary` | Detector hit, including parked-car `Car?` |
 | `new-detection` | A successful vision merge with a detector label |
 | `new-burst` | A visit summary was written (rare: summaries are **off**) |
-| `ping` | Heartbeat; missing pings turn the badge **Stale** |
+| `ping` | Heartbeat every ~15 s; missing pings turn the badge **Stale** |
+| `close` | The server ended an idle stream (no events for 10 min). It reconnects on its own — nothing to do |
 
 A floating **N new events — tap to view** pill accumulates while you
 are looking at an old slice. Tap it to clear filters and jump to the
@@ -564,5 +565,5 @@ Developer / ops reference: [DEVELOP.md](../DEVELOP.md),
 [DEPLOYMENT.md](../DEPLOYMENT.md), [API.md](../API.md).
 How the screenshots were taken (fixture-only, never live cameras):
 [tools/screenshots/README.md](../tools/screenshots/README.md).
-What is still not built (token streaming, pipeline→API push):
+What is still not built (per-image token streaming):
 [ROADMAP.md](../ROADMAP.md).

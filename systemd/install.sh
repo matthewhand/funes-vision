@@ -90,9 +90,15 @@ render() {
     "$1" > "$2"
 }
 
-for unit in webcam-pipeline@.service webcam-api.service ollama.service webcam-compose.service; do
+for unit in webcam-pipeline@.service webcam-api.service ollama.service \
+            webcam-compose.service webcam-healthcheck.service \
+            webcam-healthcheck.timer; do
   render "$SCRIPT_DIR/$unit" "$SYSTEMD_DIR/$unit"
 done
+# webcam-healthcheck.service runs /usr/local/bin/webcam-healthcheck.sh, so the
+# script has to actually be there. Without this the timer fires a unit whose
+# ExecStart does not exist and the gallery guard is silently dead.
+install -m 755 "$REPO_DIR/tools/webcam-healthcheck.sh" /usr/local/bin/webcam-healthcheck.sh
 systemctl daemon-reload
 
 # Stop any ad-hoc watchers so systemd owns the processes.
@@ -108,7 +114,8 @@ pipeline_units=()
 for cam in $WEBCAM_CAMERAS; do
   pipeline_units+=("webcam-pipeline@${cam}")
 done
-systemctl enable --now "${pipeline_units[@]}" webcam-api ollama
+systemctl enable --now "${pipeline_units[@]}" webcam-api ollama \
+  webcam-compose webcam-healthcheck.timer
 
 # The @reboot create-index cron entries are superseded by systemd; drop only
 # those lines from the configured user's crontab. The system cron.d file below

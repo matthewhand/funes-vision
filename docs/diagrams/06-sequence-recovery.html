@@ -82,13 +82,13 @@
     <div class="header">
       <p class="header-eyebrow">SEQUENCE · funes-vision</p>
       <h1>Failure, retry &amp; recovery</h1>
-      <p class="subtitle">The watchdog polls <code>/api/health</code>, then either restarts a stuck unit and forces a retention-only pass, or leaves a healthy pipeline alone.</p>
+      <p class="subtitle">The watchdog polls <code>/api/health</code>, then either restarts a stuck unit and forces a retention-only pass, or leaves a healthy pipeline alone. A second, independent 60&nbsp;s timer guards the gallery container instead.</p>
     </div>
 
     <div class="diagram-container">
-      <svg viewBox="0 0 1096 820" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="seq-recovery-title seq-recovery-desc">
+      <svg viewBox="0 0 1284 820" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="seq-recovery-title seq-recovery-desc">
         <title id="seq-recovery-title">Failure, retry and recovery sequence</title>
-        <desc id="seq-recovery-desc">Sequence where the watchdog checks /api/health, then either restarts a dead unit, forces a retention-only sweep and repairs a truncated catalog on detection, or takes no action on a healthy pipeline while a 60s timer keeps polling health.</desc>
+        <desc id="seq-recovery-desc">Sequence where the watchdog checks /api/health, then either restarts a dead unit, forces a retention-only sweep and repairs a truncated catalog on detection, or takes no action on a healthy pipeline while a separate 60s timer probes the gallery container with docker ps and curl rather than /api/health.</desc>
         <defs>
           <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
             <polygon points="0 0, 8 3, 0 6" fill="#94a3b8"/>
@@ -116,6 +116,7 @@
           <line x1="548" y1="76" x2="548" y2="736"/>
           <line x1="760" y1="76" x2="760" y2="736"/>
           <line x1="972" y1="76" x2="972" y2="736"/>
+          <line x1="1184" y1="76" x2="1184" y2="736"/>
         </g>
 
         <!-- alt fragment: detected vs healthy -->
@@ -133,7 +134,8 @@
         <rect x="544" y="324" width="8" height="108" fill="rgba(248,250,252,0.06)" stroke="#94a3b8" stroke-width="0.8"/>
         <rect x="756" y="388" width="8" height="44" fill="rgba(248,250,252,0.06)" stroke="#94a3b8" stroke-width="0.8"/>
         <rect x="968" y="180" width="8" height="40" fill="rgba(248,250,252,0.06)" stroke="#94a3b8" stroke-width="0.8"/>
-        <rect x="968" y="644" width="8" height="40" fill="rgba(248,250,252,0.06)" stroke="#94a3b8" stroke-width="0.8"/>
+        <rect x="332" y="588" width="8" height="96" fill="rgba(248,250,252,0.06)" stroke="#94a3b8" stroke-width="0.8"/>
+        <rect x="1180" y="644" width="8" height="40" fill="rgba(248,250,252,0.06)" stroke="#94a3b8" stroke-width="0.8"/>
 
         <!-- Messages -->
         <path d="M124 116 H176 V148 H124" fill="none" stroke="#94a3b8" stroke-width="1" marker-end="url(#arrow-open)"/>
@@ -146,8 +148,8 @@
         <line x1="760" y1="424" x2="548" y2="424" stroke="#94a3b8" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
         <path d="M124 504 H176 V536 H124" fill="none" stroke="#94a3b8" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#arrow-open)"/>
         <path d="M336 592 H388 V624 H336" fill="none" stroke="#94a3b8" stroke-width="1" marker-end="url(#arrow)"/>
-        <line x1="336" y1="648" x2="968" y2="648" stroke="#60a5fa" stroke-width="1" marker-end="url(#arrow-link)"/>
-        <line x1="972" y1="680" x2="336" y2="680" stroke="#94a3b8" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+        <line x1="336" y1="648" x2="1184" y2="648" stroke="#60a5fa" stroke-width="1" marker-end="url(#arrow-link)"/>
+        <line x1="1184" y1="680" x2="336" y2="680" stroke="#94a3b8" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
 
         <!-- Arrow labels -->
         <rect x="184" y="124" width="62" height="12" rx="2" fill="#080c14"/>
@@ -170,10 +172,10 @@
         <text x="188" y="521" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.06em">no action · throttle</text>
         <rect x="396" y="600" width="120" height="12" rx="2" fill="#080c14"/>
         <text x="400" y="609" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.06em">healthcheck.timer 60s</text>
-        <rect x="610" y="628" width="88" height="12" rx="2" fill="#080c14"/>
-        <text x="654" y="637" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">GET /api/health</text>
-        <rect x="614" y="660" width="80" height="12" rx="2" fill="#080c14"/>
-        <text x="654" y="669" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">ok | degraded</text>
+        <rect x="707" y="628" width="106" height="12" rx="2" fill="#080c14"/>
+        <text x="760" y="637" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">docker ps · curl :8180</text>
+        <rect x="707" y="660" width="106" height="12" rx="2" fill="#080c14"/>
+        <text x="760" y="669" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">up · or compose up -d</text>
 
         <!-- Actors -->
         <rect x="40" y="24" width="168" height="52" rx="6" fill="#080c14"/>
@@ -211,8 +213,15 @@
         <text x="972" y="50" fill="#f8fafc" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">api_server.py</text>
         <text x="972" y="66" fill="#64748b" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">/api/health · 4 checks</text>
 
+        <rect x="1100" y="24" width="168" height="52" rx="6" fill="#080c14"/>
+        <rect x="1100" y="24" width="168" height="52" rx="6" fill="#0f172a" stroke="#94a3b8" stroke-width="1"/>
+        <rect x="1108" y="30" width="28" height="12" rx="2" fill="transparent" stroke="rgba(148,163,184,0.40)" stroke-width="0.8"/>
+        <text x="1122" y="39" fill="#94a3b8" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">SH</text>
+        <text x="1184" y="50" fill="#f8fafc" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">webcam-healthcheck.sh</text>
+        <text x="1184" y="66" fill="#64748b" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">gallery container</text>
+
         <!-- Legend -->
-        <line x1="32" y1="764" x2="1064" y2="764" stroke="rgba(248,250,252,0.10)" stroke-width="0.8"/>
+        <line x1="32" y1="764" x2="1252" y2="764" stroke="rgba(248,250,252,0.10)" stroke-width="0.8"/>
         <text x="32" y="784" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">LEGEND</text>
         <line x1="124" y1="780" x2="152" y2="780" stroke="#94a3b8" stroke-width="1"/>
         <text x="160" y="783" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.06em">CALL</text>
@@ -246,14 +255,14 @@
         <div class="card-header"><span class="card-dot link"></span><h3>Independent health probe</h3></div>
         <ul>
           <li><code>webcam-healthcheck.timer</code> fires every 60s</li>
-          <li><code>/api/health</code> returns ok or 503 degraded</li>
+          <li>It probes the <strong>gallery container</strong> — <code>docker ps</code> then <code>curl :8180</code> — and does <em>not</em> call <code>/api/health</code></li>
         </ul>
       </div>
     </div>
 
     <div class="footer">
       <span>funes-vision · docs/diagrams</span>
-      <span>Source: tools/watchdog.sh:54,66,108,207,274 · analyze_images.py:873,1941 · systemd/webcam-api.service · systemd/webcam-pipeline@.service · systemd/webcam-healthcheck.timer · api_server.py:646-656,810-812 · Assumption: the healthcheck timer probes /api/health as stated in project facts.</span>
+      <span>Source: tools/watchdog.sh:83-85,231,237 · tools/webcam-healthcheck.sh:17,56,71,76,80-88 · analyze_images.py:873,1941 · systemd/webcam-api.service · systemd/webcam-pipeline@.service · systemd/webcam-healthcheck.timer:13 (OnUnitActiveSec=60s) · api_server.py:646-656,810-812 · No assumption: the earlier claim that the healthcheck timer probes /api/health was wrong and has been redrawn.</span>
     </div>
   </div>
 </body>

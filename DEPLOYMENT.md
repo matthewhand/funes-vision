@@ -13,7 +13,8 @@ Hikvision cameras upload motion snapshots via FTP (as user `hikvision`)
 into `/mnt/models/Webcam21` (webcam) and `/mnt/models/Webcam22` (dogcam).
 
 **Triggering: inotify is recommended over polling.** `create-index.sh`
-uses `inotifywait -m -e create` for instant reaction to new uploads,
+uses `inotifywait -m -e close_write,moved_to` for instant reaction to new
+uploads,
 plus a 60s idle loop that drains the backfill queue and acts as a
 fallback if inotify misses events. On platforms without inotify
 (network mounts, macOS), the idle loop alone degrades gracefully to
@@ -35,10 +36,25 @@ Installed by `sudo bash systemd/install.sh`:
 | `webcam-pipeline@Webcam21/22` | create-index.sh watcher per camera |
 | `webcam-api` | write API on :8190 |
 | `ollama` | local LLM server |
+| `webcam-compose` | owns the `gallery` container lifetime (`compose up -d gallery` + `docker wait`), `Restart=always` |
+| `webcam-healthcheck.timer` | fires `webcam-healthcheck.service` every 60s |
+| `webcam-healthcheck.service` | one-shot `tools/webcam-healthcheck.sh`; restarts `gallery` if the container is down |
+
+`install.sh` renders and enables all six. The gallery container's own unit
+(`webcam-compose`) plus the 60s healthcheck timer are the two halves of the
+"gallery is up" guarantee: the unit keeps the container alive, the timer catches
+the case where the unit is alive but the container it is waiting on is dead.
+The healthcheck probes **docker + the gallery at `:8180`**, not `/api/health` —
+`curl` and `docker ps` are its tools. It also cross-checks nginx alias roots
+against the compose bind mounts and prints a loud `CONFIG DRIFT` banner on
+mismatch. Because the unit runs `/usr/local/bin/webcam-healthcheck.sh`,
+`install.sh` copies `tools/webcam-healthcheck.sh` there.
 
 All run as the configured service user (**`WEBCAM_USER`**, no default baked
 in) — cv2/OpenCV must be importable by that user, otherwise as root the
-pipeline dies with `ModuleNotFoundError: cv2`.
+pipeline dies with `ModuleNotFoundError: cv2`. `webcam-compose` and
+`webcam-healthcheck.service` are the exceptions: they drive `docker` and
+deliberately have no `User=`.
 
 ### Host configuration (`/etc/webcam/webcam.env`)
 

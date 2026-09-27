@@ -82,13 +82,13 @@
     <div class="header">
       <p class="header-eyebrow">SEQUENCE · funes-vision</p>
       <h1>Live request &amp; SSE subscription</h1>
-      <p class="subtitle">The SPA crosses the nginx <code>auth_basic</code> boundary to the loopback API, then subscribes to <code>/api/events</code> — which streams catalog changes until the client cap returns a 503.</p>
+      <p class="subtitle">The SPA crosses the nginx <code>auth_basic</code> boundary to the loopback API, then subscribes to <code>/api/events</code> — which tails the pipeline's <code>events.jsonl</code> until the client cap returns a 503.</p>
     </div>
 
     <div class="diagram-container">
       <svg viewBox="0 0 1040 752" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="seq-sse-title seq-sse-desc">
         <title id="seq-sse-title">Live request and SSE subscription sequence</title>
-        <desc id="seq-sse-desc">Sequence where the gallery SPA passes nginx auth_basic to the loopback api_server, reads a catalog, then subscribes to /api/events and receives an image.new event, or a 503 when the SSE client cap is reached.</desc>
+        <desc id="seq-sse-desc">Sequence where the gallery SPA passes nginx auth_basic to the loopback api_server, reads a catalog, then subscribes to /api/events, which tails the pipeline's events.jsonl and emits an image.new event, or a 503 when the SSE client cap is reached.</desc>
         <defs>
           <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
             <polygon points="0 0, 8 3, 0 6" fill="#94a3b8"/>
@@ -172,9 +172,9 @@
         <rect x="346" y="380" width="92" height="12" rx="2" fill="#080c14"/>
         <text x="392" y="389" fill="#3b82f6" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">200 event-stream</text>
         <rect x="746" y="412" width="72" height="12" rx="2" fill="#080c14"/>
-        <text x="782" y="421" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">POLL MTIMES</text>
+        <text x="782" y="421" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">TAIL events.jsonl</text>
         <rect x="751" y="444" width="62" height="12" rx="2" fill="#080c14"/>
-        <text x="782" y="453" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">CHANGED</text>
+        <text x="782" y="453" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">NEW LINE</text>
         <rect x="361" y="476" width="62" height="12" rx="2" fill="#080c14"/>
         <text x="392" y="485" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">image.new</text>
         <rect x="366" y="552" width="52" height="12" rx="2" fill="#080c14"/>
@@ -236,8 +236,8 @@
       <div class="card">
         <div class="card-header"><span class="card-dot link"></span><h3>SSE stream</h3></div>
         <ul>
-          <li><code>/api/events</code> polls catalog mtimes and re-reads on change</li>
-          <li>Emits image.new, new-detection, detection.preliminary, new-burst</li>
+          <li><code>/api/events</code> tails the pipeline's <code>events.jsonl</code> by byte offset; catalog mtimes are the fallback</li>
+          <li>Emits image.new, new-detection, detection.preliminary, new-burst, plus a 15&nbsp;s <code>ping</code> and an idle <code>close</code></li>
         </ul>
       </div>
       <div class="card">

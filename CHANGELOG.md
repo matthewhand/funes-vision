@@ -7,10 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **SSE transport.** `/api/events` now tails the pipeline's append-only
+  `events.jsonl` (`pipeline_events.py`) as the **primary** bus, so
+  `image.new` / `detection.preliminary` / `new-detection` / `new-burst` are a
+  real pipeline→API push instead of a 3 s catalog-mtime diff. `analysis.json` /
+  `bursts.json` mtime diffing remains as a fallback for catalogs written by a
+  pipeline that does not emit.
+- **SSE heartbeat.** `event: ping` is now every 15 s
+  (`WEBCAM_SSE_HEARTBEAT_S`), not every poll cycle.
+- **SSE idle close.** A stream with no event traffic for
+  `WEBCAM_SSE_IDLE_TIMEOUT_S` (default 600 s) is reaped with a new
+  `event: close` (`{"reason": "idle_timeout"}`) and the socket ends.
+- **SSE client cap.** Concurrent `/api/events` streams are bounded by
+  `WEBCAM_SSE_MAX_CLIENTS` (default 8); past the cap a new connection gets
+  **503** instead of another thread.
+- **Ingest event.** The watcher reacts to `close_write,moved_to`, not `create`,
+  so a half-uploaded JPEG no longer triggers a sweep.
+- `systemd/install.sh` now renders and enables `webcam-compose.service` and the
+  `webcam-healthcheck.{service,timer}` pair it already shipped, and installs
+  `tools/webcam-healthcheck.sh` to `/usr/local/bin` where the unit expects it.
+
+### Security
+
+- **CORS is an origin allowlist.** The old `Access-Control-Allow-Origin: *` is
+  gone. `Access-Control-Allow-Origin` is only sent for an allowlisted `Origin`,
+  and a literal `*` in the env var is dropped.
+  **Migration:** if you have more than one gallery origin, list them —
+  `WEBCAM_CORS_ORIGIN="https://cam.example.com,https://cam.lan"`. Leaving it
+  unset keeps the localhost-only default
+  (`http://localhost:8180,http://127.0.0.1:8180`); a browser on any other origin
+  will now get no CORS grant until you add it.
+- **The write API binds loopback by default.** `WEBCAM_API_HOST` defaults to
+  `127.0.0.1`; set it to `0.0.0.0` only behind a proxy that authenticates.
+- **Documented token auth.** `WEBCAM_API_TOKEN` (or the `api_token` key in
+  `settings.json`) gates every `POST` via `Authorization: Bearer <token>` or
+  HTTP Basic; unset preserves the previous no-auth behaviour.
+- **`cameras[]` registry.** Watch dirs are declared as camera objects
+  (`id`/`label`/`kind`/`dir`) so ignore-regions and the HA schema survive a
+  folder rename.
+- **`MQTT_TOPIC_PREFIX`** joins `mqtt_topic_prefix` in `settings.json`
+  (default `funes_vision`) as an env override.
+- **Default branch renamed `master` → `main`.** Security fixes go to `main`.
+
 ### Planned
 
-- Per-image LLM token streaming ("AI is looking at this…") and a true
-  pipeline→API push, replacing today's 3 s file-mtime SSE bridge.
+- Per-image LLM token streaming ("AI is looking at this…") and incremental DOM
+  patching on top of the finished `events.jsonl` push.
 - Formal OpenAPI specification for the REST endpoints and SSE event schema.
 
 See [ROADMAP.md](ROADMAP.md) for the full list.

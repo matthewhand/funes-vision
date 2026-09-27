@@ -16,7 +16,7 @@ the box. `allow_cloud` is off by default.
 ```
  Cameras ──(motion JPEGs)──▶ /mnt/models/Webcam2{1,2}
                                   │
-            inotifywait -m -e create  (create-index.sh @ systemd)
+            inotifywait -m -e close_write,moved_to  (create-index.sh @ systemd)
                                   │  new file / idle loop
                                   ▼
                        analyze_images.py  (global flock)
@@ -141,7 +141,7 @@ model still in use. Parked-car gating and idle Gemma backfill date from here.
 ### Era 5 — Timeline, observability, live updates, integrations
 
 The presentation shifted from a grid of frames to a **Timeline of visits**
-(contiguous presence runs, Gemma captions, flipbook playback), made the default
+(contiguous presence runs, HA-flag inference, flipbook playback), made the default
 view. An **inference audit trail** and live pipeline status were added for
 observability. **SSE** (`/api/events`) began pushing
 image.new / new-detection / detection.preliminary / new-burst events to the open gallery,
