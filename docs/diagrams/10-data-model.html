@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Data model · funes-vision</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --color-paper: #080c14; --color-paper-2: #0f172a; --color-ink: #f8fafc;
+      --color-muted: #94a3b8; --color-soft: #64748b; --color-rule: rgba(248,250,252,0.12);
+      --color-rule-solid: rgba(148,163,184,0.30); --color-accent: #3b82f6;
+      --color-accent-tint: rgba(59,130,246,0.12); --color-link: #60a5fa;
+      --font-sans: 'Geist', system-ui, sans-serif; --font-serif: 'Instrument Serif', serif;
+      --font-mono: 'Geist Mono', ui-monospace, Menlo, monospace;
+    }
+    body { font-family: var(--font-sans); background: var(--color-paper); color: var(--color-ink); min-height: 100vh; padding: 3rem 2rem; }
+    .container { max-width: 1200px; margin: 0 auto; }
+    .header { margin-bottom: 2.5rem; }
+    .header-eyebrow { font-family: var(--font-mono); font-size: 0.66rem; font-weight: 500; letter-spacing: 0.18em; text-transform: uppercase; color: var(--color-muted); margin-bottom: 0.75rem; }
+    h1 { font-family: var(--font-serif); font-size: clamp(1.75rem, 3vw + 1rem, 2.5rem); font-weight: 400; letter-spacing: -0.02em; line-height: 1.1; color: var(--color-ink); margin-bottom: 0.5rem; }
+    .subtitle { font-size: 1rem; line-height: 1.55; color: var(--color-muted); max-width: 62ch; }
+    .diagram-container { background: transparent; border: none; padding: 0; overflow-x: auto; }
+    svg { width: 100%; min-width: 900px; display: block; }
+    .cards { display: grid; grid-template-columns: 1.1fr 1fr 0.9fr; gap: 1rem; margin-top: 1.5rem; }
+    @media (max-width: 900px) { .cards { grid-template-columns: 1fr; } }
+    .card { background: var(--color-paper-2); border: 1px solid var(--color-rule); border-radius: 6px; padding: 1.25rem; }
+    .card-header { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.875rem; padding-bottom: 0.875rem; border-bottom: 1px solid var(--color-rule); }
+    .card-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .card-dot.ink { background: var(--color-ink); } .card-dot.muted { background: var(--color-muted); }
+    .card-dot.coral { background: var(--color-accent); } .card-dot.link { background: var(--color-link); } .card-dot.soft { background: var(--color-soft); }
+    .card h3 { font-size: 0.875rem; font-weight: 600; color: var(--color-ink); }
+    .card ul { list-style: none; color: var(--color-muted); font-size: 0.8125rem; line-height: 1.55; }
+    .card li { margin-bottom: 0.3rem; padding-left: 0.875rem; position: relative; }
+    .card li::before { content: '—'; position: absolute; left: 0; color: var(--color-soft); font-size: 0.75rem; }
+    .footer { margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid var(--color-rule); font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.05em; color: var(--color-soft); display: flex; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <p class="header-eyebrow">Data model · ER · funes-vision</p>
+      <h1>Catalog data model</h1>
+      <p class="subtitle">The gallery state is a set of JSON catalogs on disk, not a database. <code>images</code> is the hub; the other collections reference it by filename.</p>
+    </div>
+
+    <div class="diagram-container">
+      <svg viewBox="0 0 1000 760" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="10-data-model-title 10-data-model-desc">
+        <title id="10-data-model-title">Catalog data model</title>
+        <desc id="10-data-model-desc">Entity relationship view of funes-vision's JSON catalogs: images is referenced by analysis, pins, bursts and inference_log by filename, while retention_log, config and taxonomy stand alongside without a direct image foreign key.</desc>
+        <defs>
+          <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#94a3b8"/></marker>
+          <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#3b82f6"/></marker>
+        </defs>
+
+        <rect width="100%" height="100%" fill="#080c14"/>
+
+        <!-- Arrows from the hub (drawn first) -->
+        <path d="M560,316 H584 Q592,316 592,308 V148 Q592,140 600,140 H680" fill="none" stroke="#94a3b8" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <rect x="600" y="216" width="36" height="12" rx="2" fill="#080c14"/>
+        <text x="618" y="225" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">1:1</text>
+
+        <path d="M560,352 H608 Q616,352 616,344 V284 Q616,276 624,276 H680" fill="none" stroke="#94a3b8" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <rect x="624" y="306" width="36" height="12" rx="2" fill="#080c14"/>
+        <text x="642" y="315" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">1:1</text>
+
+        <path d="M560,388 H632 Q640,388 640,396 V413 Q640,421 648,421 H680" fill="none" stroke="#94a3b8" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <rect x="648" y="396" width="36" height="12" rx="2" fill="#080c14"/>
+        <text x="666" y="405" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">M:N</text>
+
+        <path d="M560,424 H656 Q664,424 664,432 V572 Q664,580 672,580 H680" fill="none" stroke="#94a3b8" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <rect x="612" y="504" width="36" height="12" rx="2" fill="#080c14"/>
+        <text x="630" y="513" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">1:N</text>
+
+        <!-- config -->
+        <rect x="80" y="80" width="200" height="104" rx="6" fill="#0f172a" stroke="#94a3b8" stroke-width="1"/>
+        <text x="92" y="97" fill="#f8fafc" font-size="12" font-weight="600" font-family="'Geist', sans-serif">config</text>
+        <text x="92" y="110" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace">settings.json · integrations.json</text>
+        <line x1="81" y1="118" x2="279" y2="118" stroke="rgba(148,163,184,0.30)" stroke-width="0.8"/>
+        <text x="92" y="134" fill="#f8fafc" font-size="10" font-family="'Geist', sans-serif">key</text>
+        <text x="268" y="134" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace" text-anchor="end">PK</text>
+        <text x="92" y="152" fill="#f8fafc" font-size="10" font-family="'Geist', sans-serif">value</text>
+        <text x="268" y="152" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace" text-anchor="end">string</text>
+        <text x="92" y="170" fill="#f8fafc" font-size="10" font-family="'Geist', sans-serif">secret</text>
+        <text x="268" y="170" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace" text-anchor="end">bool</text>
+
+        <!-- retention_log -->
+        <rect x="80" y="304" width="200" height="120" rx="6" fill="#0f172a" stroke="#94a3b8" stroke-width="1"/>
+        <text x="92" y="321" fill="#f8fafc" font-size="12" font-weight="600" font-family="'Geist', sans-serif">retention_log</text>
+        <text x="92" y="334" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace">retention_log.json</text>
+        <line x1="81" y1="342" x2="279" y2="342" stroke="rgba(148,163,184,0.30)" stroke-width="0.8"/>
+        <text x="92" y="358" fill="#f8fafc" font-size="10" font-family="'Geist', sans-serif">id</text>
+        <text x="268" y="358" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace" text-anchor="end">PK</text>
+        <text x="92" y="376" fill="#f8fafc" font-size="10" font-family="'Geist', sans-serif">ran_at</text>
+        <text x="268" y="376" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace" text-anchor="end">timestamp</text>
+        <text x="92" y="394" fill="#f8fafc" font-size="10" font-family="'Geist', sans-serif">camera</text>
+        <text x="268" y="394" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace" text-anchor="end">string</text>
+        <text x="92" y="412" fill="#f8fafc" font-size="10" font-family="'Geist', sans-serif">removed</text>
+        <text x="268" y="412" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace" text-anchor="end">int</text>
+
+        <!-- taxonomy -->
+        <rect x="80" y="520" width="200" height="104" rx="6" fill="#0f172a" stroke="#94a3b8" stroke-width="1"/>
+        <text x="92" y="537" fill="#f8fafc" font-size="12" font-weight="600" font-family="'Geist', sans-serif">taxonomy</text>
+        <text x="92" y="550" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace">taxonomy.py · /api/taxonomy</text>
+        <line x1="81" y1="558" x2="279" y2="558" stroke="rgba(148,163,184,0.30)" stroke-width="0.8"/>
+        <text x="92" y="574" fill="#f8fafc" font-size="10" font-family="'Geist', sans-serif">flag_key</text>
+        <text x="268" y="574" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace" text-anchor="end">PK</text>
+        <text x="92" y="592" fill="#f8fafc" font-size="10" font-family="'Geist', sans-serif">kind</text>
+        <text x="268" y="592" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace" text-anchor="end">string</text>
+        <text x="92" y="610" fill="#f8fafc" font-size="10" font-family="'Geist', sans-serif">parent</text>
+        <text x="268" y="610" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace" text-anchor="end">string</text>
+
+        <!-- images (hub, focal) -->
+        <rect x="360" y="300" width="200" height="138" rx="6" fill="#080c14"/>
+        <rect x="360" y="300" width="200" height="138" rx="6" fill="rgba(59,130,246,0.12)" stroke="#3b82f6" stroke-width="1.2"/>
+        <text x="372" y="318" fill="#f8fafc" font-size="12" font-weight="600" font-family="'Geist', sans-serif">images</text>
+        <text x="372" y="331" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace">images.json</text>
+        <line x1="361" y1="339" x2="559" y2="339" stroke="rgba(59,130,246,0.40)" stroke-width="0.8"/>
+        <text x="372" y="355" fill="#f8fafc" font-size="10" font-family="'Geist', sans-serif">name</text>
+        <text x="548" y="355" fill="#60a5fa" font-size="8" font-family="'Geist Mono', monospace" text-anchor="end">PK</text>
+        <text x="372" y="373" fill="#f8fafc" font-size="10" font-family="'Geist', sans-serif">camera</text>
+        <text x="548" y="373" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace" text-anchor="end">string</text>
+        <text x="372" y="391" fill="#f8fafc" font-size="10" font-family="'Geist', sans-serif">captured_at</text>
+        <text x="548" y="391" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace" text-anchor="end">timestamp</text>
+        <text x="372" y="409" fill="#f8fafc" font-size="10" font-family="'Geist', sans-serif">labels</text>
+        <text x="548" y="409" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace" text-anchor="end">string[]</text>
+        <text x="372" y="427" fill="#f8fafc" font-size="10" font-family="'Geist', sans-serif">pinned</text>
+        <text x="548" y="427" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace" text-anchor="end">bool</text>
+
+        <!-- analysis -->
+        <rect x="680" y="80" width="200" height="120" rx="6" fill="#0f172a" stroke="#94a3b8" stroke-width="1"/>
+        <text x="692" y="97" fill="#f8fafc" font-size="12" font-weight="600" font-family="'Geist', sans-serif">analysis</text>
+        <text x="692" y="110" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace">analysis.json</text>
+        <line x1="681" y1="118" x2="879" y2="118" stroke="rgba(148,163,184,0.30)" stroke-width="0.8"/>
+        <text x="692" y="134" fill="#f8fafc" font-size="10" font-family="'Geist', sans-serif">name</text>
+        <text x="868" y="134" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace" text-anchor="end">FK</text>
+        <text x="692" y="152" fill="#f8fafc" font-size="10" font-family="'Geist', sans-serif">objects</text>
+        <text x="868" y="152" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace" text-anchor="end">string[]</text>
+        <text x="692" y="170" fill="#f8fafc" font-size="10" font-family="'Geist', sans-serif">_llm</text>
+        <text x="868" y="170" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace" text-anchor="end">object</text>
+        <text x="692" y="188" fill="#f8fafc" font-size="10" font-family="'Geist', sans-serif">description</text>
+        <text x="868" y="188" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace" text-anchor="end">string</text>
+
+        <!-- pins -->
+        <rect x="680" y="232" width="200" height="88" rx="6" fill="#0f172a" stroke="#94a3b8" stroke-width="1"/>
+        <text x="692" y="249" fill="#f8fafc" font-size="12" font-weight="600" font-family="'Geist', sans-serif">pins</text>
+        <text x="692" y="262" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace">pins.json · never auto-deleted</text>
+        <line x1="681" y1="270" x2="879" y2="270" stroke="rgba(148,163,184,0.30)" stroke-width="0.8"/>
+        <text x="692" y="286" fill="#f8fafc" font-size="10" font-family="'Geist', sans-serif">name</text>
+        <text x="868" y="286" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace" text-anchor="end">FK</text>
+        <text x="692" y="304" fill="#f8fafc" font-size="10" font-family="'Geist', sans-serif">pinned_at</text>
+        <text x="868" y="304" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace" text-anchor="end">timestamp</text>
+
+        <!-- bursts -->
+        <rect x="680" y="352" width="200" height="138" rx="6" fill="#0f172a" stroke="#94a3b8" stroke-width="1"/>
+        <text x="692" y="369" fill="#f8fafc" font-size="12" font-weight="600" font-family="'Geist', sans-serif">bursts</text>
+        <text x="692" y="382" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace">bursts.json · visits</text>
+        <line x1="681" y1="390" x2="879" y2="390" stroke="rgba(148,163,184,0.30)" stroke-width="0.8"/>
+        <text x="692" y="406" fill="#f8fafc" font-size="10" font-family="'Geist', sans-serif">id</text>
+        <text x="868" y="406" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace" text-anchor="end">PK</text>
+        <text x="692" y="424" fill="#f8fafc" font-size="10" font-family="'Geist', sans-serif">camera</text>
+        <text x="868" y="424" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace" text-anchor="end">string</text>
+        <text x="692" y="442" fill="#f8fafc" font-size="10" font-family="'Geist', sans-serif">start</text>
+        <text x="868" y="442" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace" text-anchor="end">timestamp</text>
+        <text x="692" y="460" fill="#f8fafc" font-size="10" font-family="'Geist', sans-serif">end</text>
+        <text x="868" y="460" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace" text-anchor="end">timestamp</text>
+        <text x="692" y="478" fill="#f8fafc" font-size="10" font-family="'Geist', sans-serif">frames</text>
+        <text x="868" y="478" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace" text-anchor="end">FK[]</text>
+
+        <!-- inference_log -->
+        <rect x="680" y="520" width="200" height="120" rx="6" fill="#0f172a" stroke="#94a3b8" stroke-width="1"/>
+        <text x="692" y="537" fill="#f8fafc" font-size="12" font-weight="600" font-family="'Geist', sans-serif">inference_log</text>
+        <text x="692" y="550" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace">inference_log.json</text>
+        <line x1="681" y1="558" x2="879" y2="558" stroke="rgba(148,163,184,0.30)" stroke-width="0.8"/>
+        <text x="692" y="574" fill="#f8fafc" font-size="10" font-family="'Geist', sans-serif">id</text>
+        <text x="868" y="574" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace" text-anchor="end">PK</text>
+        <text x="692" y="592" fill="#f8fafc" font-size="10" font-family="'Geist', sans-serif">image</text>
+        <text x="868" y="592" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace" text-anchor="end">FK</text>
+        <text x="692" y="610" fill="#f8fafc" font-size="10" font-family="'Geist', sans-serif">model</text>
+        <text x="868" y="610" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace" text-anchor="end">string</text>
+        <text x="692" y="628" fill="#f8fafc" font-size="10" font-family="'Geist', sans-serif">status</text>
+        <text x="868" y="628" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace" text-anchor="end">string</text>
+
+        <!-- Annotations (editorial asides) -->
+        <text x="80" y="212" fill="#94a3b8" font-size="14" font-family="'Instrument Serif', serif" font-style="italic">Secrets are gitignored and</text>
+        <text x="80" y="232" fill="#94a3b8" font-size="14" font-family="'Instrument Serif', serif" font-style="italic">never returned by the API.</text>
+        <text x="80" y="452" fill="#94a3b8" font-size="14" font-family="'Instrument Serif', serif" font-style="italic">No image FK: retention acts</text>
+        <text x="80" y="472" fill="#94a3b8" font-size="14" font-family="'Instrument Serif', serif" font-style="italic">on camera dirs and pins.</text>
+
+        <!-- Legend strip -->
+        <line x1="40" y1="692" x2="960" y2="692" stroke="rgba(248,250,252,0.10)" stroke-width="0.8"/>
+        <text x="40" y="712" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">LEGEND</text>
+        <rect x="120" y="703" width="16" height="10" rx="2" fill="rgba(59,130,246,0.12)" stroke="#3b82f6" stroke-width="1.2"/>
+        <text x="144" y="712" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace">Hub (focal)</text>
+        <rect x="252" y="703" width="16" height="10" rx="2" fill="#0f172a" stroke="#94a3b8" stroke-width="1"/>
+        <text x="276" y="712" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace">JSON catalog</text>
+        <text x="400" y="712" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace">PK / FK = key</text>
+        <text x="540" y="712" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace">1:1 / 1:N / M:N = cardinality</text>
+        <line x1="760" y1="708" x2="800" y2="708" stroke="#94a3b8" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <text x="808" y="712" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace">references</text>
+      </svg>
+    </div>
+
+    <div class="cards">
+      <div class="card">
+        <div class="card-header"><span class="card-dot coral"></span><h3>Filename is the key</h3></div>
+        <ul>
+          <li>Every catalog is joined by the still's filename, not a surrogate id</li>
+          <li>analysis and pins are 1:1 with an image; bursts and inference_log are 1:N</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-dot muted"></span><h3>Recoverable writes</h3></div>
+        <ul>
+          <li>Catalogs are written atomically and recover from truncated JSON</li>
+          <li>pins.json is the retention exclusion list</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-dot link"></span><h3>Canonical taxonomy</h3></div>
+        <ul>
+          <li>taxonomy.py is the single source of truth for HA flags and timezone</li>
+          <li>Exposed to the SPA at GET /api/taxonomy</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="footer">
+      <span>funes-vision · docs/diagrams</span>
+      <span>Source: catalog.py, analyze_images.py (apply_retention, catalog writes), taxonomy.py, api_server.py:820, settings.example.json · Assumption: field lists show key fields only, not full schemas</span>
+    </div>
+  </div>
+</body>
+</html>

@@ -19,6 +19,22 @@ skill (profile `funes-vision`, dark-only). Read this before editing or adding a 
 | `link` | `#60a5fa` | HTTP/API/external arrows |
 | `success` / `warning` / `danger` | `#10b981` / `#f59e0b` / `#ef4444` | state only, never a second focal hue |
 
+Node treatments (fill / stroke):
+
+| Kind | Fill | Stroke |
+|------|------|--------|
+| Focal (1–2 max) | `rgba(59,130,246,0.12)` | `#3b82f6` 1.2 |
+| Service / step | `#0f172a` | `#f8fafc` 1 |
+| Store / state | `rgba(248,250,252,0.05)` | `#94a3b8` 1 |
+| External | `rgba(248,250,252,0.03)` | `rgba(248,250,252,0.30)` 1 |
+| Input / user | `rgba(148,163,184,0.10)` | `#64748b` 1 |
+| Optional / async | `rgba(248,250,252,0.02)` | `rgba(248,250,252,0.20)` dashed `4,3` |
+| Security boundary | `rgba(59,130,246,0.05)` | `rgba(59,130,246,0.50)` dashed `4,4` |
+
+Zone fill `rgba(248,250,252,0.02)`, stroke `rgba(248,250,252,0.10)`; zone label mask
+`#080c14`, label text `rgba(248,250,252,0.40)`. Type tags: `rx=2`, stroke at 0.40,
+Geist Mono 7px.
+
 Typography: page title `Instrument Serif`; node names `Geist` 12px/600; technical
 sublabels, ports, URLs, arrow labels `Geist Mono` (9px / 8px). Never JetBrains Mono.
 Mask fills must always be `#080c14` (opaque over the dark page).
