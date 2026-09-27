@@ -420,46 +420,73 @@ def _pins_path(camera_id):
     return os.path.join(d, "pins.json")
 
 
-def load_pins(camera_id=None):
+def _pins_from_file(path):
+    """The pin set in one pins.json, or an empty set if it is missing/corrupt."""
+    if not os.path.exists(path):
+        return set()
+    try:
+        with open(path) as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return set()
+    # A list of filenames, like analyze_images.retention_pins() reads it, so
+    # the API and retention agree on what counts as a pin.
+    return set(data) if isinstance(data, list) else set()
+
+
+def load_pins(camera_id=None, include_legacy=True):
     """Pins for one camera, or the union of every camera's pins.
 
     `camera_id=None` (the default, and what `/api/pins` with no `?camera=`
     sends) returns every camera's pins merged — the old single-file behaviour
     for callers that don't care which camera. An explicit id returns only
     that camera's pins, which is what the per-camera UI needs.
+
+    `include_legacy` also folds in the pre-camera-scoping repo-root
+    PINS_FILE. It defaults on for *reads* so an upgraded install still shows
+    its old pins, and callers that go on to *write* pass False: the legacy
+    file is shared by every camera, so persisting that union into one
+    camera's pins.json is exactly the cross-camera leak that file caused.
     """
+    out = set()
     if camera_id is None:
-        out = set()
         for c in cameras():
-            p = _pins_path(c["id"])
-            if os.path.exists(p):
-                try:
-                    with open(p) as f:
-                        out.update(json.load(f))
-                except (OSError, ValueError):
-                    pass
-        if not out and os.path.exists(PINS_FILE):
-            try:
-                with open(PINS_FILE) as f:
-                    return set(json.load(f))
-            except (OSError, ValueError):
-                pass
-        return out
+            out |= _pins_from_file(_pins_path(c["id"]))
+    else:
+        out = _pins_from_file(_pins_path(camera_id))
+    if include_legacy:
+        out |= _pins_from_file(PINS_FILE)
+    return out
+
+
+def set_pin(camera_id, filename, pinned):
+    """Pin/unpin `filename` on one camera. The only writer of pins.
+
+    camera's pins.json and nothing else, so a pin request on camera B can
+    never bake camera A's pins into B's world-readable file. An unpin of a
+    frame that only exists in the legacy repo-wide file is applied there (that
+    single entry) instead, so upgrading does not make old pins impossible to
+    release.
+
+    Returns True if the frame is pinned for this camera after the call.
+    """
     path = _pins_path(camera_id)
-    if os.path.exists(path):
-        try:
-            with open(path) as f:
-                return set(json.load(f))
-        except (OSError, ValueError):
-            return set()
-    # Legacy: fall back to the repo-wide pins file (pre-camera-scoping).
-    if os.path.exists(PINS_FILE):
-        try:
-            with open(PINS_FILE) as f:
-                return set(json.load(f))
-        except (OSError, ValueError):
-            return set()
-    return set()
+    own = _pins_from_file(path)
+    if pinned:
+        if filename in own:
+            return True
+        own.add(filename)
+        save_pins(own, camera_id)
+        return True
+    if filename in own:
+        own.discard(filename)
+        save_pins(own, camera_id)
+        return False
+    legacy = _pins_from_file(PINS_FILE)
+    if filename in legacy:
+        from analyze_images import _atomic_write_json
+        _atomic_write_json(PINS_FILE, sorted(legacy - {filename}), indent=2)
+    return False
 
 
 # Serializes every load+mutate+save of a camera's pins. Without it, N
@@ -1467,13 +1494,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(404, {"error": "image not found"})
                 return
             with _PINS_LOCK:
-                pins = load_pins(camera_id)
-                if payload.get("pinned"):
-                    pins.add(filename)
-                else:
-                    pins.discard(filename)
-                save_pins(pins, camera_id)
-            self._send(200, {"ok": True, "pinned": filename in pins})
+                pinned = set_pin(camera_id, filename, bool(payload.get("pinned")))
+            self._send(200, {"ok": True, "pinned": pinned})
 
         elif self.path == "/api/delete":
             if camera_id is None:
@@ -1496,10 +1518,8 @@ class Handler(BaseHTTPRequestHandler):
             # Same lock as /api/pin: unpinning is the same load+mutate+save,
             # so a delete racing a pin must not lose one.
             with _PINS_LOCK:
-                pins = load_pins(camera_id)
-                if filename in pins:
-                    pins.discard(filename)
-                    save_pins(pins, camera_id)
+                if filename in load_pins(camera_id):
+                    set_pin(camera_id, filename, False)
             print(f"Deleted {filename} from {image_dir}")
             self._send(200, {"ok": True})
 

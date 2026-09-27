@@ -1838,6 +1838,23 @@ def run_health_checks(watch_dirs, api_key):
     except OSError as e:
         logger.warning("could not write alert state %s: %s", ALERT_STATE, e)
 
+def retention_pins(image_dir, legacy_pins=()):
+    """Pins that gate retention for `image_dir`: legacy repo-wide pins plus this
+    camera's own.
+
+    `<image_dir>/pins.json` is the canonical file — it is what the API writes
+    (api_server._pins_path) and what the web root serves, so retention reading
+    it is the only way an API pin can survive. `<repo>/pins.json` predates
+    per-camera scoping and is still honored, read-only, so an upgrade does not
+    start deleting frames the user pinned before; nothing here writes it.
+    """
+    pins = set(legacy_pins)
+    raw = load_json_file(os.path.join(image_dir, "pins.json"), [])
+    if isinstance(raw, list):
+        pins.update(raw)
+    return pins
+
+
 def apply_retention(image_dir, analysis_data, pins, protect_unanalyzed=None):
     """Delete images to honor the age, persist-cap, and disk budgets.
 
@@ -2121,8 +2138,11 @@ def _run_sweep(retention_only=False, rescan_days=None, settings_path=None):
     burst_data = load_json_file(burst_file, {}, catalog=True)
     if not isinstance(burst_data, dict):
         burst_data = {}
+    # Legacy repo-wide pins, read-only. The canonical per-camera pins.json is
+    # loaded per watch dir by retention_pins() — reading only this file here is
+    # what made retention delete frames the user had pinned through the API.
     pins_raw = load_json_file(pins_file, [])
-    pins = set(pins_raw) if isinstance(pins_raw, list) else set()
+    legacy_pins = set(pins_raw) if isinstance(pins_raw, list) else set()
 
     free_mem = get_free_mem_gb()
     ollama_up = ollama_available()
@@ -2146,7 +2166,8 @@ def _run_sweep(retention_only=False, rescan_days=None, settings_path=None):
         print(f"Scanning {image_dir}...")
         
         if not rescan_days:
-            apply_retention(image_dir, analysis_data, pins,
+            apply_retention(image_dir, analysis_data,
+                            retention_pins(image_dir, legacy_pins),
                             protect_unanalyzed=protect_unanalyzed)
 
         # Cron/watchdog path: honor age + disk budgets without re-entering

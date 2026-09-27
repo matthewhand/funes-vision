@@ -95,7 +95,11 @@ settings = json.load(open(os.path.join(base, "settings.json")))
 for d in settings.get("watch_dirs", []):
     if not os.path.isdir(d):
         continue
-    for name in ("analysis.json", "bursts.json", "pins.json"):
+    # NOT pins.json. That file is owned by the API, per camera
+    # (api_server._pins_path), and syncing the repo-root copy over it deleted
+    # every pin the user made in the UI. Retention reads the per-camera file
+    # (analyze_images.retention_pins) plus the legacy repo file read-only.
+    for name in ("analysis.json", "bursts.json"):
         src = os.path.join(base, name)
         if os.path.isfile(src):
             try:
@@ -127,23 +131,26 @@ run_retention() {
     return "$rc"
   }
 
-  # If the global lock is held (usually a multi-hour analyze), steal it FROM
-  # OUTSIDE any fd-open on $LOCK — fuser -k inside the flock subshell would
-  # kill ourselves too (we open the file as fd 200 before flock succeeds).
+  # Retention is a safety net, not the job. A live sweep holds $LOCK for
+  # hours (MAX_DEEP_PASSES passes at ~40s), and the cron runs this at :05 every
+  # hour, so a busy lock is the *normal* case — not a fault. The old code
+  # answered it with pkill/fuser -k, i.e. the watchdog SIGKILLed the in-flight
+  # sweep once an hour, discarding a vision call and resetting the deep-pass
+  # budget. Never interrupt a running sweep: skip this cycle and let the next
+  # :05 try again; an over-budget dir stays over budget until then, which is
+  # what the hourly cadence is for. A genuinely wedged pipeline is cmd_check's
+  # job, and it restarts the unit under RESTART_STATE throttling.
   if ! flock -n "$LOCK" -c true 2>/dev/null; then
-    log "retention-only: lock busy — interrupting analyzer / lock holders"
-    pkill -f "python3 $BASE/analyze_images.py" 2>/dev/null || true
-    pkill -f 'python3 .*/webcam/analyze_images.py' 2>/dev/null || true
-    if command -v fuser >/dev/null 2>&1; then
-      fuser -k "$LOCK" >/dev/null 2>&1 || true
-    fi
-    sleep 2
+    log "retention-only: lock busy — sweep in flight, skipping this cycle (left running)"
+    return 0
   fi
 
   (
-    if ! flock -x -w 60 200; then
-      log "retention-only: could not acquire $LOCK"
-      exit 1
+    # Re-check non-blocking: the probe above already told us the lock was free,
+    # so waiting here would only be racing ourselves against the next sweep.
+    if ! flock -x -n 200; then
+      log "retention-only: lost the race for $LOCK — skipping this cycle (left running)"
+      exit 0
     fi
     _retention_body
     exit $?
