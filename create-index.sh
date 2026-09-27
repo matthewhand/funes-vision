@@ -3,7 +3,10 @@
 IMAGE_DIR=$1
 # Global lock: analyze_images.py scans ALL camera dirs and writes shared
 # analysis.json, so concurrent instances must never run it in parallel.
-LOCKFILE="/tmp/webcam_analysis.lock"
+# WEBCAM_LOCK/WEBCAM_MARKER override the paths (mirroring tools/watchdog.sh) so
+# the gate can be driven hermetically in tests without touching real /tmp state.
+LOCKFILE="${WEBCAM_LOCK:-/tmp/webcam_analysis.lock}"
+MARKER="${WEBCAM_MARKER:-/tmp/webcam_analysis.lastrun}"
 BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Single execution gate with 1-hour timeout
@@ -13,7 +16,6 @@ run_analysis() {
     if flock -x -w 3600 200; then
         # Debounce: waiters queued during a long sweep stampede when it
         # ends - skip if another run completed moments ago.
-        MARKER="/tmp/webcam_analysis.lastrun"
         if [ -f "$MARKER" ] && [ $(( $(date +%s) - $(stat -c %Y "$MARKER") )) -lt 45 ]; then
             exit 0
         fi
@@ -84,6 +86,11 @@ run_analysis() {
             touch "$MARKER"
             echo "$(date): Analysis and sync complete."
         else
+            # Never stamp a sweep the analyzer refused. /api/health's
+            # recent_sweep and the watchdog's sweep_age/ret_age heuristics read
+            # this marker, so a marker written after a failed run is exactly how
+            # a box with dead retention (exit 3 = settings.json unreadable,
+            # #27) kept looking healthy while the disk grew without bound.
             echo "$(date): Analysis FAILED (exit $analysis_rc); web root sync attempted, lastrun not advanced."
         fi
     fi
