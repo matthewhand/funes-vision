@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Failure, retry &amp; recovery · funes-vision</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --color-paper:       #080c14;
+      --color-paper-2:     #0f172a;
+      --color-ink:         #f8fafc;
+      --color-muted:       #94a3b8;
+      --color-soft:        #64748b;
+      --color-rule:        rgba(248,250,252,0.12);
+      --color-rule-solid:  rgba(148,163,184,0.30);
+      --color-accent:      #3b82f6;
+      --color-accent-tint: rgba(59,130,246,0.12);
+      --color-link:        #60a5fa;
+      --font-sans:   'Geist', system-ui, sans-serif;
+      --font-serif:  'Instrument Serif', 'Times New Roman', serif;
+      --font-mono:   'Geist Mono', ui-monospace, Menlo, monospace;
+    }
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      color: var(--color-ink);
+      min-height: 100vh;
+      padding: 3rem 2rem;
+    }
+    .container { max-width: 1200px; margin: 0 auto; }
+    .header { margin-bottom: 2.5rem; }
+    .header-eyebrow {
+      font-family: var(--font-mono); font-size: 0.66rem; font-weight: 500;
+      letter-spacing: 0.18em; text-transform: uppercase; color: var(--color-muted);
+      margin-bottom: 0.75rem;
+    }
+    h1 {
+      font-family: var(--font-serif); font-size: clamp(1.75rem, 3vw + 1rem, 2.5rem);
+      font-weight: 400; letter-spacing: -0.02em; line-height: 1.1;
+      color: var(--color-ink); margin-bottom: 0.5rem;
+    }
+    .subtitle {
+      font-size: 1rem; line-height: 1.55; color: var(--color-muted); max-width: 60ch;
+    }
+    .diagram-container { background: transparent; border: none; padding: 0; overflow-x: auto; }
+    svg { width: 100%; min-width: 900px; display: block; }
+    .cards { display: grid; grid-template-columns: 1.1fr 1fr 0.9fr; gap: 1rem; margin-top: 1.5rem; }
+    @media (max-width: 900px) { .cards { grid-template-columns: 1fr; } }
+    .card {
+      background: var(--color-paper-2);
+      border: 1px solid var(--color-rule);
+      border-radius: 6px;
+      padding: 1.25rem;
+    }
+    .card-header {
+      display: flex; align-items: center; gap: 0.6rem;
+      margin-bottom: 0.875rem; padding-bottom: 0.875rem;
+      border-bottom: 1px solid var(--color-rule);
+    }
+    .card-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .card-dot.ink   { background: var(--color-ink); }
+    .card-dot.muted { background: var(--color-muted); }
+    .card-dot.coral { background: var(--color-accent); }
+    .card-dot.link  { background: var(--color-link); }
+    .card-dot.soft  { background: var(--color-soft); }
+    .card h3 { font-size: 0.875rem; font-weight: 600; color: var(--color-ink); }
+    .card ul { list-style: none; color: var(--color-muted); font-size: 0.8125rem; line-height: 1.55; }
+    .card li { margin-bottom: 0.3rem; padding-left: 0.875rem; position: relative; }
+    .card li::before { content: '—'; position: absolute; left: 0; color: var(--color-soft); font-size: 0.75rem; }
+    .footer {
+      margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid var(--color-rule);
+      font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.06em;
+      color: var(--color-soft); display: flex; justify-content: space-between;
+      flex-wrap: wrap; gap: 0.5rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <p class="header-eyebrow">SEQUENCE · funes-vision</p>
+      <h1>Failure, retry &amp; recovery</h1>
+      <p class="subtitle">The watchdog polls <code>/api/health</code>, then either restarts a stuck unit and forces a retention-only pass, or leaves a healthy pipeline alone.</p>
+    </div>
+
+    <div class="diagram-container">
+      <svg viewBox="0 0 1096 820" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="seq-recovery-title seq-recovery-desc">
+        <title id="seq-recovery-title">Failure, retry and recovery sequence</title>
+        <desc id="seq-recovery-desc">Sequence where the watchdog checks /api/health, then either restarts a dead unit, forces a retention-only sweep and repairs a truncated catalog on detection, or takes no action on a healthy pipeline while a 60s timer keeps polling health.</desc>
+        <defs>
+          <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#94a3b8"/>
+          </marker>
+          <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#3b82f6"/>
+          </marker>
+          <marker id="arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#60a5fa"/>
+          </marker>
+          <marker id="arrow-danger" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#ef4444"/>
+          </marker>
+          <marker id="arrow-open" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polyline points="0 0, 8 3, 0 6" fill="none" stroke="#94a3b8" stroke-width="1.2"/>
+          </marker>
+        </defs>
+
+        <rect width="100%" height="100%" fill="#080c14"/>
+
+        <!-- Lifelines -->
+        <g stroke="rgba(248,250,252,0.20)" stroke-width="1" stroke-dasharray="3,3">
+          <line x1="124" y1="76" x2="124" y2="736"/>
+          <line x1="336" y1="76" x2="336" y2="736"/>
+          <line x1="548" y1="76" x2="548" y2="736"/>
+          <line x1="760" y1="76" x2="760" y2="736"/>
+          <line x1="972" y1="76" x2="972" y2="736"/>
+        </g>
+
+        <!-- alt fragment: detected vs healthy -->
+        <rect x="108" y="248" width="668" height="312" rx="4" fill="rgba(248,250,252,0.04)" stroke="rgba(248,250,252,0.22)" stroke-width="1"/>
+        <rect x="108" y="248" width="40" height="16" rx="2" fill="#080c14" stroke="rgba(248,250,252,0.22)" stroke-width="1"/>
+        <text x="128" y="260" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.12em">ALT</text>
+        <text x="120" y="268" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.04em">[stuck sweep / dead unit]</text>
+        <line x1="116" y1="456" x2="768" y2="456" stroke="rgba(248,250,252,0.20)" stroke-width="1" stroke-dasharray="4,3"/>
+        <text x="120" y="476" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.04em">[healthy]</text>
+
+        <!-- Activation bars -->
+        <rect x="120" y="112" width="8" height="40" fill="rgba(248,250,252,0.06)" stroke="#94a3b8" stroke-width="0.8"/>
+        <rect x="120" y="296" width="8" height="72" fill="rgba(248,250,252,0.06)" stroke="#94a3b8" stroke-width="0.8"/>
+        <rect x="332" y="292" width="8" height="52" fill="rgba(248,250,252,0.06)" stroke="#94a3b8" stroke-width="0.8"/>
+        <rect x="544" y="324" width="8" height="108" fill="rgba(248,250,252,0.06)" stroke="#94a3b8" stroke-width="0.8"/>
+        <rect x="756" y="388" width="8" height="44" fill="rgba(248,250,252,0.06)" stroke="#94a3b8" stroke-width="0.8"/>
+        <rect x="968" y="180" width="8" height="40" fill="rgba(248,250,252,0.06)" stroke="#94a3b8" stroke-width="0.8"/>
+        <rect x="968" y="644" width="8" height="40" fill="rgba(248,250,252,0.06)" stroke="#94a3b8" stroke-width="0.8"/>
+
+        <!-- Messages -->
+        <path d="M124 116 H176 V148 H124" fill="none" stroke="#94a3b8" stroke-width="1" marker-end="url(#arrow-open)"/>
+        <line x1="124" y1="184" x2="968" y2="184" stroke="#60a5fa" stroke-width="1" marker-end="url(#arrow-link)"/>
+        <line x1="972" y1="216" x2="124" y2="216" stroke="#94a3b8" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+        <line x1="124" y1="296" x2="332" y2="296" stroke="#3b82f6" stroke-width="1.2" marker-end="url(#arrow-accent)"/>
+        <line x1="336" y1="328" x2="544" y2="328" stroke="#94a3b8" stroke-width="1" marker-end="url(#arrow)"/>
+        <line x1="124" y1="360" x2="544" y2="360" stroke="#94a3b8" stroke-width="1" marker-end="url(#arrow)"/>
+        <line x1="548" y1="392" x2="756" y2="392" stroke="#3b82f6" stroke-width="1.2" marker-end="url(#arrow-accent)"/>
+        <line x1="760" y1="424" x2="548" y2="424" stroke="#94a3b8" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+        <path d="M124 504 H176 V536 H124" fill="none" stroke="#94a3b8" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#arrow-open)"/>
+        <path d="M336 592 H388 V624 H336" fill="none" stroke="#94a3b8" stroke-width="1" marker-end="url(#arrow)"/>
+        <line x1="336" y1="648" x2="968" y2="648" stroke="#60a5fa" stroke-width="1" marker-end="url(#arrow-link)"/>
+        <line x1="972" y1="680" x2="336" y2="680" stroke="#94a3b8" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+
+        <!-- Arrow labels -->
+        <rect x="184" y="124" width="62" height="12" rx="2" fill="#080c14"/>
+        <text x="188" y="133" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.06em">check 15m</text>
+        <rect x="504" y="164" width="88" height="12" rx="2" fill="#080c14"/>
+        <text x="548" y="173" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">GET /api/health</text>
+        <rect x="522" y="196" width="52" height="12" rx="2" fill="#080c14"/>
+        <text x="548" y="205" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">4 CHECKS</text>
+        <rect x="194" y="276" width="72" height="12" rx="2" fill="#080c14"/>
+        <text x="230" y="285" fill="#3b82f6" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">RESTART UNIT</text>
+        <rect x="401" y="308" width="82" height="12" rx="2" fill="#080c14"/>
+        <text x="442" y="317" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">RESTART=ALWAYS</text>
+        <rect x="292" y="340" width="88" height="12" rx="2" fill="#080c14"/>
+        <text x="336" y="349" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">FORCE RETENTION</text>
+        <rect x="618" y="372" width="72" height="12" rx="2" fill="#080c14"/>
+        <text x="654" y="381" fill="#3b82f6" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">RECOVER JSON</text>
+        <rect x="628" y="404" width="52" height="12" rx="2" fill="#080c14"/>
+        <text x="654" y="413" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">RESTORED</text>
+        <rect x="184" y="512" width="90" height="12" rx="2" fill="#080c14"/>
+        <text x="188" y="521" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.06em">no action · throttle</text>
+        <rect x="396" y="600" width="120" height="12" rx="2" fill="#080c14"/>
+        <text x="400" y="609" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.06em">healthcheck.timer 60s</text>
+        <rect x="610" y="628" width="88" height="12" rx="2" fill="#080c14"/>
+        <text x="654" y="637" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">GET /api/health</text>
+        <rect x="614" y="660" width="80" height="12" rx="2" fill="#080c14"/>
+        <text x="654" y="669" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">ok | degraded</text>
+
+        <!-- Actors -->
+        <rect x="40" y="24" width="168" height="52" rx="6" fill="#080c14"/>
+        <rect x="40" y="24" width="168" height="52" rx="6" fill="#0f172a" stroke="#94a3b8" stroke-width="1"/>
+        <rect x="48" y="30" width="36" height="12" rx="2" fill="transparent" stroke="rgba(148,163,184,0.40)" stroke-width="0.8"/>
+        <text x="66" y="39" fill="#94a3b8" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">CRON</text>
+        <text x="124" y="50" fill="#f8fafc" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">watchdog.sh</text>
+        <text x="124" y="66" fill="#64748b" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">check */15</text>
+
+        <rect x="252" y="24" width="168" height="52" rx="6" fill="#080c14"/>
+        <rect x="252" y="24" width="168" height="52" rx="6" fill="#0f172a" stroke="#94a3b8" stroke-width="1"/>
+        <rect x="260" y="30" width="28" height="12" rx="2" fill="transparent" stroke="rgba(148,163,184,0.40)" stroke-width="0.8"/>
+        <text x="274" y="39" fill="#94a3b8" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">SVC</text>
+        <text x="336" y="50" fill="#f8fafc" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">systemd</text>
+        <text x="336" y="66" fill="#64748b" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">Restart=always</text>
+
+        <rect x="464" y="24" width="168" height="52" rx="6" fill="#080c14"/>
+        <rect x="464" y="24" width="168" height="52" rx="6" fill="#0f172a" stroke="#94a3b8" stroke-width="1"/>
+        <rect x="472" y="30" width="28" height="12" rx="2" fill="transparent" stroke="rgba(148,163,184,0.40)" stroke-width="0.8"/>
+        <text x="486" y="39" fill="#94a3b8" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">PY</text>
+        <text x="548" y="50" fill="#f8fafc" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">analyze_images.py</text>
+        <text x="548" y="66" fill="#64748b" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">--retention-only</text>
+
+        <rect x="676" y="24" width="168" height="52" rx="6" fill="#080c14"/>
+        <rect x="676" y="24" width="168" height="52" rx="6" fill="#0f172a" stroke="#94a3b8" stroke-width="1"/>
+        <rect x="684" y="30" width="36" height="12" rx="2" fill="transparent" stroke="rgba(148,163,184,0.40)" stroke-width="0.8"/>
+        <text x="702" y="39" fill="#94a3b8" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">JSON</text>
+        <text x="760" y="50" fill="#f8fafc" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Catalog files</text>
+        <text x="760" y="66" fill="#64748b" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">truncated-write repair</text>
+
+        <rect x="888" y="24" width="168" height="52" rx="6" fill="#080c14"/>
+        <rect x="888" y="24" width="168" height="52" rx="6" fill="rgba(248,250,252,0.03)" stroke="rgba(248,250,252,0.30)" stroke-width="1"/>
+        <rect x="896" y="30" width="28" height="12" rx="2" fill="transparent" stroke="rgba(248,250,252,0.30)" stroke-width="0.8"/>
+        <text x="910" y="39" fill="#94a3b8" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">API</text>
+        <text x="972" y="50" fill="#f8fafc" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">api_server.py</text>
+        <text x="972" y="66" fill="#64748b" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">/api/health · 4 checks</text>
+
+        <!-- Legend -->
+        <line x1="32" y1="764" x2="1064" y2="764" stroke="rgba(248,250,252,0.10)" stroke-width="0.8"/>
+        <text x="32" y="784" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">LEGEND</text>
+        <line x1="124" y1="780" x2="152" y2="780" stroke="#94a3b8" stroke-width="1"/>
+        <text x="160" y="783" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.06em">CALL</text>
+        <line x1="248" y1="780" x2="276" y2="780" stroke="#94a3b8" stroke-width="1" stroke-dasharray="5,4"/>
+        <text x="284" y="783" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.06em">RETURN</text>
+        <line x1="392" y1="780" x2="420" y2="780" stroke="#94a3b8" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#arrow-open)"/>
+        <text x="428" y="783" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.06em">NO-OP / EVENT</text>
+        <line x1="584" y1="780" x2="612" y2="780" stroke="#3b82f6" stroke-width="1.2"/>
+        <text x="620" y="783" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.06em">RECOVERY ACTION</text>
+        <rect x="784" y="774" width="24" height="12" rx="2" fill="rgba(248,250,252,0.04)" stroke="rgba(248,250,252,0.22)" stroke-width="0.8"/>
+        <text x="816" y="783" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.06em">ALT FRAGMENT</text>
+      </svg>
+    </div>
+
+    <div class="cards">
+      <div class="card">
+        <div class="card-header"><span class="card-dot coral"></span><h3>Watchdog is the safety net</h3></div>
+        <ul>
+          <li>Cron <code>*/15 check</code> detects dead units and stale sweeps</li>
+          <li>Hourly <code>retention</code> forces <code>--retention-only</code></li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-dot muted"></span><h3>Catalog self-heals</h3></div>
+        <ul>
+          <li>Truncated writes are repaired on load, not fatal</li>
+          <li>Retention still runs so ENOSPC cannot deadlock cleanup</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-dot link"></span><h3>Independent health probe</h3></div>
+        <ul>
+          <li><code>webcam-healthcheck.timer</code> fires every 60s</li>
+          <li><code>/api/health</code> returns ok or 503 degraded</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="footer">
+      <span>funes-vision · docs/diagrams</span>
+      <span>Source: tools/watchdog.sh:54,66,108,207,274 · analyze_images.py:873,1941 · systemd/webcam-api.service · systemd/webcam-pipeline@.service · systemd/webcam-healthcheck.timer · api_server.py:646-656,810-812 · Assumption: the healthcheck timer probes /api/health as stated in project facts.</span>
+    </div>
+  </div>
+</body>
+</html>
