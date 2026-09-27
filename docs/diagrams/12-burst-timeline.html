@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Burst timeline · funes-vision</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --color-paper: #080c14; --color-paper-2: #0f172a; --color-ink: #f8fafc;
+      --color-muted: #94a3b8; --color-soft: #64748b; --color-rule: rgba(248,250,252,0.12);
+      --color-rule-solid: rgba(148,163,184,0.30); --color-accent: #3b82f6;
+      --color-accent-tint: rgba(59,130,246,0.12); --color-link: #60a5fa;
+      --font-sans: 'Geist', system-ui, sans-serif; --font-serif: 'Instrument Serif', serif;
+      --font-mono: 'Geist Mono', ui-monospace, Menlo, monospace;
+    }
+    body { font-family: var(--font-sans); background: var(--color-paper); color: var(--color-ink); min-height: 100vh; padding: 3rem 2rem; }
+    .container { max-width: 1200px; margin: 0 auto; }
+    .header { margin-bottom: 2.5rem; }
+    .header-eyebrow { font-family: var(--font-mono); font-size: 0.66rem; font-weight: 500; letter-spacing: 0.18em; text-transform: uppercase; color: var(--color-muted); margin-bottom: 0.75rem; }
+    h1 { font-family: var(--font-serif); font-size: clamp(1.75rem, 3vw + 1rem, 2.5rem); font-weight: 400; letter-spacing: -0.02em; line-height: 1.1; color: var(--color-ink); margin-bottom: 0.5rem; }
+    .subtitle { font-size: 1rem; line-height: 1.55; color: var(--color-muted); max-width: 62ch; }
+    .diagram-container { background: transparent; border: none; padding: 0; overflow-x: auto; }
+    svg { width: 100%; min-width: 900px; display: block; }
+    .cards { display: grid; grid-template-columns: 1.1fr 1fr 0.9fr; gap: 1rem; margin-top: 1.5rem; }
+    @media (max-width: 900px) { .cards { grid-template-columns: 1fr; } }
+    .card { background: var(--color-paper-2); border: 1px solid var(--color-rule); border-radius: 6px; padding: 1.25rem; }
+    .card-header { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.875rem; padding-bottom: 0.875rem; border-bottom: 1px solid var(--color-rule); }
+    .card-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .card-dot.ink { background: var(--color-ink); } .card-dot.muted { background: var(--color-muted); }
+    .card-dot.coral { background: var(--color-accent); } .card-dot.link { background: var(--color-link); } .card-dot.soft { background: var(--color-soft); }
+    .card h3 { font-size: 0.875rem; font-weight: 600; color: var(--color-ink); }
+    .card ul { list-style: none; color: var(--color-muted); font-size: 0.8125rem; line-height: 1.55; }
+    .card li { margin-bottom: 0.3rem; padding-left: 0.875rem; position: relative; }
+    .card li::before { content: '—'; position: absolute; left: 0; color: var(--color-soft); font-size: 0.75rem; }
+    .footer { margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid var(--color-rule); font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.05em; color: var(--color-soft); display: flex; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <p class="header-eyebrow">Timeline · funes-vision</p>
+      <h1>One visit, from frame to deletion</h1>
+      <p class="subtitle">Frames arrive over a short motion window, the fast YOLO pass marks each in under a second, and the deep model finishes about 40&nbsp;s later for the hit frame. Contiguous presence is grouped into a visit, the gallery sees it live over SSE, and retention removes it after 30 days unless pinned.</p>
+    </div>
+
+    <div class="diagram-container">
+      <svg viewBox="0 0 1000 720" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="s12-title s12-desc">
+        <title id="s12-title">Burst and visit timeline from capture to retention</title>
+        <desc id="s12-desc">A horizontal time axis shows five motion frames arriving seconds apart, each marked by the fast YOLO pass immediately, a deep pass completing about forty seconds later for the hit frame, the run grouped into a visit with start and end, surfaced live to the gallery over SSE, and finally removed by retention at day thirty unless pinned.</desc>
+        <defs>
+          <marker id="s12-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#94a3b8"/></marker>
+          <marker id="s12-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#3b82f6"/></marker>
+          <marker id="s12-arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#60a5fa"/></marker>
+        </defs>
+
+        <rect width="100%" height="100%" fill="#080c14"/>
+
+        <!-- Zone (gallery live lane) -->
+        <rect x="78" y="468" width="644" height="64" rx="6" fill="rgba(248,250,252,0.02)" stroke="rgba(248,250,252,0.10)" stroke-width="1"/>
+        <rect x="86" y="460" width="160" height="12" fill="#080c14"/>
+        <text x="90" y="469" fill="rgba(248,250,252,0.40)" font-size="7" font-family="'Geist Mono', monospace" letter-spacing="0.12em">GALLERY · LIVE VIEW</text>
+
+        <!-- Axis: baseline, ticks, breaks -->
+        <line x1="70" y1="360" x2="930" y2="360" stroke="rgba(248,250,252,0.12)" stroke-width="1"/>
+        <line x1="90" y1="356" x2="90" y2="364" stroke="rgba(148,163,184,0.30)" stroke-width="1"/>
+        <line x1="120" y1="356" x2="120" y2="364" stroke="rgba(148,163,184,0.30)" stroke-width="1"/>
+        <line x1="150" y1="356" x2="150" y2="364" stroke="rgba(148,163,184,0.30)" stroke-width="1"/>
+        <line x1="180" y1="356" x2="180" y2="364" stroke="rgba(148,163,184,0.30)" stroke-width="1"/>
+        <line x1="210" y1="356" x2="210" y2="364" stroke="rgba(148,163,184,0.30)" stroke-width="1"/>
+        <line x1="240" y1="356" x2="240" y2="364" stroke="rgba(148,163,184,0.30)" stroke-width="1"/>
+        <line x1="270" y1="356" x2="270" y2="364" stroke="rgba(148,163,184,0.30)" stroke-width="1"/>
+        <line x1="300" y1="356" x2="300" y2="364" stroke="rgba(148,163,184,0.30)" stroke-width="1"/>
+        <line x1="330" y1="356" x2="330" y2="364" stroke="rgba(148,163,184,0.30)" stroke-width="1"/>
+        <line x1="368" y1="366" x2="380" y2="354" stroke="rgba(148,163,184,0.60)" stroke-width="1.2"/>
+        <line x1="382" y1="366" x2="394" y2="354" stroke="rgba(148,163,184,0.60)" stroke-width="1.2"/>
+        <line x1="708" y1="366" x2="720" y2="354" stroke="rgba(148,163,184,0.60)" stroke-width="1.2"/>
+        <line x1="722" y1="366" x2="734" y2="354" stroke="rgba(148,163,184,0.60)" stroke-width="1.2"/>
+
+        <!-- Connectors -->
+        <line x1="90" y1="360" x2="90" y2="341" stroke="rgba(148,163,184,0.40)" stroke-width="1"/>
+        <line x1="150" y1="360" x2="150" y2="341" stroke="rgba(148,163,184,0.40)" stroke-width="1"/>
+        <line x1="210" y1="360" x2="210" y2="341" stroke="rgba(148,163,184,0.40)" stroke-width="1"/>
+        <line x1="270" y1="360" x2="270" y2="341" stroke="rgba(148,163,184,0.40)" stroke-width="1"/>
+        <line x1="330" y1="360" x2="330" y2="341" stroke="rgba(148,163,184,0.40)" stroke-width="1"/>
+        <polyline points="84,322 336,322" fill="none" stroke="rgba(148,163,184,0.30)" stroke-width="1"/>
+        <line x1="84" y1="322" x2="84" y2="327" stroke="rgba(148,163,184,0.30)" stroke-width="1"/>
+        <line x1="336" y1="322" x2="336" y2="327" stroke="rgba(148,163,184,0.30)" stroke-width="1"/>
+        <polyline points="84,400 336,400" fill="none" stroke="rgba(148,163,184,0.30)" stroke-width="1"/>
+        <line x1="84" y1="400" x2="84" y2="405" stroke="rgba(148,163,184,0.30)" stroke-width="1"/>
+        <line x1="336" y1="400" x2="336" y2="405" stroke="rgba(148,163,184,0.30)" stroke-width="1"/>
+        <line x1="520" y1="354" x2="520" y2="309" stroke="rgba(59,130,246,0.50)" stroke-width="1.2"/>
+        <line x1="620" y1="366" x2="620" y2="412" stroke="#94a3b8" stroke-width="1"/>
+        <line x1="830" y1="366" x2="830" y2="412" stroke="rgba(59,130,246,0.50)" stroke-width="1.2"/>
+        <line x1="900" y1="366" x2="900" y2="412" stroke="#94a3b8" stroke-width="1" stroke-dasharray="4,3"/>
+        <line x1="830" y1="360" x2="900" y2="360" stroke="#94a3b8" stroke-width="1" stroke-dasharray="4,3"/>
+        <line x1="330" y1="452" x2="520" y2="452" stroke="#94a3b8" stroke-width="1" stroke-dasharray="5,4" marker-start="url(#s12-arrow)" marker-end="url(#s12-arrow)"/>
+        <line x1="330" y1="448" x2="330" y2="456" stroke="#94a3b8" stroke-width="1"/>
+        <line x1="520" y1="448" x2="520" y2="456" stroke="#94a3b8" stroke-width="1"/>
+        <line x1="90" y1="500" x2="700" y2="500" stroke="#60a5fa" stroke-width="1.2" stroke-dasharray="2,4"/>
+
+        <!-- Labels + markers (nodes drawn last) -->
+        <text x="90" y="380" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">0 s</text>
+        <text x="150" y="380" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">2 s</text>
+        <text x="210" y="380" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">4 s</text>
+        <text x="270" y="380" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">6 s</text>
+        <text x="330" y="380" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">8 s</text>
+        <text x="74" y="346" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.08em">t · seconds</text>
+        <text x="700" y="346" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.08em">t · days (compressed)</text>
+
+        <rect x="126" y="302" width="168" height="12" fill="#080c14"/>
+        <text x="210" y="311" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">fast pass · YOLO (&lt;1 s per frame)</text>
+
+        <rect x="446" y="276" width="148" height="12" fill="#080c14"/>
+        <text x="520" y="285" fill="#f8fafc" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">deep pass · +40 s</text>
+        <rect x="458" y="290" width="124" height="12" fill="#080c14"/>
+        <text x="520" y="299" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">gemma4:e2b · hit frame</text>
+
+        <rect x="130" y="406" width="160" height="12" fill="#080c14"/>
+        <text x="210" y="415" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">visit span · start → end (~8 s)</text>
+
+        <rect x="362" y="434" width="126" height="12" fill="#080c14"/>
+        <text x="425" y="443" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">≈40 s/image deep latency</text>
+
+        <rect x="552" y="417" width="136" height="12" fill="#080c14"/>
+        <text x="620" y="426" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">visit grouped · bursts.json</text>
+        <rect x="562" y="429" width="116" height="12" fill="#080c14"/>
+        <text x="620" y="438" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">start → end · frames[]</text>
+
+        <rect x="284" y="480" width="112" height="12" fill="#080c14"/>
+        <text x="340" y="489" fill="#60a5fa" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">detection.preliminary</text>
+        <rect x="575" y="480" width="130" height="12" fill="#080c14"/>
+        <text x="640" y="489" fill="#60a5fa" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">new-detection / new-burst</text>
+        <rect x="86" y="510" width="200" height="12" fill="#080c14"/>
+        <text x="90" y="519" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.06em">gallery live via SSE · mtime poll ≤3 s</text>
+
+        <rect x="772" y="417" width="96" height="12" fill="#080c14"/>
+        <text x="820" y="426" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">retention · day 30</text>
+        <rect x="754" y="429" width="116" height="12" fill="#080c14"/>
+        <text x="812" y="438" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">removes analyzed-empty</text>
+        <rect x="880" y="417" width="72" height="12" fill="#080c14"/>
+        <text x="916" y="426" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">pinned · kept</text>
+
+        <text x="70" y="560" fill="#94a3b8" font-size="12" font-family="'Instrument Serif', serif" font-style="italic">Axis is not to scale: two breaks compress the +40 s deep lag and the 30-day retention window.</text>
+        <text x="70" y="580" fill="#64748b" font-size="12" font-family="'Instrument Serif', serif" font-style="italic">Assumption: ~40 s/image on the reference 4-core box; a 2 s burst cadence is illustrative.</text>
+
+        <circle cx="90" cy="360" r="4" fill="#f8fafc"/>
+        <circle cx="150" cy="360" r="4" fill="#f8fafc"/>
+        <circle cx="210" cy="360" r="4" fill="#f8fafc"/>
+        <circle cx="270" cy="360" r="4" fill="#f8fafc"/>
+        <circle cx="330" cy="360" r="4" fill="#f8fafc"/>
+        <circle cx="90" cy="338" r="3" fill="#080c14" stroke="#94a3b8" stroke-width="1"/>
+        <circle cx="150" cy="338" r="3" fill="#080c14" stroke="#94a3b8" stroke-width="1"/>
+        <circle cx="210" cy="338" r="3" fill="#080c14" stroke="#94a3b8" stroke-width="1"/>
+        <circle cx="270" cy="338" r="3" fill="#080c14" stroke="#94a3b8" stroke-width="1"/>
+        <circle cx="330" cy="338" r="3" fill="#080c14" stroke="#94a3b8" stroke-width="1"/>
+        <circle cx="520" cy="360" r="6" fill="rgba(59,130,246,0.12)" stroke="#3b82f6" stroke-width="1.4"/>
+        <circle cx="620" cy="360" r="4" fill="#94a3b8"/>
+        <circle cx="830" cy="360" r="6" fill="rgba(59,130,246,0.12)" stroke="#3b82f6" stroke-width="1.4"/>
+        <circle cx="900" cy="360" r="4" fill="#080c14" stroke="#94a3b8" stroke-width="1" stroke-dasharray="3,3"/>
+        <rect x="336" y="496" width="8" height="8" transform="rotate(45 340 500)" fill="#60a5fa"/>
+        <rect x="636" y="496" width="8" height="8" transform="rotate(45 640 500)" fill="#60a5fa"/>
+
+        <!-- Legend strip -->
+        <line x1="40" y1="650" x2="960" y2="650" stroke="rgba(248,250,252,0.10)" stroke-width="0.8"/>
+        <text x="40" y="670" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">LEGEND</text>
+        <circle cx="110" cy="666" r="4" fill="#f8fafc"/>
+        <text x="124" y="670" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace">motion frame</text>
+        <circle cx="238" cy="666" r="3" fill="#080c14" stroke="#94a3b8" stroke-width="1"/>
+        <text x="252" y="670" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace">fast pass (YOLO)</text>
+        <circle cx="392" cy="666" r="5" fill="rgba(59,130,246,0.12)" stroke="#3b82f6" stroke-width="1.4"/>
+        <text x="406" y="670" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace">deep pass / retention</text>
+        <circle cx="600" cy="666" r="4" fill="#94a3b8"/>
+        <text x="614" y="670" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace">visit / derived</text>
+        <rect x="740" y="662" width="8" height="8" transform="rotate(45 744 666)" fill="#60a5fa"/>
+        <text x="758" y="670" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace">SSE push</text>
+        <circle cx="856" cy="666" r="4" fill="#080c14" stroke="#94a3b8" stroke-width="1" stroke-dasharray="3,3"/>
+        <text x="870" y="670" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace">pinned</text>
+
+      </svg>
+    </div>
+
+    <div class="cards">
+      <div class="card">
+        <div class="card-header"><span class="card-dot coral"></span><h3>A visit is a contiguous detector run</h3></div>
+        <ul>
+          <li>Frames within <code>burst_threshold_seconds</code> (300&nbsp;s) of each other group into one burst keyed by the last frame</li>
+          <li><code>bursts.json</code> is written with the group; <code>burst_valid</code> drops spans longer than the chain rule allows</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-dot muted"></span><h3>Fast marks, deep explains</h3></div>
+        <ul>
+          <li>YOLO writes <code>fast_pass=partial</code> in well under a second, so <code>detection.preliminary</code> reaches the gallery first</li>
+          <li>The deep pass merges HA flags ~40&nbsp;s later; detector labels are never overwritten</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-dot link"></span><h3>Live now, pruned later</h3></div>
+        <ul>
+          <li>SSE polls <code>analysis.json</code> / <code>bursts.json</code> mtime every ~3&nbsp;s on the fallback path</li>
+          <li>Retention deletes analyzed-empty at 30&nbsp;days or 5&nbsp;GB; pins and LLM visits within the persist cap survive</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="footer">
+      <span>funes-vision · docs/diagrams</span>
+      <span>Source: analyze_images.py:33,35,36,2236,2308 · api_server.py:1019,1147 · DEVELOP.md:127, DEPLOYMENT.md:144 · index.html:4064 · integrations/media.py:20 · Assumption: frame cadence shown as a 2&nbsp;s burst is illustrative; ~40&nbsp;s/image is the reference 4-core box; both axis breaks mark compressed time.</span>
+    </div>
+  </div>
+</body>
+</html>
