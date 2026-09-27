@@ -25,6 +25,7 @@ import hmac
 import json
 import os
 import re
+import stat
 import subprocess
 import threading
 import time
@@ -60,20 +61,67 @@ PORT = 8190
 API_HOST = os.environ.get("WEBCAM_API_HOST", "127.0.0.1")
 
 
+class BlankTokenError(RuntimeError):
+    """settings.json holds a whitespace-only api_token.
+
+    Somebody clearly meant to configure auth and shipped an empty value (an
+    unset `Environment=`, an unexpanded `${VAR}`). Serving that as "no auth
+    configured" is the fail-open case this exists to refuse, so the write API
+    stays closed until the operator puts a real token in place."""
+
+
 def api_token():
     """Shared secret gating mutating endpoints, or "" when auth is disabled.
 
     Env WEBCAM_API_TOKEN wins; otherwise an "api_token" key in settings.json
     lets a deployment keep the secret beside the rest of its config. Unset
-    (the default) preserves the localhost-only, no-auth workflow."""
-    tok = os.environ.get("WEBCAM_API_TOKEN")
+    (the default) preserves the localhost-only, no-auth workflow.
+
+    Both sources are stripped *before* the truthiness test. Testing the raw
+    value first meant a blank-but-present env var ("   ", from an unset
+    `Environment=` or an unexpanded ${VAR}) was truthy, returned "" and
+    suppressed the valid settings.json token -- an auth-off outcome from a
+    deployment that had configured one. A blank token in settings.json is a
+    misconfiguration, not a decision, so it raises instead (#25)."""
+    tok = (os.environ.get("WEBCAM_API_TOKEN") or "").strip()
     if tok:
-        return tok.strip()
+        return tok
     try:
         with open(SETTINGS_FILE) as f:
-            return str(json.load(f).get("api_token") or "").strip()
+            raw = json.load(f).get("api_token")
     except (OSError, ValueError, AttributeError):
         return ""
+    if raw is None:
+        return ""
+    tok = str(raw)
+    if not tok.strip():
+        if tok:  # present but blank: a token was configured and lost
+            raise BlankTokenError(
+                f"{SETTINGS_FILE}: api_token is set but blank. Set a real token, "
+                f"or remove the key to run the API unauthenticated on loopback.")
+        return ""
+    return tok.strip()
+
+
+# Substrings that mark a settings key as a secret. /api/status is
+# unauthenticated (the gallery, the watchdog and the uptime monitor all read
+# it), so it is the widest possible hole: a serialized api_token hands every
+# reader the key that authorizes deleting frames, rewriting settings and
+# swapping the Slack bot token. Mirrors redacted_integrations() -- report that
+# a secret exists, never its value.
+SECRET_SETTING_MARKERS = ("token", "secret", "password", "passwd", "api_key",
+                          "apikey", "private_key", "credential")
+
+
+def is_secret_key(key):
+    return any(m in str(key).lower() for m in SECRET_SETTING_MARKERS)
+
+
+def redacted_settings(settings):
+    """settings.json with every secret key dropped, for unauthenticated reads."""
+    if not isinstance(settings, dict):
+        return {}
+    return {k: v for k, v in settings.items() if not is_secret_key(k)}
 
 
 def cors_origins():
@@ -268,11 +316,27 @@ def load_integrations():
 
 
 def _integration_state():
+    """Delivery state, with every detail re-redacted on the way out.
+
+    A state file written before the detail redaction (or by hand) can still
+    hold a Slack signed upload URL carrying the bot token and signature, and
+    this is served by unauthenticated GET /api/integrations -- so redact at
+    read time too, not only at write time."""
+    from integrations import redact_detail
     try:
         with open(os.path.join(BASE_DIR, "integrations_state.json")) as f:
-            return json.load(f)
+            state = json.load(f)
     except (OSError, ValueError):
         return {}
+    if not isinstance(state, dict):
+        return {}
+    for entry in state.values():
+        if not isinstance(entry, dict):
+            continue
+        for stamp in entry.values():
+            if isinstance(stamp, dict) and isinstance(stamp.get("detail"), str):
+                stamp["detail"] = redact_detail(stamp["detail"])
+    return state
 
 
 def redacted_integrations():
@@ -340,8 +404,10 @@ def save_slack_settings(changes):
     slack.update(changes)
     data["slack"] = slack
     from analyze_images import _atomic_write_json
-    _atomic_write_json(INTEGRATIONS_FILE, data, indent=2)
-    os.chmod(INTEGRATIONS_FILE, 0o600)
+    # mode=0o600 is set on the temp file before the rename, so the secret is
+    # never briefly world-readable: the old write-then-chmod pair left a window
+    # in which a crash kept integrations.json at 0644 permanently (#32).
+    _atomic_write_json(INTEGRATIONS_FILE, data, indent=2, mode=0o600)
 
 
 def _pins_path(camera_id):
@@ -396,14 +462,23 @@ def load_pins(camera_id=None):
     return set()
 
 
+# Serializes every load+mutate+save of a camera's pins. Without it, N
+# concurrent POST /api/pin each read the same file and the last writer wins:
+# 12 concurrent pins persisted 1. A torn write used to be worse -- load_pins
+# swallows ValueError, so a half-written file reads as "nothing is pinned"
+# and those frames become deletable (#26).
+_PINS_LOCK = threading.Lock()
+
+
 def save_pins(pins, camera_id):
     """Write one camera's pins. `camera_id` is mandatory — saving "all cameras"
-    as one set is exactly the leak this module exists to prevent."""
-    data = json.dumps(sorted(pins), indent=2)
-    path = _pins_path(camera_id)
-    with open(path, "w") as f:
-        f.write(data)
-    os.chmod(path, 0o644)   # nginx serves these read-only as www-data
+    as one set is exactly the leak this module exists to prevent.
+
+    Atomic, like settings/integrations, and 0644 because nginx serves these
+    read-only as www-data (mode is applied to the temp file before the rename,
+    so there is no world-readable window)."""
+    from analyze_images import _atomic_write_json
+    _atomic_write_json(_pins_path(camera_id), sorted(pins), indent=2, mode=0o644)
 
 
 def find_image(filename, camera_id=None):
@@ -529,6 +604,55 @@ def queue_from_analysis(analysis):
     }
 
 
+def _inotify_running():
+    try:
+        return subprocess.run(["pgrep", "-x", "inotifywait"],
+                              capture_output=True).returncode == 0
+    except OSError:
+        return False
+
+
+def _ollama_reachable(url):
+    try:
+        with urllib.request.urlopen(url, timeout=3):
+            return True
+    except Exception:
+        return False
+
+
+# --- Liveness probe cache (#33) ---------------------------------------------
+# /api/status and /api/health are unauthenticated and polled hard: the SPA,
+# tools/watchdog.sh and the uptime monitor all hit them. Each uncached call
+# forked pgrep and opened a socket to Ollama, so 20 polls cost 20 forks and 20
+# connects on the documented 4-core box, and the health endpoint the watchdog
+# depends on was the one paying it. Both answers are stable for seconds.
+_PROBE_LOCK = threading.Lock()
+_PROBE_CACHE = {}
+
+
+def _cached_probe(key, compute):
+    """`compute()` at most once per WEBCAM_PROBE_TTL seconds (0 = no cache).
+
+    Computed outside the lock: a slow Ollama probe must not serialize every
+    other status request behind it."""
+    ttl = _env_int("WEBCAM_PROBE_TTL", 5)
+    now = time.time()
+    with _PROBE_LOCK:
+        hit = _PROBE_CACHE.get(key)
+        if hit is not None and ttl > 0 and now - hit[0] < ttl:
+            return hit[1]
+    value = compute()
+    with _PROBE_LOCK:
+        _PROBE_CACHE[key] = (time.time(), value)
+    return value
+
+
+def reset_probe_cache():
+    """Drop cached probe answers (tests, and ops after a pipeline restart)."""
+    with _PROBE_LOCK:
+        _PROBE_CACHE.clear()
+
+
 def pipeline_status(camera_id=None):
     """Read-only snapshot of how the pipeline is configured and doing.
 
@@ -537,31 +661,26 @@ def pipeline_status(camera_id=None):
     filesystem, timezone, inference metrics) are never scoped — they describe
     the box, not a camera. With no camera_id the status covers everything
     (backward compatible with existing callers).
-    """
+
+    The settings block is redacted: this endpoint is unauthenticated, so the
+    api_token that authorizes every write must never appear in it (#19)."""
     try:
         with open(SETTINGS_FILE) as f:
             settings = json.load(f)
     except (OSError, ValueError):
         settings = {}
 
-    status = {"watch_dirs": WATCH_DIRS, "settings": settings,
+    status = {"watch_dirs": WATCH_DIRS, "settings": redacted_settings(settings),
               "trigger": {"inotify_active": False,
                           "idle_sweep_seconds": settings.get("idle_sweep_seconds", 60)},
               "llm": {"model": settings.get("model_local"), "reachable": False,
                       "allow_cloud": settings.get("allow_cloud", False)}}
 
-    try:
-        status["trigger"]["inotify_active"] = subprocess.run(
-            ["pgrep", "-x", "inotifywait"], capture_output=True).returncode == 0
-    except OSError:
-        pass
+    status["trigger"]["inotify_active"] = _cached_probe("inotify", _inotify_running)
 
-    try:
-        url = settings.get("ollama_url", "http://localhost:11434") + "/api/version"
-        with urllib.request.urlopen(url, timeout=3):
-            status["llm"]["reachable"] = True
-    except Exception:
-        pass
+    url = settings.get("ollama_url", "http://localhost:11434") + "/api/version"
+    status["llm"]["reachable"] = _cached_probe(("ollama", url),
+                                               lambda: _ollama_reachable(url))
 
     # Per-camera fields: which dirs to look at for this request.
     try:
@@ -661,6 +780,21 @@ def health_summary():
 
 
 class Handler(BaseHTTPRequestHandler):
+    # Per-request resource limits (#33). A stalled peer used to park a thread
+    # in readline() for as long as it liked, and ThreadingHTTPServer adds one
+    # thread per connection, so a handful of partial requests could starve the
+    # /api/health endpoint the uptime monitor and the watchdog depend on. The
+    # long-lived SSE stream is unaffected: /api/events only writes, so an idle
+    # stream never trips a read timeout.
+    SOCKET_TIMEOUT_S = 30
+    MAX_BODY_BYTES = 1024 * 1024  # every mutating endpoint is small JSON
+
+    @property
+    def timeout(self):
+        """Socket timeout (s) for one connection; env so a slow client can be
+        given more headroom without a code change."""
+        return _env_int("WEBCAM_API_SOCKET_TIMEOUT", self.SOCKET_TIMEOUT_S)
+
     def _cors(self):
         """Emit CORS headers scoped to the configured gallery origin.
 
@@ -684,10 +818,17 @@ class Handler(BaseHTTPRequestHandler):
     def _authorized(self):
         """True when no token is configured, or the request presents it.
 
-        Accepts a Bearer credential, or Basic with the shared secret as either
+        Accepts a Bearer token, or Basic with the shared secret as either
         the username or the password (so `curl -u :SECRET` and `-u SECRET:`
         both work). Compared in constant time."""
-        token = api_token()
+        try:
+            token = api_token()
+        except BlankTokenError as e:
+            # Fail closed: a blank configured token is not "no auth".
+            logger.error("%s", e)
+            self._send(500, {"error": "api_token is configured but blank; "
+                                      "set a real token to enable the write API"})
+            return False
         if not token:
             return True
         hdr = (self.headers.get("Authorization", "") if self.headers else "") or ""
@@ -706,6 +847,33 @@ class Handler(BaseHTTPRequestHandler):
             return False
         return bool(supplied) and hmac.compare_digest(
             supplied.encode("utf-8", "replace"), token.encode("utf-8", "replace"))
+
+    def _mutation_refusal(self):
+        """Cross-origin guard for every mutation, ahead of auth and parsing.
+
+        Two independent reasons to refuse, both applying whether or not a token
+        is configured:
+        - an Origin outside the allowlist: some page the user visited. The
+          response's missing CORS header does not undo the side effect, so the
+          request itself has to be refused.
+        - a browser-shaped request that is not application/json. text/plain and
+          the form encodings are CORS-safelisted, so a browser sends them with
+          no preflight at all; requiring JSON forces a preflight, which the
+          origin allowlist above then refuses. Only checked when an Origin is
+          present, so non-browser clients (curl, tools/watchdog.sh) are
+          unaffected (#24).
+
+        Returns a (code, body) to send, or None when the request may proceed."""
+        origin = (self.headers.get("Origin", "") if self.headers else "") or ""
+        if not origin:
+            return None
+        if origin not in cors_origins():
+            return 403, {"error": "origin not allowed"}
+        ctype = ((self.headers.get("Content-Type", "") or "").split(";")[0]
+                 .strip().lower())
+        if ctype != "application/json":
+            return 415, {"error": "content-type must be application/json"}
+        return None
 
     def _send(self, code, obj):
         body = json.dumps(obj).encode()
@@ -1151,7 +1319,13 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         # Every POST mutates state or spends resources (settings/integrations/
         # clip/pin/delete), so gate them all before any parsing when a token is
-        # configured. GETs stay open for the read-only gallery.
+        # configured. GETs stay open for the read-only gallery. The origin /
+        # content-type guard comes first: a cross-origin write is refused on
+        # its own merits, token or no token.
+        refusal = self._mutation_refusal()
+        if refusal is not None:
+            self._send(*refusal)
+            return
         if not self._authorized():
             self._send(401, {"error": "unauthorized"})
             return
@@ -1165,8 +1339,19 @@ class Handler(BaseHTTPRequestHandler):
             # _camera_param already sent the 400; mirror the do_GET guard so an
             # unknown ?camera= doesn't fall through to a second response write.
             return
+        # Validate the declared body length before reading any of it: an
+        # unvalidated 2000000000 buffers 2 GB of RAM in this thread, and -1
+        # parks the reader waiting for bytes that never come (#33).
         try:
-            length = int(self.headers.get("Content-Length", 0))
+            length = int(self.headers.get("Content-Length", 0) or 0)
+        except (TypeError, ValueError):
+            self._send(400, {"error": "bad request"})
+            return
+        max_body = _env_int("WEBCAM_API_MAX_BODY", self.MAX_BODY_BYTES)
+        if length < 0 or length > max_body:
+            self._send(413, {"error": "request body too large"})
+            return
+        try:
             payload = json.loads(self.rfile.read(length) or b"{}")
             filename = payload.get("filename", "")
         except (ValueError, json.JSONDecodeError):
@@ -1211,7 +1396,9 @@ class Handler(BaseHTTPRequestHandler):
             settings.update(changed)
             try:
                 from analyze_images import _atomic_write_json
-                _atomic_write_json(SETTINGS_FILE, settings, indent=2)
+                # 0600: settings.json can hold api_token, and it used to be
+                # written world-readable with no repair step at all (#32).
+                _atomic_write_json(SETTINGS_FILE, settings, indent=2, mode=0o600)
             except OSError as e:
                 self._send(500, {"error": f"could not write settings: {e}"})
                 return
@@ -1279,12 +1466,13 @@ class Handler(BaseHTTPRequestHandler):
             if image_dir is None:
                 self._send(404, {"error": "image not found"})
                 return
-            pins = load_pins(camera_id)
-            if payload.get("pinned"):
-                pins.add(filename)
-            else:
-                pins.discard(filename)
-            save_pins(pins, camera_id)
+            with _PINS_LOCK:
+                pins = load_pins(camera_id)
+                if payload.get("pinned"):
+                    pins.add(filename)
+                else:
+                    pins.discard(filename)
+                save_pins(pins, camera_id)
             self._send(200, {"ok": True, "pinned": filename in pins})
 
         elif self.path == "/api/delete":
@@ -1305,10 +1493,13 @@ class Handler(BaseHTTPRequestHandler):
                     logger.debug("delete: %s already gone", path)
                 except OSError as e:
                     logger.warning("delete: could not remove %s: %s", path, e)
-            pins = load_pins(camera_id)
-            if filename in pins:
-                pins.discard(filename)
-                save_pins(pins, camera_id)
+            # Same lock as /api/pin: unpinning is the same load+mutate+save,
+            # so a delete racing a pin must not lose one.
+            with _PINS_LOCK:
+                pins = load_pins(camera_id)
+                if filename in pins:
+                    pins.discard(filename)
+                    save_pins(pins, camera_id)
             print(f"Deleted {filename} from {image_dir}")
             self._send(200, {"ok": True})
 
@@ -1319,7 +1510,35 @@ class Handler(BaseHTTPRequestHandler):
         pass  # quiet; deletions are logged explicitly
 
 
+def harden_secret_files():
+    """Tighten perms on the two config files that can hold secrets.
+
+    A deployment that predates the 0600 writes (or one whose settings.json was
+    copied in by a deploy script) still has api_token readable by every local
+    user, and nothing repaired it. Best effort: a file we do not own is
+    reported, not fatal."""
+    for path in (SETTINGS_FILE, INTEGRATIONS_FILE):
+        try:
+            mode = stat.S_IMODE(os.stat(path).st_mode)
+        except OSError:
+            continue
+        if not mode & 0o077:
+            continue
+        try:
+            os.chmod(path, 0o600)
+            logger.warning("tightened %s from %04o to 0600", path, mode)
+        except OSError as e:
+            logger.warning("could not tighten %s from %04o: %s", path, mode, e)
+
+
 if __name__ == "__main__":
-    auth = "auth=token" if api_token() else "auth=off"
+    harden_secret_files()
+    try:
+        auth = "auth=token" if api_token() else "auth=off"
+    except BlankTokenError as e:
+        # Fail closed, loudly: writes stay closed until this is fixed.
+        print(f"Webcam API listening on {API_HOST}:{PORT} (auth=broken)")
+        print(f"ERROR: {e}")
+        raise SystemExit(1)
     print(f"Webcam API listening on {API_HOST}:{PORT} ({auth})")
     ThreadingHTTPServer((API_HOST, PORT), Handler).serve_forever()
