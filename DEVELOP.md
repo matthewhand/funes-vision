@@ -725,13 +725,20 @@ enhancement.
 
 ## Testing
 
-No third-party test deps and no build step — the same constraints as the app.
-Run both suites from the repo root:
+No third-party *test-only* deps and no build step, but the suites import app
+modules, so the runtime deps in [`requirements.txt`](requirements.txt)
+(`requests`, `opencv-python`, `numpy`, `Pillow`) must be installed first. Run
+both suites from the repo root:
 
 ```sh
+python3 -m pip install -r requirements.txt
 python3 -m unittest discover -s tests   # backend pure helpers
 bash tests/run.sh                        # SPA pure helpers (all tests/*.js suites)
 ```
+
+On a headless Linux box, `import cv2` also needs the shared libraries
+`opencv-python` links against (`libGL.so.1`, `libglib-2.0.so.0`); install them
+with `sudo apt-get install -y libgl1 libglib2.0-0` (CI does this).
 
 `bash tests/run.sh` is the canonical way to run the Node suites: `node
 tests/*.js` would only execute the first file (the shell passes the rest as
@@ -800,9 +807,10 @@ same sources the tests use.
 
 **CI note (npm-free):** the repo has no `package.json`, so CI never runs
 `npm install`. Ruff is a single dependency-free binary; ESLint is invoked ad hoc
-via `npx` when available. Dedicated lint jobs are deferred because the Actions
-minutes budget is exhausted (infra, not a test failure) — run the commands above
-locally before pushing.
+via `npx` when available. Dedicated lint jobs are deferred — run the commands
+above locally before pushing. The CI job does install the Python runtime deps
+(`pip install -r requirements.txt`) plus `libgl1`/`libglib2.0-0` before running
+either suite.
 
 ## Screenshots
 
