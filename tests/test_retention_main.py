@@ -32,10 +32,15 @@ class TestRetentionMainPath(unittest.TestCase):
         self.settings_path = os.path.join(self.root, "settings.json")
         self._saved = {name: getattr(analyze_images, name) for name in (
             "BASE_DIR", "WATCH_DIRS", "MAX_AGE_DAYS", "MAX_DIR_GB",
-            "PERSIST_BUDGET_PCT", "RETENTION_LOG", "GATE_IGNORE_LABELS")}
+            "PERSIST_BUDGET_PCT", "RETENTION_LOG", "GATE_IGNORE_LABELS",
+            "PIPELINE_LOCK")}
         analyze_images.BASE_DIR = self.root
         analyze_images.WATCH_DIRS = [self.img]
         analyze_images.RETENTION_LOG = os.path.join(self.root, "retention_log.json")
+        # main() serialises on the global pipeline lock. Point it at this
+        # throwaway tree so a sweep running on the developer's machine cannot
+        # make these tests silently skip (#30).
+        analyze_images.PIPELINE_LOCK = os.path.join(self.root, "pipeline.lock")
         analyze_images.PERSIST_BUDGET_PCT = 20.0
         analyze_images.GATE_IGNORE_LABELS = ["car"]
         patcher = mock.patch.object(analyze_images, "ollama_available", return_value=False)

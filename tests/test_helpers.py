@@ -889,22 +889,34 @@ class TestJsonRecovery(unittest.TestCase):
         self.assertIn("b.jpg", recovered)
         self.assertNotIn("c.jpg", recovered)
 
-    def test_load_json_file_rewrites_clean_copy(self):
+    def test_load_json_file_keeps_original_and_writes_sidecar(self):
+        # #29: a partially recovered catalog must NOT be rewritten in place —
+        # the truncated tail is the only record that the frames past the cut
+        # were LLM-verified, and overwriting it made them deletable.
         with tempfile.TemporaryDirectory() as td:
             path = os.path.join(td, "analysis.json")
-            # Two complete entries + incomplete tail.
+            corrupt = (
+                '{\n  "x.jpg": {\n    "fast_pass": "negative"\n  },\n'
+                '  "y.jpg": {\n    "fast_pass": "negative"\n  },\n'
+                '  "z.jpg": {\n    "fast_pass": "neg'
+            )
             with open(path, "w") as f:
-                f.write(
-                    '{\n  "x.jpg": {\n    "fast_pass": "negative"\n  },\n'
-                    '  "y.jpg": {\n    "fast_pass": "negative"\n  },\n'
-                    '  "z.jpg": {\n    "fast_pass": "neg'
-                )
-            data = analyze_images.load_json_file(path, {})
+                f.write(corrupt)
+            self.addCleanup(analyze_images._PARTIAL_CATALOGS.clear)
+            data = analyze_images.load_json_file(path, {}, catalog=True)
             self.assertEqual(set(data), {"x.jpg", "y.jpg"})
-            # Clean rewrite so the next load is a plain json.loads success.
+            # Original left byte-for-byte intact.
             with open(path) as f:
-                reloaded = json.load(f)
-            self.assertEqual(set(reloaded), {"x.jpg", "y.jpg"})
+                self.assertEqual(f.read(), corrupt)
+            # Recovered prefix parked beside it, not over it.
+            with open(path + ".recovered") as f:
+                self.assertEqual(set(json.load(f)), {"x.jpg", "y.jpg"})
+            self.assertTrue(analyze_images.catalog_is_partial(path))
+            # A clean reload clears the partial mark.
+            with open(path, "w") as f:
+                f.write('{"x.jpg": {}}')
+            analyze_images.load_json_file(path, {}, catalog=True)
+            self.assertFalse(analyze_images.catalog_is_partial(path))
 
     def test_load_json_file_missing_returns_empty(self):
         with tempfile.TemporaryDirectory() as td:
