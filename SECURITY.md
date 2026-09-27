@@ -29,13 +29,20 @@ operator knowingly exposes the loopback-only service.
 
 ## Secret handling
 
-- **Never commit secrets.** `slack_webhook`, MQTT credentials, tokens, and
-  passwords belong in the gitignored `settings.json` / `integrations.json`
-  files, not in tracked files or issue bodies.
-- The gallery and API are published on **loopback only** by default
-  (`127.0.0.1:8180` in `docker-compose.yml`). Before exposing them to a LAN or
-  the internet, bind deliberately and enable authentication (`auth_basic` in
-  `nginx.conf`, optional API auth); put TLS in front of it.
+- **Never commit secrets.** Slack bot/app tokens (`integrations.json` → `slack`),
+  MQTT credentials, the API token, and passwords belong in the gitignored
+  `settings.json` / `integrations.json` files, not in tracked files or issue
+  bodies.
+- The gallery is published on **loopback only** by default
+  (`127.0.0.1:8180` in `docker-compose.yml`). The write API binds
+  **`127.0.0.1:8190` on the host** — that bind comes from
+  `systemd/webcam-api.service` running `api_server.py` directly, not from
+  compose, and is controlled by `WEBCAM_API_HOST` (never `docker-compose.yml`).
+  Before exposing either to a LAN or the internet, bind deliberately and enable
+  authentication: `auth_basic` in `nginx.conf` in front of `/api/`, plus
+  `WEBCAM_API_TOKEN` for the mutating endpoints; put TLS in front of it.
+- Browser access to the API is scoped by `WEBCAM_CORS_ORIGIN`, an origin
+  allowlist — a literal `*` is dropped, so list every origin you use.
 - Cloud inference is off unless you explicitly set `allow_cloud: true`. Slack
   and HA MQTT are the only default-outbound paths and are opt-in.
 - State files (`analysis.json`, `alert_state.json`, `inference_log.json`, ...)
@@ -45,4 +52,5 @@ operator knowingly exposes the loopback-only service.
 ## Supported versions
 
 This is a homelab project without long-term support branches. Security fixes go
-to `master` and the latest release; see [CHANGELOG.md](CHANGELOG.md).
+to `main` (the default branch) and the latest release; see
+[CHANGELOG.md](CHANGELOG.md).

@@ -53,8 +53,9 @@ watchdog; `/api/status`, `/api/health`, and an SSE `/api/events` stream; Slack
 and optional HA-MQTT integrations; a stdlib-only test harness. Installable via a
 web app manifest + iOS "Add to Home Screen" — **no service worker yet**.
 
-**In progress:** per-image LLM token streaming and a true push pipeline (today's
-SSE bridge is a 3 s file-mtime poll). See [ROADMAP.md](ROADMAP.md) and
+**In progress:** per-image LLM token streaming and a full push pipeline (the SSE
+stream already rides the pipeline's append-only `events.jsonl` bus and keeps
+catalog-mtime diffing as a fallback). See [ROADMAP.md](ROADMAP.md) and
 [docs/USER-GUIDE.md](docs/USER-GUIDE.md).
 
 ![Timeline showing a dog visit and a person visit](docs/guide/img/timeline.png)
@@ -88,6 +89,8 @@ welcome via [CONTRIBUTING.md](CONTRIBUTING.md).
 
 - **[docs/USER-GUIDE.md](docs/USER-GUIDE.md)** — how to use the gallery
 - **[docs/INSTALL.md](docs/INSTALL.md)** — full install (systemd, YOLO, Ollama)
+- **[DEPLOYMENT.md](DEPLOYMENT.md)** — how *this* host runs it (units, ports, cron)
+- **[docs/diagrams/](docs/diagrams/README.md)** — 13 self-contained HTML/SVG diagrams (architecture, sequences, data model, timeline)
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** · **[API.md](API.md)** · **[DEVELOP.md](DEVELOP.md)** · **[ROADMAP.md](ROADMAP.md)**
 - **[CONTRIBUTING.md](CONTRIBUTING.md)** (dev setup, tests, PRs) · **[SECURITY.md](SECURITY.md)** · **[CHANGELOG.md](CHANGELOG.md)**
 - **[LICENSE](LICENSE)** (MIT) · **[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)**

@@ -10,30 +10,43 @@ Planned work for funes-vision. Architecture/ops reference:
 **Goal.** Replace the UI's polling loop with a server→client event stream so the
 gallery updates *as things happen* — no waiting on the next sweep/poll tick.
 
-### Status (2026-06-17): partially built
+### Status (2026-06-17, revised): transport done, token stream not
 
-The transport and four event types exist; the headline `analysis.llm` SSE
-stream and a true pipeline→API push do not.
+The transport and four event types exist and now ride a real push; the headline
+`analysis.llm` token stream does not.
 
 - **Done.** An SSE endpoint `/api/events` (stdlib `BaseHTTPRequestHandler`,
   `text/event-stream`, `X-Accel-Buffering: no`, heartbeat) emits **`image.new`**,
   **`new-detection`**, **`detection.preliminary`**, and **`new-burst`**. The SPA
   subscribes once via `EventSource` and falls back to polling when SSE is
-  unsupported or the connection can't be established. (`image.new` is keyed off
-  a frame first appearing in `analysis.json` — i.e. right after the fast pass —
-  since the raw inotify ingest lives in the pipeline process, not the API.
-  Preliminary detections matter most while deep passes are off: they're the only
+  unsupported or the connection can't be established. (`image.new` is emitted by
+  the pipeline as each frame is persisted; on the mtime-fallback branch it is
+  keyed off a frame first appearing in `analysis.json`, i.e. right after the fast
+  pass. Preliminary detections matter most while deep passes are off: they're the only
   live detections then, since nothing reaches a verified verdict.)
   `image.new` / `detection.preliminary` / `new-detection` patch in-memory state
   (`mergeNewImage` / `detectionEntry`) and re-render from it; only `new-burst`
   still `loadData()`-refetches. Full-file `analysis.json` / `images.json` reload
   is the 30 s poll + onerror fallback, matching the acceptance checklist below.
-- **Not yet.** The bridge is a **3 s file-mtime poll** inside the API (it diffs
-  `analysis.json` / `bursts.json` on change), not a pipeline→API push, so
-  latency is ~3 s. The headline **`analysis.llm`** live stream is missing —
-  there are no `analysis.token` SSE events.
+- **Not yet.** The headline **`analysis.llm`** live stream is missing — there are
+  no `analysis.token` SSE events, so a deep pass still shows nothing until it
+  finishes.
 
 *(2026-08-18: retired the claim that the SPA `loadData()`-refetches on each SSE event.)*
+
+### Transport: done
+
+The **3 s file-mtime bridge is no longer the transport.** The analyzer appends
+each event to `events.jsonl` via `pipeline_events.emit()` (fsynced, rotated at
+2 MB / 5000 writes) and `api_server.py` tails it by byte offset — a genuine
+pipeline→API push, emitted as each frame is persisted rather than at the end of
+a sweep. `analysis.json` / `bursts.json` mtime diffing stays as a **fallback**
+for a pipeline that does not emit (the tail loop is 1 s with the bus, 3 s
+without). Also landed: a 15 s `event: ping` heartbeat, a `WEBCAM_SSE_IDLE_TIMEOUT_S`
+(600 s) reaper that ends a silent stream with `event: close`, and a
+`WEBCAM_SSE_MAX_CLIENTS` (8) cap that answers 503 instead of spawning a thread
+per reconnect. What is left on this milestone is incremental DOM patching, not
+transport.
 
 ### Why
 
@@ -49,7 +62,8 @@ just can't hear it yet.
 ### Events to stream (priority order)
 
 1. **`image.new`** — a motion snapshot was ingested. Source: the
-   `inotifywait -m -e create` watcher in `create-index.sh`. Payload: camera,
+   `inotifywait -m -e close_write,moved_to` watcher in `create-index.sh`, and
+   `pipeline_events.emit("image.new", …)` into `events.jsonl`. Payload: camera,
    filename, timestamp. UI: prepend to the All/Timeline view live.
 2. **`detection.preliminary`** — the fast detector (YOLO) produced labels.
    Source: the fast pass in `analyze_images.py`. Payload: filename, labels,
@@ -213,10 +227,11 @@ node-assert + `unittest` + `node --check` on the inline scripts.
 Substantially complete. **Done:** SSE `/api/events` (image.new / detection.preliminary
 / new-detection / new-burst), graceful fallback + a connected/degraded indicator,
 **incremental in-memory updates with no full-file refetch** (A1), and **streamed
-LLM context captions** surfaced live in the ℹ panel (A2 plumbing). **Deferred:**
-A3 (true pipeline→API push to replace the 3 s mtime bridge) — the mtime poll
-works and a thread-safe pub/sub rewrite of the live core isn't cleanly/safely
-testable autonomously; revisit when sub-second latency is actually needed.
+LLM context captions** surfaced live in the ℹ panel (A2 plumbing). **Landed
+after this note:** A3 — the true pipeline→API push. The old 3 s mtime bridge is
+now a fallback behind the `events.jsonl` bus, alongside a 15 s heartbeat, a
+600 s idle `close`, and an 8-client cap. **Still deferred:** incremental DOM
+patching.
 **Owner-gated:** live token validation + `analysis.token` SSE push need deep
 passes ON with a vision model.
 

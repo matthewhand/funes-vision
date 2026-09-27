@@ -126,14 +126,14 @@
         <rect x="552" y="417" width="136" height="12" fill="#080c14"/>
         <text x="620" y="426" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">visit grouped · bursts.json</text>
         <rect x="562" y="429" width="116" height="12" fill="#080c14"/>
-        <text x="620" y="438" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">start → end · frames[]</text>
+        <text x="620" y="438" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">last frame id · images[]</text>
 
         <rect x="284" y="480" width="112" height="12" fill="#080c14"/>
         <text x="340" y="489" fill="#60a5fa" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">detection.preliminary</text>
         <rect x="575" y="480" width="130" height="12" fill="#080c14"/>
         <text x="640" y="489" fill="#60a5fa" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">new-detection / new-burst</text>
         <rect x="86" y="510" width="200" height="12" fill="#080c14"/>
-        <text x="90" y="519" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.06em">gallery live via SSE · mtime poll ≤3 s</text>
+        <text x="90" y="519" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.06em">gallery live via SSE · events.jsonl tail ≤1 s</text>
 
         <rect x="772" y="417" width="96" height="12" fill="#080c14"/>
         <text x="820" y="426" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">retention · day 30</text>
@@ -199,7 +199,7 @@
       <div class="card">
         <div class="card-header"><span class="card-dot link"></span><h3>Live now, pruned later</h3></div>
         <ul>
-          <li>SSE polls <code>analysis.json</code> / <code>bursts.json</code> mtime every ~3&nbsp;s on the fallback path</li>
+          <li>SSE rides the pipeline's <code>events.jsonl</code> bus (1&nbsp;s tail); catalog mtimes are only a fallback, and <code>ping</code> beats every 15&nbsp;s</li>
           <li>Retention deletes analyzed-empty at 30&nbsp;days or 5&nbsp;GB; pins and LLM visits within the persist cap survive</li>
         </ul>
       </div>

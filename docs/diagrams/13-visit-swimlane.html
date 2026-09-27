@@ -82,13 +82,13 @@
     <div class="header">
       <p class="header-eyebrow">Swimlane · funes-vision</p>
       <h1>A porch visit, lane by lane</h1>
-      <p class="subtitle">A motion still is dropped over FTP, queued, gated by a fast YOLO pass, enriched by a local Ollama deep pass that attaches Home Assistant flags, merged into <span style="font-family:var(--font-mono);font-size:0.9em">analysis.json</span> and grouped into a visit in <span style="font-family:var(--font-mono);font-size:0.9em">bursts.json</span>, then surfaced live over SSE. Slack and HA MQTT are optional egress; pin-aware retention keeps the visit unless it is pinned.</p>
+      <p class="subtitle">A motion still is dropped over FTP, queued, gated by a fast YOLO pass, enriched by a local Ollama deep pass that attaches Home Assistant flags, merged into <span style="font-family:var(--font-mono);font-size:0.9em">analysis.json</span> and grouped into a visit in <span style="font-family:var(--font-mono);font-size:0.9em">bursts.json</span>, then surfaced live over SSE. Slack and HA MQTT are optional egress; pin-aware retention deletes the visit unless it is pinned.</p>
     </div>
 
     <div class="diagram-container">
       <svg viewBox="0 0 1600 820" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="visit-swimlane-title visit-swimlane-desc">
         <title id="visit-swimlane-title">funes-vision person-visit swimlane</title>
-        <desc id="visit-swimlane-desc">Swimlane process with five lanes: a Camera drops a motion still over FTP; the Pipeline queues it, runs a fast YOLO pass, then a deep Ollama pass that attaches Home Assistant flags, and merges the record; the Catalog store holds analysis.json and bursts.json; the Gallery and API surface the visit live over SSE; the Integrations lane optionally notifies Slack and publishes retained HA MQTT flags, while pin-aware retention keeps the visit unless pinned.</desc>
+        <desc id="visit-swimlane-desc">Swimlane process with five lanes: a Camera drops a motion still over FTP; the Pipeline queues it, runs a fast YOLO pass, then a deep Ollama pass that attaches Home Assistant flags, and merges the record; the Catalog store holds analysis.json and bursts.json; the Gallery and API surface the visit live over SSE; the Integrations lane optionally notifies Slack and publishes retained HA MQTT flags, while pin-aware retention deletes the visit unless it is pinned.</desc>
         <defs>
           <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
             <polygon points="0 0, 8 3, 0 6" fill="#94a3b8"/>

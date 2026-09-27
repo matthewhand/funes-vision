@@ -181,7 +181,7 @@
         <div class="card-header"><span class="card-dot muted"></span><h3>Parked cars skip the deep budget</h3></div>
         <ul>
           <li>A car-only hit is persisted as <code>_llm_skip=no_trigger</code> (detector-only) and never re-queued as urgent</li>
-          <li>Off by default, idle backfill (<code>DEEP_BACKFILL=false</code>) can later promote detector-only to merged</li>
+          <li>Off by default: the <code>deep_backfill</code> setting (module constant <code>DEEP_BACKFILL</code>, default <code>false</code>) can later promote detector-only rows to merged</li>
         </ul>
       </div>
       <div class="card">

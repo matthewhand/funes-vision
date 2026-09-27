@@ -82,13 +82,13 @@
     <div class="header">
       <p class="header-eyebrow">Data flow · funes-vision</p>
       <h1>Camera frame to retained record</h1>
-      <p class="subtitle">A JPEG lands in a watched directory, a fast YOLO pass writes a preliminary record, and a deep LLM pass on person/dog hits merges HA flags into <span style="font-family:var(--font-mono);font-size:0.9em">analysis.json</span>. Visits are grouped into <span style="font-family:var(--font-mono);font-size:0.9em">bursts.json</span>, the gallery and API publish the catalogs, and pin-aware retention deletes empty frames at 30 days or the 5 GB cap.</p>
+      <p class="subtitle">A JPEG lands in a watched directory, a fast YOLO pass writes a preliminary record, and a deep LLM pass on any real detector hit merges HA flags into <span style="font-family:var(--font-mono);font-size:0.9em">analysis.json</span>. Visits are grouped into <span style="font-family:var(--font-mono);font-size:0.9em">bursts.json</span>, the gallery and API publish the catalogs, and pin-aware retention deletes empty frames at 30 days or the 5 GB cap.</p>
     </div>
 
     <div class="diagram-container">
       <svg viewBox="0 0 1320 820" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="dataflow-title dataflow-desc">
         <title id="dataflow-title">funes-vision data flow from camera frame to retained record</title>
-        <desc id="dataflow-desc">Data flow diagram: a camera JPEG is watched and passed through fast YOLO detection, then deep LLM enrichment only on person or dog hits, merging into analysis.json; visits are grouped into bursts.json, published through the gallery and API catalogs, and expired by pin-aware retention. A dashed boundary marks the on-box sensitive domain and the single opt-in egress to Slack or HA MQTT.</desc>
+        <desc id="dataflow-desc">Data flow diagram: a camera JPEG is watched and passed through fast YOLO detection, then deep LLM enrichment on any detector hit that is not gate-ignored, merging into analysis.json; visits are grouped into bursts.json, published through the gallery and API catalogs, and expired by pin-aware retention. A dashed boundary marks the on-box sensitive domain and the single opt-in egress to Slack or HA MQTT.</desc>
         <defs>
           <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
             <polygon points="0 0, 8 3, 0 6" fill="#94a3b8"/>
@@ -265,8 +265,8 @@
       <div class="card">
         <div class="card-header"><span class="card-dot link"></span><h3>Conditional enrichment</h3></div>
         <ul>
-          <li>deep LLM runs only on person/dog hits</li>
-          <li>car-only frames are skipped as _llm_skip=no_trigger</li>
+          <li>deep LLM runs on any detector hit that is not gate-ignored — person, dog, cat, bird, or a car sharing the frame with one</li>
+          <li>car-only frames are skipped as _llm_skip=no_trigger, then verified by idle backfill if enabled</li>
           <li>detection entries are pruned only under disk pressure</li>
         </ul>
       </div>
@@ -276,7 +276,7 @@
       <span>funes-vision · docs/diagrams</span>
       <span>Source: create-index.sh, analyze_images.py:1760-1900 (apply_retention), analyze_images.py:1520 (retention_log), analyze_images.py:838 (inference_log), ha_mqtt.py, api_server.py:441-443, settings.example.json</span>
     </div>
-    <p class="subtitle" style="margin-top:0.75rem;font-family:var(--font-mono);font-size:0.66rem;letter-spacing:0.06em;color:var(--color-soft)">Assumptions: the egress arrow represents ha_mqtt.publish_record and the Slack notifier; 5 GB and 30d are the settings.example.json defaults; the fast pass writes a preliminary record that the deep pass merges in place; car-only detections are retained until the 5 GB budget is hit.</p>
+    <p class="subtitle" style="margin-top:0.75rem;font-family:var(--font-mono);font-size:0.66rem;letter-spacing:0.06em;color:var(--color-soft)">Assumptions: the egress arrow represents ha_mqtt.publish_record and the Slack notifier; 5 GB and 30d are the settings.example.json defaults; the fast pass writes a preliminary record that the deep pass merges in place; the deep pass runs on every detector hit except one whose only True labels are gate-ignored (default: car), which is persisted as _llm_skip=no_trigger instead.</p>
   </div>
 </body>
 </html>
