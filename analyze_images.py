@@ -1923,9 +1923,12 @@ def generate_thumbnails(image_dir, images):
     if made:
         print(f"Generated {made} thumbnails in {thumb_dir}")
 
-def main(retention_only=False, rescan_days=None):
+def main(retention_only=False, rescan_days=None, settings_path=None):
     global RATE_LIMITED
-    apply_settings()  # re-read settings.json so /api/settings changes land this sweep
+    # Re-read settings.json so /api/settings changes land this sweep. An explicit
+    # settings_path aims the sweep at a specific file (tests, one-off tooling);
+    # None keeps reading the deployed settings.json, so production is unchanged.
+    apply_settings(load_settings(settings_path))
     RATE_LIMITED = False  # fresh budget each sweep; a throttle only pauses one sweep
     api_key = os.getenv("OPENROUTER_API_KEY")
     if not WATCH_DIRS:

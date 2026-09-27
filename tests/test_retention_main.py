@@ -1,9 +1,15 @@
 """End-to-end tests for the retention-only sweep entry point.
 
-These call ``analyze_images.main(retention_only=True)`` on a throwaway tree and
-assert the observable retention outcomes (age eviction, pins, detection budget,
-backlog eviction). The lower-level ``apply_retention`` matrix already lives in
-``test_helpers.py`` and is deliberately not repeated here.
+These call ``analyze_images.main(retention_only=True, settings_path=...)`` on a
+throwaway tree and assert the observable retention outcomes (age eviction, pins,
+detection budget, backlog eviction). The lower-level ``apply_retention`` matrix
+already lives in ``test_helpers.py`` and is deliberately not repeated here.
+
+Each test writes its own ``settings.json`` into the throwaway tree and hands
+main() that path, so the sweep's config comes from the test rather than from
+whichever ``settings.json`` happens to sit next to the script on the developer's
+machine (or from its absence in CI). ``test_settings_path_guard.py`` is what
+keeps that seam load-bearing.
 """
 import io
 import json
@@ -23,6 +29,7 @@ class TestRetentionMainPath(unittest.TestCase):
         self.root = self.td.name
         self.img = os.path.join(self.root, "cam1")
         os.makedirs(self.img)
+        self.settings_path = os.path.join(self.root, "settings.json")
         self._saved = {name: getattr(analyze_images, name) for name in (
             "BASE_DIR", "WATCH_DIRS", "MAX_AGE_DAYS", "MAX_DIR_GB",
             "PERSIST_BUDGET_PCT", "RETENTION_LOG", "GATE_IGNORE_LABELS")}
@@ -54,15 +61,21 @@ class TestRetentionMainPath(unittest.TestCase):
         with open(os.path.join(self.root, "pins.json"), "w") as f:
             json.dump(pins, f)
 
-    def _run(self):
+    def _run(self, **settings):
+        """Write a hermetic settings.json for this sweep, then run it.
+
+        Settings go through the file rather than module globals so the sweep
+        exercises the same load path production uses, sourced from the test.
+        """
+        cfg = {"watch_dirs": [self.img], "persist_budget_pct": 20.0, **settings}
+        with open(self.settings_path, "w") as f:
+            json.dump(cfg, f)
         out = io.StringIO()
         with redirect_stdout(out):
-            analyze_images.main(retention_only=True)
+            analyze_images.main(retention_only=True, settings_path=self.settings_path)
         return out.getvalue()
 
     def test_age_pass_removes_analyzed_empty_but_keeps_pins_and_recent(self):
-        analyze_images.MAX_AGE_DAYS = 1
-        analyze_images.MAX_DIR_GB = 100
         self._frame("old_empty.jpg", 100, 3)
         self._frame("pinned.jpg", 100, 3)
         self._frame("recent_det.jpg", 100, 0.01)
@@ -70,7 +83,7 @@ class TestRetentionMainPath(unittest.TestCase):
                      "pinned.jpg": {"fast_pass": "negative"},
                      "recent_det.jpg": {"person": True}}, ["pinned.jpg"])
 
-        log = self._run()
+        log = self._run(max_age_days=1, max_dir_gb=100)
 
         self.assertIn("Retention-only: skipped analysis", log)
         self.assertFalse(os.path.exists(os.path.join(self.img, "old_empty.jpg")))
@@ -78,25 +91,21 @@ class TestRetentionMainPath(unittest.TestCase):
         self.assertTrue(os.path.exists(os.path.join(self.img, "recent_det.jpg")))
 
     def test_detection_survives_within_budget_but_evicts_when_over(self):
-        analyze_images.MAX_AGE_DAYS = 3650
-        analyze_images.MAX_DIR_GB = 500 / (1024 ** 3)
         self._frame("n1.jpg", 400, 1)
         self._frame("d1.jpg", 400, 0.5)
         self._state({"n1.jpg": {"fast_pass": "negative"}, "d1.jpg": {"person": True}}, [])
-        self._run()
+        self._run(max_age_days=3650, max_dir_gb=500 / (1024 ** 3))
         self.assertFalse(os.path.exists(os.path.join(self.img, "n1.jpg")))
         self.assertTrue(os.path.exists(os.path.join(self.img, "d1.jpg")))
 
     def test_detection_evicted_only_after_budget_unavoidable(self):
-        analyze_images.MAX_AGE_DAYS = 3650
-        analyze_images.MAX_DIR_GB = 500 / (1024 ** 3)
         self._frame("n1.jpg", 400, 1)
         self._frame("d1.jpg", 400, 0.5)
         self._frame("d2.jpg", 400, 0.4)
         self._state({"n1.jpg": {"fast_pass": "negative"},
                      "d1.jpg": {"person": True},
                      "d2.jpg": {"dog": True}}, [])
-        self._run()
+        self._run(max_age_days=3650, max_dir_gb=500 / (1024 ** 3))
         self.assertFalse(os.path.exists(os.path.join(self.img, "n1.jpg")))
         surviving = [f for f in ("d1.jpg", "d2.jpg")
                      if os.path.exists(os.path.join(self.img, f))]
@@ -105,33 +114,27 @@ class TestRetentionMainPath(unittest.TestCase):
         self.assertLessEqual(total, 500)
 
     def test_backlog_retained_when_within_budget(self):
-        analyze_images.MAX_AGE_DAYS = 3650
-        analyze_images.MAX_DIR_GB = 1
         self._frame("backlog_old.jpg", 100, 100)
         self._frame("backlog_new.jpg", 100, 0.1)
         self._state({}, [])
-        self._run()
+        self._run(max_age_days=3650, max_dir_gb=1)
         self.assertTrue(os.path.exists(os.path.join(self.img, "backlog_old.jpg")))
         self.assertTrue(os.path.exists(os.path.join(self.img, "backlog_new.jpg")))
 
     def test_backlog_evicted_only_when_over_budget(self):
-        analyze_images.MAX_AGE_DAYS = 3650
-        analyze_images.MAX_DIR_GB = 500 / (1024 ** 3)
         self._frame("known.jpg", 200, 1)
         self._frame("backlog_old.jpg", 400, 100)
         self._frame("backlog_new.jpg", 400, 0.1)
         self._state({"known.jpg": {"fast_pass": "negative"}}, [])
-        self._run()
+        self._run(max_age_days=3650, max_dir_gb=500 / (1024 ** 3))
         self.assertFalse(os.path.exists(os.path.join(self.img, "known.jpg")))
         self.assertFalse(os.path.exists(os.path.join(self.img, "backlog_old.jpg")))
         self.assertTrue(os.path.exists(os.path.join(self.img, "backlog_new.jpg")))
 
     def test_retention_only_writes_no_analysis_rows(self):
-        analyze_images.MAX_AGE_DAYS = 3650
-        analyze_images.MAX_DIR_GB = 100
         self._frame("fresh.jpg", 100, 0.01)
         self._state({}, [])
-        self._run()
+        self._run(max_age_days=3650, max_dir_gb=100)
         with open(os.path.join(self.root, "analysis.json")) as f:
             self.assertEqual(json.load(f), {})
 
