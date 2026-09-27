@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Integrations · funes-vision</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --color-paper:       #080c14;
+      --color-paper-2:     #0f172a;
+      --color-ink:         #f8fafc;
+      --color-muted:       #94a3b8;
+      --color-soft:        #64748b;
+      --color-rule:        rgba(248,250,252,0.12);
+      --color-rule-solid:  rgba(148,163,184,0.30);
+      --color-accent:      #3b82f6;
+      --color-accent-tint: rgba(59,130,246,0.12);
+      --color-link:        #60a5fa;
+      --font-sans:   'Geist', system-ui, sans-serif;
+      --font-serif:  'Instrument Serif', 'Times New Roman', serif;
+      --font-mono:   'Geist Mono', ui-monospace, Menlo, monospace;
+    }
+    body { font-family: var(--font-sans); background: var(--color-paper); color: var(--color-ink); min-height: 100vh; padding: 3rem 2rem; }
+    .container { max-width: 1200px; margin: 0 auto; }
+    .header { margin-bottom: 2.5rem; }
+    .header-eyebrow { font-family: var(--font-mono); font-size: 0.66rem; font-weight: 500; letter-spacing: 0.18em; text-transform: uppercase; color: var(--color-muted); margin-bottom: 0.75rem; }
+    h1 { font-family: var(--font-serif); font-size: clamp(1.75rem, 3vw + 1rem, 2.5rem); font-weight: 400; letter-spacing: -0.02em; line-height: 1.1; color: var(--color-ink); margin-bottom: 0.5rem; }
+    .subtitle { font-size: 1rem; line-height: 1.55; color: var(--color-muted); max-width: 62ch; }
+    .diagram-container { background: transparent; border: none; padding: 0; overflow-x: auto; }
+    svg { width: 100%; min-width: 900px; display: block; }
+    .cards { display: grid; grid-template-columns: 1.1fr 1fr 0.9fr; gap: 1rem; margin-top: 1.5rem; }
+    @media (max-width: 900px) { .cards { grid-template-columns: 1fr; } }
+    .card { background: var(--color-paper-2); border: 1px solid var(--color-rule); border-radius: 6px; padding: 1.25rem; }
+    .card-header { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.875rem; padding-bottom: 0.875rem; border-bottom: 1px solid var(--color-rule); }
+    .card-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .card-dot.ink { background: var(--color-ink); } .card-dot.muted { background: var(--color-muted); }
+    .card-dot.coral { background: var(--color-accent); } .card-dot.link { background: var(--color-link); } .card-dot.soft { background: var(--color-soft); }
+    .card h3 { font-size: 0.875rem; font-weight: 600; color: var(--color-ink); }
+    .card ul { list-style: none; color: var(--color-muted); font-size: 0.8125rem; line-height: 1.55; }
+    .card li { margin-bottom: 0.3rem; padding-left: 0.875rem; position: relative; }
+    .card li::before { content: '—'; position: absolute; left: 0; color: var(--color-soft); font-size: 0.75rem; }
+    .footer { margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid var(--color-rule); font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.05em; color: var(--color-soft); display: flex; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <p class="header-eyebrow">Integrations · funes-vision</p>
+      <h1>Outbound integrations</h1>
+      <p class="subtitle">Pipeline events are dispatched to three optional consumers. Everything on the left stays on the box; only the external zone leaves it.</p>
+    </div>
+
+    <div class="diagram-container">
+      <svg viewBox="0 0 1000 700" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="07-integrations-title 07-integrations-desc">
+        <title id="07-integrations-title">Outbound integrations</title>
+        <desc id="07-integrations-desc">The analysis pipeline hands detection events to a dispatcher, which sends them to Slack, ntfy, or Home Assistant MQTT; only the external zone leaves the machine, and secrets stay in a gitignored store.</desc>
+        <defs>
+          <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#94a3b8"/></marker>
+          <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#3b82f6"/></marker>
+          <marker id="arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#60a5fa"/></marker>
+        </defs>
+
+        <rect width="100%" height="100%" fill="#080c14"/>
+
+        <!-- Zones (drawn first) -->
+        <rect x="40" y="88" width="440" height="440" rx="8" fill="rgba(248,250,252,0.02)" stroke="rgba(248,250,252,0.10)" stroke-width="0.8"/>
+        <rect x="56" y="96" width="120" height="12" rx="2" fill="#080c14"/>
+        <text x="116" y="105" fill="rgba(248,250,252,0.40)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.14em">ON-BOX CORE</text>
+
+        <rect x="520" y="88" width="440" height="440" rx="8" fill="rgba(248,250,252,0.02)" stroke="rgba(248,250,252,0.10)" stroke-width="0.8"/>
+        <rect x="536" y="96" width="196" height="12" rx="2" fill="#080c14"/>
+        <text x="634" y="105" fill="rgba(248,250,252,0.40)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.14em">EXTERNAL · LEAVES THE BOX</text>
+
+        <!-- Arrows (behind nodes) -->
+        <!-- pipeline -> dispatcher -->
+        <path d="M264,172 H272 Q280,172 280,180 V228 Q280,236 288,236 H296" fill="none" stroke="#94a3b8" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <rect x="276" y="150" width="56" height="12" rx="2" fill="#080c14"/>
+        <text x="304" y="159" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">EVENTS</text>
+
+        <!-- dispatcher -> slack -->
+        <path d="M448,220 H508 Q516,220 516,212 V164 Q516,156 524,156 H584" fill="none" stroke="#60a5fa" stroke-width="1.2" marker-end="url(#arrow-link)"/>
+        <rect x="524" y="176" width="52" height="12" rx="2" fill="#080c14"/>
+        <text x="550" y="185" fill="#60a5fa" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">HTTPS</text>
+
+        <!-- dispatcher -> ntfy (straight, shared y) -->
+        <line x1="448" y1="240" x2="584" y2="240" stroke="#60a5fa" stroke-width="1.2" marker-end="url(#arrow-link)"/>
+        <rect x="486" y="222" width="52" height="12" rx="2" fill="#080c14"/>
+        <text x="512" y="231" fill="#60a5fa" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">HTTPS</text>
+
+        <!-- dispatcher -> mqtt -->
+        <path d="M448,260 H508 Q516,260 516,268 V316 Q516,324 524,324 H584" fill="none" stroke="#94a3b8" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <rect x="524" y="284" width="44" height="12" rx="2" fill="#080c14"/>
+        <text x="546" y="293" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">MQTT</text>
+
+        <!-- mqtt -> broker -->
+        <line x1="680" y1="356" x2="680" y2="376" stroke="#94a3b8" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <rect x="688" y="358" width="72" height="12" rx="2" fill="#080c14"/>
+        <text x="724" y="367" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">RETAINED</text>
+
+        <!-- secrets -> dispatcher (dashed) -->
+        <path d="M264,352 H364 Q372,352 372,344 V292" fill="none" stroke="#64748b" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+        <rect x="380" y="310" width="52" height="12" rx="2" fill="#080c14"/>
+        <text x="406" y="319" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">CREDS</text>
+
+        <!-- Nodes -->
+        <!-- pipeline -->
+        <rect x="72" y="140" width="192" height="64" rx="6" fill="#080c14"/>
+        <rect x="72" y="140" width="192" height="64" rx="6" fill="#0f172a" stroke="#f8fafc" stroke-width="1"/>
+        <rect x="80" y="146" width="36" height="12" rx="2" fill="transparent" stroke="rgba(248,250,252,0.40)" stroke-width="0.8"/>
+        <text x="98" y="155" fill="rgba(248,250,252,0.80)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">EVENT</text>
+        <text x="168" y="178" fill="#f8fafc" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Pipeline events</text>
+        <text x="168" y="192" fill="#94a3b8" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">analyze_images.py</text>
+
+        <!-- secrets (store) -->
+        <rect x="72" y="320" width="192" height="64" rx="6" fill="#080c14"/>
+        <rect x="72" y="320" width="192" height="64" rx="6" fill="rgba(248,250,252,0.05)" stroke="#94a3b8" stroke-width="1"/>
+        <rect x="80" y="326" width="36" height="12" rx="2" fill="transparent" stroke="rgba(148,163,184,0.40)" stroke-width="0.8"/>
+        <text x="98" y="335" fill="rgba(148,163,184,0.80)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">STORE</text>
+        <text x="168" y="358" fill="#f8fafc" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Secrets store</text>
+        <text x="168" y="372" fill="#94a3b8" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">settings.json · integrations.json</text>
+
+        <!-- dispatcher (focal) -->
+        <rect x="296" y="220" width="152" height="72" rx="6" fill="#080c14"/>
+        <rect x="296" y="220" width="152" height="72" rx="6" fill="rgba(59,130,246,0.12)" stroke="#3b82f6" stroke-width="1.2"/>
+        <rect x="304" y="226" width="32" height="12" rx="2" fill="transparent" stroke="rgba(59,130,246,0.40)" stroke-width="0.8"/>
+        <text x="320" y="235" fill="rgba(59,130,246,0.80)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">CORE</text>
+        <text x="372" y="260" fill="#f8fafc" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Dispatcher</text>
+        <text x="372" y="274" fill="#94a3b8" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">integrations/__init__.py</text>
+
+        <!-- slack -->
+        <rect x="584" y="124" width="192" height="64" rx="6" fill="#080c14"/>
+        <rect x="584" y="124" width="192" height="64" rx="6" fill="rgba(248,250,252,0.03)" stroke="rgba(248,250,252,0.30)" stroke-width="1"/>
+        <rect x="592" y="130" width="32" height="12" rx="2" fill="transparent" stroke="rgba(248,250,252,0.30)" stroke-width="0.8"/>
+        <text x="608" y="139" fill="rgba(248,250,252,0.70)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">HTTP</text>
+        <text x="680" y="162" fill="#f8fafc" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Slack</text>
+        <text x="680" y="176" fill="#94a3b8" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">api.slack.com · xoxb-</text>
+
+        <!-- ntfy -->
+        <rect x="584" y="208" width="192" height="64" rx="6" fill="#080c14"/>
+        <rect x="584" y="208" width="192" height="64" rx="6" fill="rgba(248,250,252,0.03)" stroke="rgba(248,250,252,0.30)" stroke-width="1"/>
+        <rect x="592" y="214" width="32" height="12" rx="2" fill="transparent" stroke="rgba(248,250,252,0.30)" stroke-width="0.8"/>
+        <text x="608" y="223" fill="rgba(248,250,252,0.70)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">HTTP</text>
+        <text x="680" y="246" fill="#f8fafc" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">ntfy</text>
+        <text x="680" y="260" fill="#94a3b8" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">POST /&lt;topic&gt;</text>
+
+        <!-- mqtt -->
+        <rect x="584" y="292" width="192" height="64" rx="6" fill="#080c14"/>
+        <rect x="584" y="292" width="192" height="64" rx="6" fill="rgba(248,250,252,0.03)" stroke="rgba(248,250,252,0.30)" stroke-width="1"/>
+        <rect x="592" y="298" width="36" height="12" rx="2" fill="transparent" stroke="rgba(248,250,252,0.30)" stroke-width="0.8"/>
+        <text x="610" y="307" fill="rgba(248,250,252,0.70)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">MQTT</text>
+        <text x="680" y="330" fill="#f8fafc" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">HA MQTT</text>
+        <text x="680" y="344" fill="#94a3b8" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">ha_mqtt.py · :1883</text>
+
+        <!-- broker -->
+        <rect x="584" y="376" width="192" height="64" rx="6" fill="#080c14"/>
+        <rect x="584" y="376" width="192" height="64" rx="6" fill="rgba(248,250,252,0.03)" stroke="rgba(248,250,252,0.30)" stroke-width="1"/>
+        <rect x="592" y="382" width="32" height="12" rx="2" fill="transparent" stroke="rgba(248,250,252,0.30)" stroke-width="0.8"/>
+        <text x="608" y="391" fill="rgba(248,250,252,0.70)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">EXT</text>
+        <text x="680" y="414" fill="#f8fafc" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Mosquitto broker</text>
+        <text x="680" y="428" fill="#94a3b8" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">retained flags</text>
+
+        <!-- Legend strip -->
+        <line x1="40" y1="560" x2="960" y2="560" stroke="rgba(248,250,252,0.10)" stroke-width="0.8"/>
+        <text x="40" y="580" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">LEGEND</text>
+        <rect x="120" y="571" width="16" height="10" rx="2" fill="rgba(59,130,246,0.12)" stroke="#3b82f6" stroke-width="1"/>
+        <text x="144" y="580" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace">Focal</text>
+        <rect x="220" y="571" width="16" height="10" rx="2" fill="#0f172a" stroke="#f8fafc" stroke-width="1"/>
+        <text x="244" y="580" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace">Service</text>
+        <rect x="330" y="571" width="16" height="10" rx="2" fill="rgba(248,250,252,0.05)" stroke="#94a3b8" stroke-width="1"/>
+        <text x="354" y="580" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace">Store</text>
+        <rect x="430" y="571" width="16" height="10" rx="2" fill="rgba(248,250,252,0.03)" stroke="rgba(248,250,252,0.30)" stroke-width="1"/>
+        <text x="454" y="580" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace">External</text>
+        <line x1="560" y1="576" x2="600" y2="576" stroke="#60a5fa" stroke-width="1.2" marker-end="url(#arrow-link)"/>
+        <text x="608" y="580" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace">HTTP / API</text>
+        <line x1="720" y1="576" x2="760" y2="576" stroke="#64748b" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+        <text x="768" y="580" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace">Credentials</text>
+      </svg>
+    </div>
+
+    <div class="cards">
+      <div class="card">
+        <div class="card-header"><span class="card-dot coral"></span><h3>Dispatcher is the seam</h3></div>
+        <ul>
+          <li>integrations/__init__.py fans events out; each provider is independent</li>
+          <li>Failure in one provider does not stop the pipeline</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-dot link"></span><h3>Only egress leaves the box</h3></div>
+        <ul>
+          <li>Slack, ntfy and MQTT are opt-in and off by default</li>
+          <li>Each carries image data or HA flags off-host</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-dot muted"></span><h3>Secrets never sync</h3></div>
+        <ul>
+          <li>Tokens live in gitignored settings.json / integrations.json</li>
+          <li>GET /api/integrations returns presence flags only</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="footer">
+      <span>funes-vision · docs/diagrams</span>
+      <span>Source: integrations/__init__.py, integrations/slack.py, integrations/ntfy.py, ha_mqtt.py:23-26,58-62, api_server.py:805 · Assumption: dispatcher drawn as the single fan-out seam; IO is grouped by provider</span>
+    </div>
+  </div>
+</body>
+</html>
