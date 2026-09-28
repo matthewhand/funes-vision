@@ -927,6 +927,13 @@
       font-size: 0.62rem; font-weight: 700; text-transform: uppercase;
       letter-spacing: 0.04em; color: var(--text-secondary); margin-bottom: -6px;
     }
+    /* The by-day sublabel also explains the bar's vertical axis. It lives here
+       rather than in .chart-x-axis so the axis row stays dates-only. */
+    .chart-sublabel-hint {
+      font-weight: 600; text-transform: none; letter-spacing: 0;
+      color: var(--text-tertiary, var(--text-secondary)); opacity: 0.85;
+      margin-left: 6px;
+    }
 
     .chart-viewport {
       display: flex;
@@ -935,6 +942,17 @@
       height: 70px;
       padding: 0 4px;
       gap: 3px;
+    }
+
+    /* The day planner draws one bar per day with red segments at the hour they
+       occurred. In a 196px sidebar six days are ~30px each and the segments
+       line up at matching heights, so adjacent days visually fuse into a single
+       solid band and the chart stops being readable as "one bar per day". A
+       visible separator between bars restores the count without changing the
+       data or the bar geometry. */
+    .chart-days { gap: 2px; }
+    .chart-days .chart-bar-wrapper + .chart-bar-wrapper {
+      border-left: 1px solid var(--border-color);
     }
 
     .chart-bar-wrapper {
@@ -2920,9 +2938,9 @@
         </div>
 
         <!-- Activity Chart section -->
-        <details class="sidebar-section activity-chart-container">
+        <details class="sidebar-section activity-chart-container" open>
           <summary><h3><i data-lucide="activity"></i> Motion</h3></summary>
-          <div class="chart-sublabel">By day</div>
+          <div class="chart-sublabel">By day <span class="chart-sublabel-hint">top = 12 AM</span></div>
           <div class="chart-viewport chart-days" id="activity-chart-days">
           </div>
           <div class="chart-x-axis" id="chart-x-axis-days"></div>
@@ -4270,9 +4288,18 @@
       const dayAxis = document.getElementById('chart-x-axis-days');
       if (dayAxis) {
         const fmt = s => `${parseInt(s.slice(5, 7), 10)}/${parseInt(s.slice(8, 10), 10)}`;
-        dayAxis.innerHTML = sortedDays.length
-          ? `<span>${fmt(sortedDays[0])}</span><span>days &middot; top=12AM</span><span>${fmt(sortedDays[sortedDays.length - 1])}</span>`
-          : '';
+        // The axis carries DATES ONLY. The "top = 12AM" hint used to sit in
+        // the middle slot between the first and last date, where it read as a
+        // third date label and collided with its neighbours in a 196px sidebar
+        // -- a single-day range rendered as "6/18 | days - top=12AM | 6/18".
+        // It now lives in the "By day" sublabel, where it explains the bar
+        // without competing with the dates. A one-day range also used to
+        // print the same date twice; it now prints it once.
+        const n = sortedDays.length;
+        dayAxis.innerHTML =
+          n === 0 ? ''
+          : n === 1 ? `<span>${fmt(sortedDays[0])}</span>`
+          : `<span>${fmt(sortedDays[0])}</span><span>${fmt(sortedDays[Math.floor(n / 2)])}</span><span>${fmt(sortedDays[n - 1])}</span>`;
       }
 
       // ---- 2. Hour histogram over the selected date range ----
