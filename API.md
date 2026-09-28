@@ -14,8 +14,16 @@ user visited POST deletes at the LAN host. Allowed responses also carry
 `Vary: Origin` and `Access-Control-Allow-Credentials: true`.
 
 **Bind.** `WEBCAM_API_HOST` (default `127.0.0.1`) is the only exposure control;
-the startup line prints `auth=token` or `auth=off` so an operator can see at a
-glance whether the write API is gated.
+the startup line prints `auth=token`, `auth=off` or `auth=broken` (see
+[Authentication](#authentication)) so an operator can see at a glance whether the
+write API is gated. It is read **once at import**, so it needs
+`sudo systemctl restart webcam-api`.
+
+**Request limits.** Two per-connection resource guards (a 30 s socket timeout
+and a 1 MiB `POST` body cap that answers **413**) and the `/api/status` +
+`/api/health` probe cache are all env-tunable — see
+[Request limits](#request-limits) below. The full API environment surface is
+tabulated in [DEVELOP.md](DEVELOP.md#api_serverpy-port-8190).
 
 ## Authentication
 
@@ -44,6 +52,17 @@ wrong credential is **401** `{"error": "unauthorized"}`; `OPTIONS` is not gated
 SPA and nginx are a second, independent layer — see
 [SECURITY.md](SECURITY.md) and [DEPLOYMENT.md](DEPLOYMENT.md).
 
+**A blank configured token fails closed, it is not "no auth".** A whitespace-only
+`WEBCAM_API_TOKEN` (an unset `Environment=`, an unexpanded `${VAR}`) is stripped
+and falls through to `settings.json`. But an `api_token` key in `settings.json`
+that is *present and blank* — somebody meant to configure auth and shipped an
+empty value — raises at startup: the banner prints `auth=broken`, the error
+explains why, and the process exits **1**, so writes stay closed until it is
+fixed. If a configured token later goes blank under a live process, `_authorized()`
+answers **500** `{"error": "api_token is configured but blank; ..."}` rather than
+letting the write through. The startup banner has three states, not two:
+`auth=token`, `auth=off`, `auth=broken`.
+
 In production the UI reaches this **same-origin at `/api/`** via the reverse
 proxy (basic-auth, TLS); it falls back to `http://<host>:8190` only when a page
 is opened directly on the camera container (`:8180`, which serves both the
@@ -52,6 +71,62 @@ front feed at `/` and the dogcam feed at `/Webcam22/`). See
 
 Facts here are verified against `api_server.py`. If they drift, the code wins —
 please update this file in the same change.
+
+## Request limits
+
+Two per-connection resource guards plus one probe cache. All three are
+env-tunable (no code change to tighten them) and all three are read **per
+request / per call**, not latched at startup — so an edit to the systemd
+`Environment=` takes effect on the next request, with no restart.
+
+| Env | Default | Unit | Read | Governs |
+|-----|---------|------|------|---------|
+| `WEBCAM_API_SOCKET_TIMEOUT` | `30` | seconds | per connection | Read timeout on one client socket |
+| `WEBCAM_API_MAX_BODY` | `1048576` | bytes (1 MiB) | per `POST` | Largest accepted `Content-Length` |
+| `WEBCAM_PROBE_TTL` | `5` | seconds | per probe call | How long `/api/status` and `/api/health` reuse a probe answer |
+
+**`WEBCAM_API_SOCKET_TIMEOUT`** — `ThreadingHTTPServer` runs one thread per
+connection, so a peer that opened a socket and never finished its request line
+would park a thread in `readline()` indefinitely, and a handful of partial
+requests could starve `/api/health` — the endpoint the uptime monitor and the
+cron watchdog both depend on. An idle `GET /api/events` SSE stream is
+unaffected: that path only writes, so it never trips a read timeout. *Guidance:*
+at the default, a client that takes more than 30 s to send its request is
+dropped. Raise it only for a client on a genuinely slow link — a stalled peer is
+exactly what this defends against.
+
+**`WEBCAM_API_MAX_BODY`** — every `POST` validates the declared
+`Content-Length` **before reading a byte of it**, so `Content-Length:
+2000000000` cannot buffer 2 GB of RAM in a handler thread and `-1` (chunked)
+cannot park the reader waiting for bytes that never arrive.
+
+| `POST` condition | Response |
+|------------------|----------|
+| `Content-Length` is not an integer | **400** `{"error": "bad request"}` |
+| `Content-Length` < 0, or > `WEBCAM_API_MAX_BODY` | **413** `{"error": "request body too large"}` |
+| body is not valid JSON | **400** `{"error": "bad request"}` |
+
+*Guidance:* at the default, 1 MiB is generous — every mutating endpoint is small
+JSON — so leave it alone; raise it only if an endpoint starts carrying real
+payload. The check runs **after** the cross-origin guard and after
+`Authorization`, so an unauthenticated caller still gets **401** and a
+cross-origin one still **403**/**415**: the cap never leaks whether a body
+existed. (The `Content-Length` header itself is only a *claim* — the cap bounds
+what is read, not what the caller asserts.)
+
+**`WEBCAM_PROBE_TTL`** — `/api/status` and `/api/health` are unauthenticated and
+polled hard (the SPA, `tools/watchdog.sh` and the uptime monitor all hit them).
+An uncached call forks `pgrep` **and** opens a socket to Ollama's
+`/api/version`, so 20 polls used to cost 20 forks and 20 connects on the
+documented 4-core box. Both answers are stable for seconds, so they are
+memoised in-process. Only `trigger.inotify_active` and `llm.reachable` (and
+therefore `checks.inotify` / `checks.llm_reachable`) are cached —
+`last_sweep_age_s`, `disk_space` and the queue counts are recomputed per call.
+*Guidance:* at the default, 20 polls cost 2 probes and those two values may be
+up to ~5 s stale. Set `0` to disable caching (every call re-probes — always
+correct, and the reason `/api/health` can be slow while Ollama is down). The
+cache is in-process and TTL-bounded; `reset_probe_cache()` drops it immediately
+(tests, and ops after a pipeline restart).
 
 ## REST endpoints
 
@@ -205,6 +280,10 @@ Live pipeline snapshot. Shape (keys may be absent if a source is unavailable):
 - `watch_dirs` and `cameras[]` come from **import-time** `WATCH_DIRS`. `settings`
   is re-read from disk each request, so the two can disagree until the API restarts
   after a `watch_dirs` edit.
+- `trigger.inotify_active` and `llm.reachable` are **memoised** for
+  `WEBCAM_PROBE_TTL` seconds (default 5; `0` = re-probe every call) — see
+  [Request limits](#request-limits). Every other value in the snapshot is read
+  fresh.
 
 ### `GET /api/health`
 Compact health for an external uptime monitor (and the cron watchdog).
@@ -218,6 +297,10 @@ Compact health for an external uptime monitor (and the cron watchdog).
   `llm_reachable` is skipped/true when deep passes are off;
   `recent_sweep` is true when `last_sweep_age_s` &lt; 1 h;
   `disk_space` is true when host free_gb &gt; 1.0)
+- `checks.inotify` and `checks.llm_reachable` are derived from the same
+  `WEBCAM_PROBE_TTL` probe cache as `/api/status` and can be up to one TTL
+  stale; `recent_sweep` and `disk_space` are computed per call. `0` disables
+  caching — see [Request limits](#request-limits).
 
 ### `GET /api/inference_log`
 The 50 most recent LLM audit entries, newest first.
@@ -276,7 +359,9 @@ event for `WEBCAM_SSE_IDLE_TIMEOUT_S` (default 600 s) is reaped with
 (default 8, `0` disables). Past the cap a new connection gets **503**
 `{"error": "too many event streams; retry later", "limit": <n>}` instead of
 another unbounded thread, so a page that reconnects in a loop cannot pin the box.
-The reserved slot is always released, even on a write error.
+The reserved slot is always released, even on a write error. All three SSE
+knobs are tabulated with when-to-change guidance in
+[DEVELOP.md — api_server.py](DEVELOP.md#api_serverpy-port-8190).
 
 **Events** (`event:` name + JSON `data:`):
 

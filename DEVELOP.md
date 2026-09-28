@@ -330,6 +330,7 @@ needed” runs.
 | `WATCHDOG_BUDGET_PCT` | `90` | `auto` retention kick threshold |
 | `WATCHDOG_LOG` | `$BASE/watchdog.log` | Log path |
 | `WATCHDOG_LOCK` / `WATCHDOG_MARKER` | `/tmp/webcam_analysis.{lock,lastrun}` | Flock + success marker |
+| `WATCHDOG_RESTART_STATE` | `/tmp/webcam_watchdog_last_restart` | Restart-loop backoff stamp; the `Restarting` troubleshooting entry below is the symptom of a full one |
 
 #### Operational notes
 
@@ -364,6 +365,36 @@ second port to expose publicly — the reverse proxy maps `/api/` to
 `http://<host>:8190` only when a page is opened **directly** on a camera
 container (`:8180`, i.e. LAN/dev; legacy `:8280` unused). Restart after editing:
 `sudo systemctl restart webcam-api`.
+
+#### Environment overrides
+
+The API's whole environment surface, defaults cross-checked against
+`api_server.py`. The `Read` column is the one that bites: everything except
+`WEBCAM_API_HOST` is read **per request / per call**, so an edit to the systemd
+`EnvironmentFile` applies on the next request with no restart — while
+`WEBCAM_API_HOST` is bound at import and needs `systemctl restart webcam-api`.
+
+| Env | Default | Read | Meaning |
+|-----|---------|------|---------|
+| `WEBCAM_API_SOCKET_TIMEOUT` | `30` (s) | per connection | Read timeout on one client socket. A stalled peer can't park a handler thread and starve `/api/health`. Raise only for a genuinely slow client. |
+| `WEBCAM_API_MAX_BODY` | `1048576` (1 MiB) | per `POST` | Largest accepted `Content-Length`; over it (or negative) is **413** `request body too large`, refused before the body is read. Every mutating endpoint is small JSON — leave it alone. |
+| `WEBCAM_PROBE_TTL` | `5` (s) | per probe call | Memoises the `pgrep` inotify probe and the Ollama `/api/version` reachability behind `/api/status` and `/api/health`, so 20 polls cost 2 forks instead of 20. `0` re-probes every call. Raise only if you need fresher `llm.reachable` than the default ~5 s. |
+| `WEBCAM_API_HOST` | `127.0.0.1` | **once at startup** | Bind address — the only exposure control. `0.0.0.0` only behind a proxy that does its own auth; restart the unit after changing. |
+| `WEBCAM_API_TOKEN` | unset (auth off) | per request | Shared secret gating **every** `POST`. WINS over the `api_token` key in `settings.json`. A blank env value falls through to `settings.json`; an `api_token` key that is present but blank is a misconfiguration the server **refuses to start on** (`auth=broken`) rather than silently serving auth-off. |
+| `WEBCAM_CORS_ORIGIN` | `http://localhost:8180,http://127.0.0.1:8180` | per request | Comma-separated origin allowlist. A literal `*` is dropped and never sent — the wildcard is the hole this replaced. Add your real origin when the gallery is served from another host or port. |
+| `WEBCAM_SSE_MAX_CLIENTS` | `8` | per connection | Concurrent `/api/events` cap (`0` disables); past it a new stream gets **503**, not another thread. Raise if several tabs or reverse proxies are legitimate clients. |
+| `WEBCAM_SSE_HEARTBEAT_S` | `15` (s) | per stream | `event: ping` cadence (floored at 1 s) — a bare `: ping` is invisible to `EventSource`, so the client can see a silently stalled connection. |
+| `WEBCAM_SSE_IDLE_TIMEOUT_S` | `600` (s) | per stream | Reap a stream that has seen no real event for this long (`event: close`); `0` disables. |
+| `WEBCAM_TZ` | settings.json `timezone` > `Australia/Sydney` | per `/api/status` | Display timezone for the UI. Pin it with `Environment=WEBCAM_TZ=...` in the `webcam-api` unit (see [Timezones](#indexhtml-single-file-spa)) so filenames (SOURCE_TZ) and the display agree year-round. |
+
+The first three are the per-request limits from #41; the HTTP contract they
+implement (including the **413**) is in
+[API.md — Request limits](API.md#request-limits). Two more knobs live outside
+this section: `WEBCAM_LOG_LEVEL` (default `INFO`; unknown values fall back to
+`INFO`) is process-wide and applies to the pipeline too, and the host/systemd
+variables (`WEBCAM_USER`, `WEBCAM_DIR`, `WEBCAM_CAMERAS`, `OLLAMA_*`, …) are
+tabulated in [DEPLOYMENT.md](DEPLOYMENT.md#host-configuration-etcwebcamwebcamenv)
+— they are read by `systemd/install.sh` and the units, not by the API.
 
 ### index.html (single-file SPA)
 No build step. Key state lives in the `state` object; persisted bits in
@@ -694,6 +725,11 @@ A broker is used only when `host` / `hosts` or `MQTT_HOST` is set — there
 is no `10.0.0.111` / `127.0.0.1` fallback (`DEFAULT_HOSTS` is gone).
 Enabled with an empty host list is a no-op (`no hosts`). It is not in the
 Slack settings UI. `GET /api/integrations` redacts Slack only.
+
+Env beats `integrations.json` for `MQTT_HOST`, `MQTT_PORT` (default `1883`),
+`MQTT_USER`, `MQTT_PASSWORD`, `MQTT_CLIENT_ID` (default `funes-vision`), and
+`MQTT_TOPIC_PREFIX` (default `funes_vision`; a leading/trailing `/` is
+stripped, and it wins over the settings.json `mqtt_topic_prefix` key).
 
 `notify_mode` (per integration) controls *what* triggers a post:
 - `context` (default, quietest) — only burst/sequence summaries
