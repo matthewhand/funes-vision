@@ -101,13 +101,16 @@ class TestPipelineLock(unittest.TestCase):
         analyze_images.RETENTION_LOG = os.path.join(self.root, "retention_log.json")
         analyze_images.GATE_IGNORE_LABELS = ["car"]
         analyze_images.PIPELINE_LOCK = self.lock_path
-        with open(os.path.join(self.root, "analysis.json"), "w") as f:
-            f.write("{}")
         self.victim = os.path.join(self.img, "old.jpg")
         with open(self.victim, "wb") as f:
             f.write(b"x" * 100)
         stamp = time.time() - 100 * 86400
         os.utime(self.victim, (stamp, stamp))
+        # The victim is *catalogued*. A frame with no row at all is now exempt
+        # from retention while the catalog cannot account for it (#56), and
+        # this suite is about the lock gate, not about that protection.
+        with open(os.path.join(self.root, "analysis.json"), "w") as f:
+            json.dump({"old.jpg": {"fast_pass": "negative"}}, f)
         with open(analyze_images._settings_path, "w") as f:
             json.dump({"watch_dirs": [self.img], "max_age_days": 1,
                        "max_dir_gb": 100}, f)

@@ -9,6 +9,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A missing or empty `analysis.json` no longer deletes the whole archive
+  (#56).** The #29 partial-catalog protection armed only on a *parse failure*
+  and was cleared by the next clean parse, so it did not cover the two ways
+  the same data loss still happened. (a) A missing, blank, unreadable or `{}`
+  catalog returned *before* the mark was armed, so every frame read as
+  unanalysed backlog and the age pass deleted it before the analysis queue was
+  built — precisely the state PR #40's risk section tells operators to create
+  ("delete analysis.json to force a rebuild") and the residue #23 leaves
+  behind. (b) The mark was dropped the moment the file parsed, which happens
+  when the sweep's own flush completes the JSON, not when the lost rows are
+  back: with a backlog larger than one sweep's deep-pass budget the second
+  sweep deleted the frames the first had only partly re-catalogued. The mark
+  is now armed by every state that can have lost rows and held until the
+  frames the catalog cannot account for actually have rows again, with the
+  operator warning naming the real reason. Transient backlog (a frame that
+  arrived after the last catalog write) does not arm it, and unanalysed frames
+  remain pass 3's last-resort eviction so a pipeline that cannot catalogue its
+  backlog still cannot fill the disk. The `retention_log.json` /
+  `alert_state.json` / `pins.json` branch of the loader, previously untested,
+  no longer parks a `.recovered` sidecar or claims the original is "left
+  intact" when its own writer replaces it wholesale.
+- **Mistyped destructive settings no longer become data loss (#54).**
+  `setting_num` clamped every numeric key to `lo=0.0`, which is the *safe* end
+  for `max_dir_gb` (0 disables the budget passes) but the *destructive* end
+  for the rest: `max_age_days: -1` became "expire every non-persistable frame
+  now" and `persist_budget_pct: -1` became "the persist archive may occupy
+  nothing", both while logging a reassuring `is below 0.0; clamping`.
+  `max_age_days`, `persist_budget_pct`, `max_deep_passes` and
+  `deep_concurrency` now floor at 1; the knobs whose low end is safe or inert
+  keep clamping.
+- **Secret temp files are never world-readable (#57).** `_atomic_write_json`
+  created its temp file with `open(tmp, "w")` — 0666 & ~umask — and only
+  `chmod`ed it to 0600 *after* the whole secret was written and fsynced, so a
+  kill in that window left a `*.tmp.<pid>.<tid>` holding e.g. a Slack bot token
+  at 0644, for ever. The mode is now set at creation with
+  `os.open(..., O_WRONLY|O_CREAT|O_TRUNC, mode)`, matching
+  `integrations/__init__.py`.
+- **Non-numeric settings keys are guarded too (#58).** `setting_list()` and
+  `setting_str()` mirror `setting_num()`: `watch_dirs`, `cameras`,
+  `gate_ignore_labels`, `ignore_regions` and `ollama_url` now log and keep the
+  previous value instead of being read raw, so `gate_ignore_labels: "car"`
+  becomes `["car"]` rather than `set("car") == {"c", "a", "r"}`. The int knobs
+  now accept an exactly-integral float (`"5.0"` → 5) like the float knobs do,
+  and refuse a fractional one rather than truncating it.
 - **The CSRF origin gate no longer refuses the app's own writes (#51).** The
   `Origin` check added in #41 consulted only `WEBCAM_CORS_ORIGIN`, whose
   default lists neither documented access path, so **every** browser mutation

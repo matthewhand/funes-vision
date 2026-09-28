@@ -130,6 +130,13 @@ class CallerGateSandbox(unittest.TestCase):
         for name in ("analysis.json", "bursts.json"):
             with open(os.path.join(self.base, name), "w") as f:
                 f.write("{}")
+        # Both frames get a catalog row. An *uncatalogued* frame is exempt
+        # from retention while the catalog cannot account for every frame on
+        # disk (#56), so a `{}` catalog would protect old.jpg and prove
+        # nothing about the lock gate this suite exists to test.
+        with open(os.path.join(self.base, "analysis.json"), "w") as f:
+            json.dump({"old.jpg": {"fast_pass": "negative"},
+                       "fresh.jpg": {"fast_pass": "negative"}}, f)
 
         # inotifywait really tails the camera dir forever; systemctl/sudo/logger
         # really do things to the machine.

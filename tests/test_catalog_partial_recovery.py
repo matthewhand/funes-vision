@@ -115,7 +115,7 @@ class TestPartialCatalogRecovery(unittest.TestCase):
 
         log = self._sweep()
 
-        self.assertIn("partial recovery", log)
+        self.assertIn("incomplete (partially recovered)", log)
         self.assertIn("protected", log)
         self.assertEqual(self._kept_verified(), 10)
 
@@ -134,14 +134,78 @@ class TestPartialCatalogRecovery(unittest.TestCase):
         self.assertTrue(recovered)
         self.assertLess(len(recovered), 10)                # a prefix, not the whole thing
 
-    def test_partial_mark_set_and_cleared_on_clean_reload(self):
+    def test_partial_mark_holds_until_the_backlog_is_rebuilt(self):
+        """#56 Gap B: the mark used to be cleared the moment the file parsed.
+
+        Sweep 1's own flush completes the JSON, so a clean parse on sweep 2
+        said "recovered" when all that had happened is that 2 of 10 missing
+        rows came back. Every remaining uncatalogued frame then read as
+        ordinary backlog and was deleted. The mark must now survive until the
+        frames the catalog cannot account for actually have rows again, and
+        release by itself once they do.
+
+        (This test previously asserted the opposite -- that a clean reload of
+        a one-row catalog cleared the mark -- because that was the behaviour
+        the fix removes.)
+        """
         self._seed()
         self._truncate()
         self._sweep()
-        self.assertTrue(analyze_images.catalog_is_partial(self.analysis_file))
+        # A clean-but-still-incomplete catalog: 29 of the 30 frames have no row.
+        with open(self.analysis_file, "w") as f:
+            json.dump({"f00.jpg": dict(VERIFIED)}, f)
+        log = self._sweep()
+        self.assertIn("incomplete", log)
+        self.assertIn("are protected", log)
+        self.assertIn("f29.jpg", sorted(os.listdir(self.img)))
+
+        # ... and the protection releases once the backlog is genuinely rebuilt.
+        rows = {f"f{i:02d}.jpg": dict(VERIFIED) for i in range(30)}
+        with open(self.analysis_file, "w") as f:
+            json.dump(rows, f)
+        log = self._sweep()
+        self.assertNotIn("are protected", log)
+        self.assertNotIn("incomplete", log)
+        self.assertEqual(self._kept_verified(), 10)
+
+    def test_mark_is_derived_per_sweep_not_carried_over(self):
+        """The marks record what *this* sweep's catalog load found, so a verdict
+        about one tree can never reach the next sweep (nor another test)."""
+        self._seed()
+        self._truncate()
+        self._sweep()
+        self.assertFalse(analyze_images.catalog_is_partial(self.analysis_file))
+        self.assertEqual(analyze_images._PARTIAL_CATALOGS, {})
+
+    def test_mark_holds_on_load_and_releases_on_a_complete_one(self):
+        """The mark's own state machine, without a sweep in the way.
+
+        Marks are per-sweep (main() clears them on the way out), so this drives
+        load_json_file directly -- the same seam TestJsonRecovery uses.
+        """
+        self._seed()
         with open(self.analysis_file, "w") as f:
             json.dump({"f00.jpg": dict(VERIFIED)}, f)
         analyze_images.load_json_file(self.analysis_file, {}, catalog=True)
+        self.assertTrue(analyze_images.catalog_is_partial(self.analysis_file))
+        rows = {f"f{i:02d}.jpg": dict(VERIFIED) for i in range(30)}
+        with open(self.analysis_file, "w") as f:
+            json.dump(rows, f)
+        analyze_images.load_json_file(self.analysis_file, {}, catalog=True)
+        self.assertFalse(analyze_images.catalog_is_partial(self.analysis_file))
+
+    def test_transient_backlog_does_not_arm_the_mark(self):
+        """#56: a frame that arrived *after* the last catalog write is ordinary
+        backlog, not a lost row. If it armed the mark, every sweep of a working
+        installation (a frame always lands between sweeps) would hold the
+        protection for ever and unanalysed frames would never age out."""
+        self._seed()
+        self._sweep()                                  # writes the catalog
+        with open(os.path.join(self.img, "brand_new.jpg"), "wb") as f:
+            f.write(b"x" * 100)
+        os.utime(os.path.join(self.img, "brand_new.jpg"),
+                 (time.time(), time.time()))         # newer than the catalog
+        self._sweep()
         self.assertFalse(analyze_images.catalog_is_partial(self.analysis_file))
 
     def test_non_catalog_files_do_not_arm_the_protection(self):
@@ -152,6 +216,43 @@ class TestPartialCatalogRecovery(unittest.TestCase):
         analyze_images.load_json_file(path, [])
         self.assertFalse(analyze_images.catalog_is_partial())
         self.assertFalse(analyze_images.catalog_is_partial(path))
+
+    def test_non_catalog_corruption_is_reported_honestly(self):
+        """#56: the non-catalog branch had no coverage at all and two defects.
+
+        It claimed "original left intact, prefix saved to <sidecar>" for files
+        (retention_log / alert_state / pins) that their own writer replaces
+        wholesale on the very next append, and it really did drop a
+        ``<path>.recovered`` sidecar next to them — litter that only ever
+        confused the next reader.
+        """
+        for name, default in (("retention_log.json", []), ("alert_state.json", {}),
+                              ("pins.json", [])):
+            with self.subTest(name=name):
+                path = os.path.join(self.root, name)
+                with open(path, "w") as f:
+                    f.write('[{"ts": 1, "cou' if default is list
+                             else '{"seen": {"cam1": [1, 2')
+                out = io.StringIO()
+                with redirect_stdout(out):
+                    data = analyze_images.load_json_file(path, default)
+                log = out.getvalue()
+                self.assertEqual(data, default)          # nothing recovered
+                self.assertNotIn("left intact", log)
+                self.assertIn("rebuilt from scratch on the next write", log)
+                self.assertFalse(os.path.exists(path + ".recovered"))
+
+    def test_non_catalog_recovery_does_not_park_a_sidecar(self):
+        path = os.path.join(self.root, "alert_state.json")
+        with open(path, "w") as f:
+            f.write('{\n  "cam1": {"seen": {"x": 1}},\n  "cam2": {"see')
+        out = io.StringIO()
+        with redirect_stdout(out):
+            data = analyze_images.load_json_file(path, {})
+        self.assertIn("cam1", data)
+        self.assertNotIn("cam2", data)
+        self.assertFalse(analyze_images.catalog_is_partial(path))
+        self.assertFalse(os.path.exists(path + ".recovered"))
 
     def test_categorued_rows_still_evict_while_partial(self):
         """Fail-closed applies to the *unknown*, not to the known: rows that
@@ -166,13 +267,91 @@ class TestPartialCatalogRecovery(unittest.TestCase):
         self.assertIn("f00.jpg", left)
 
     def test_protection_clears_once_the_catalog_is_repaired(self):
+        """#56: rewritten. This used to write a one-row catalog over a truncated
+        one and assert the next sweep deleted f01.jpg -- which is only possible
+        while 29 frames are still uncatalogued, i.e. it asserted the Gap B data
+        loss. The release condition is now an empty backlog, so a *complete*
+        catalog is what makes eviction resume: every frame has a row, and the
+        aged negative among them is an ordinary retention candidate again."""
         self._seed()
         self._truncate()
         self._sweep()
+        rows = {f"f{i:02d}.jpg": dict(VERIFIED) for i in range(10)}
+        rows.update({f"f{i:02d}.jpg": {"fast_pass": "negative"} for i in range(10, 30)})
         with open(self.analysis_file, "w") as f:
-            json.dump({"f00.jpg": dict(VERIFIED)}, f)
-        self._sweep()          # clean catalog: normal retention resumes
-        self.assertFalse(os.path.exists(os.path.join(self.img, "f01.jpg")))
+            json.dump(rows, f)
+        self._sweep()          # clean + complete catalog: normal retention resumes
+        self.assertFalse(os.path.exists(os.path.join(self.img, "f11.jpg")))
+
+    def test_missing_catalog_does_not_delete_verified_frames(self):
+        """#56 Gap A: no analysis.json at all is not an empty archive.
+
+        `{}` (or a missing file) made every frame unanalysed backlog, and pass 1
+        runs *before* the analysis queue is built, so a single retention-only
+        sweep deleted LLM-verified frames 40 days old. This is the state #40's
+        risk section tells operators to create and the residue #23 leaves
+        behind, so it has to be covered end to end.
+        """
+        self._seed()
+        os.remove(self.analysis_file)
+
+        log = self._sweep()
+
+        self.assertIn("incomplete (missing)", log)
+        self.assertIn("protected", log)
+        self.assertEqual(self._kept_verified(), 10)
+
+    def test_empty_catalog_does_not_delete_verified_frames(self):
+        """#56 Gap A: the #23 residue -- a catalog that parses but has no rows
+        is the same data loss as a missing one."""
+        self._seed()
+        with open(self.analysis_file, "w") as f:
+            json.dump({}, f)
+
+        log = self._sweep()
+
+        self.assertIn("incomplete", log)
+        self.assertEqual(self._kept_verified(), 10)
+
+    def test_blank_catalog_does_not_delete_verified_frames(self):
+        self._seed()
+        open(self.analysis_file, "w").close()      # zero bytes
+
+        log = self._sweep()
+
+        self.assertIn("incomplete (blank)", log)
+        self.assertEqual(self._kept_verified(), 10)
+
+    def test_clean_but_incomplete_catalog_is_committed(self):
+        """#56: only a catalog holding an *unparsable* tail must be left on disk
+        (#29). A catalog that parsed but is missing rows has no tail to save,
+        and refusing to commit it would stall the repair for ever."""
+        self._seed()
+        with open(os.path.join(self.img, "gone.jpg"), "wb") as f:
+            f.write(b"x")
+        rows = {f"f{i:02d}.jpg": dict(VERIFIED) for i in range(30)}
+        rows["gone.jpg"] = dict(VERIFIED)
+        with open(self.analysis_file, "w") as f:
+            json.dump(rows, f)
+        os.unlink(os.path.join(self.img, "gone.jpg"))
+
+        log = self._sweep()
+
+        self.assertIn("Pruned 1 stale analysis entries", log)
+        with open(self.analysis_file) as f:
+            self.assertNotIn("gone.jpg", json.load(f))
+
+    def test_unparsable_catalog_is_still_not_committed(self):
+        self._seed()
+        self._truncate()
+        self._sweep()
+        with open(os.path.join(self.img, "gone.jpg"), "wb") as f:
+            f.write(b"x")
+        with open(self.analysis_file, "a") as f:
+            f.write('  "gone.jpg": {"fast_pass": "negative"},\n  "trunc')
+        self._sweep()
+        with open(self.analysis_file) as f:
+            self.assertIn("trunc", f.read())      # tail still on disk
 
 
 if __name__ == "__main__":
