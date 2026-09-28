@@ -621,9 +621,13 @@
       }
 
       /* Natural-language search status, shown beside the search box. It is
-         deliberately quiet: it reports state, never error. Loading = "NL
-         search loading", ready = "NL search ready", otherwise nothing — a
-         failed download must not look like a broken feature. */
+         deliberately quiet: it reports state, never a stack trace. Loading =
+         "NL search loading", running = "NL search running…", ready = "NL
+         search ready", and a failed load or a failed query both read
+         "NL search unavailable — keyword search only" in --danger (#ef4444 on
+         --bg-secondary = 4.74:1, over the 4.5:1 AA floor) so a broken model is
+         visibly NOT the ready state. The .ready accent (#3b82f6 = 4.85:1)
+         already passes AA and is unchanged. */
       .nl-search-status {
         font-size: 0.62rem;
         color: var(--text-secondary);
@@ -633,6 +637,7 @@
       }
       .nl-search-status.ready { color: var(--accent); }
       .nl-search-status.busy { color: var(--text-secondary); font-style: italic; }
+      .nl-search-status.error { color: var(--danger); }
 
     /* Canonical button (token-based). .btn-switch is the accent variant. */
     .btn {
@@ -2227,6 +2232,17 @@
     }
     .lightbox-footer * { pointer-events: auto; }
 
+    /* "3 of 12" frame position. The footer is a polite live region, so this is
+       what a screen-reader user hears first on every arrow-key frame change —
+       without it, arrowing through frames gave no positional feedback at all
+       (issue #79). */
+    .lightbox-position {
+      font-weight: 600;
+      color: var(--text-primary);
+      font-variant-numeric: tabular-nums;
+      margin-bottom: 4px;
+    }
+
     /* Slideshow details */
     .slideshow-progress {
       position: absolute;
@@ -2255,7 +2271,12 @@
       z-index: 50;
     }
 
-    /* Toast Notification Alert */
+    /* Toast Notification Alert. Above every overlay: at z-index 1000 the toast
+       sat *behind* the lightbox (2000) and the zone editor (2100), so a click
+       on Share or Download in the lightbox confirmed nothing — elementFromPoint
+       at the toast's centre returned the lightbox image. Toasts are the app's
+       only "did that work" feedback, so they must win against the overlay that
+       triggered them (#79). Still below the new-activity pill (2500). */
     .toast {
       position: fixed;
       bottom: 24px;
@@ -2266,7 +2287,7 @@
       padding: 12px 18px;
       border-radius: 8px;
       box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
-      z-index: 1000;
+      z-index: 2200;
       display: flex;
       align-items: center;
       gap: 10px;
@@ -2794,8 +2815,12 @@
     </div>
   </div>
 
-  <!-- Lightbox Modal -->
-  <div class="lightbox" id="lightbox" role="dialog" aria-modal="true" aria-label="Image viewer" tabindex="-1">
+  <!-- Lightbox Modal. aria-labelledby points at the title, which openLightbox
+       rewrites per frame, so the dialog has a real, current accessible name
+       instead of the static "Image viewer" aria-label. The footer is the
+       polite live region: position ("3 of 12"), detections and caption are
+       announced as the frame changes (#79). -->
+  <div class="lightbox" id="lightbox" role="dialog" aria-modal="true" aria-labelledby="lightbox-title" tabindex="-1">
     <div class="slideshow-progress" id="slideshow-progress"></div>
     <div class="lightbox-header">
       <div class="lightbox-title" id="lightbox-title">Image Details</div>
@@ -2837,7 +2862,7 @@
       </button>
     </div>
     
-    <div class="lightbox-footer" id="lightbox-footer">
+    <div class="lightbox-footer" id="lightbox-footer" role="status" aria-live="polite" aria-atomic="true">
       Metadata info...
     </div>
   </div>
@@ -4194,6 +4219,33 @@
     }
 
     const popoverFocus = {};
+    // Every popover driven by setPopoverOpen, as [focusId, menuId, buttonId].
+    // Kept in one table so "close them all" is a single call: the Ctrl+K
+    // handler needs it before opening the palette (issue #76) and Escape needs
+    // it for keyboard parity with click-outside.
+    const POPOVERS = [
+      ['settings', 'blacklist-dropdown', 'btn-manage-blacklist'],
+      ['filters', 'filters-dropdown', 'btn-filters'],
+      ['integrations', 'integrations-dropdown', 'btn-integrations'],
+      ['status', 'system-dropdown', 'btn-system-status'],
+    ];
+    // Per-popover teardown for work that setPopoverOpen does not know about
+    // (the status panel's 5s refresh timer, say). Registered by the owner.
+    const popoverCloseHooks = new Map();
+    function closeAllPopovers(restoreFocus) {
+      POPOVERS.forEach(([id, menuId, btnId]) => {
+        const menu = document.getElementById(menuId);
+        const btn = document.getElementById(btnId);
+        if (menu && menu.classList.contains('active')) {
+          setPopoverOpen(id, menu, btn, false);
+          const hook = popoverCloseHooks.get(id);
+          if (hook) hook();
+          if (btn && restoreFocus) btn.focus();
+        }
+      });
+    }
+    window.closeAllPopovers = closeAllPopovers;
+
     function setPopoverOpen(id, menu, btn, open) {
       menu.classList.toggle('active', open);
       if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
@@ -4707,6 +4759,44 @@
     }
     // === /pure:clearedFilters ===
 
+    // === pure:viewTabStates ===
+    // The #filter-tabs pressed state implied by an active view: data-filter ->
+    // 'aria-pressed'. The one place that decides which tab is lit, so the tab
+    // bar, the natural-language pipeline, a recalled saved search and the reset
+    // cannot disagree — before, only the click handler painted it, so an NL
+    // "objects" result changed the grid but left Timeline highlighted
+    // (issue #77). Exactly one entry is pressed whenever `view` is in `filters`.
+    function viewTabStates(filters, view) {
+      const out = {};
+      for (const f of (Array.isArray(filters) ? filters : [])) {
+        out[f] = f === view ? 'true' : 'false';
+      }
+      return out;
+    }
+    // === /pure:viewTabStates ===
+
+    // Repaint the view chrome for state.activeFilter: the #filter-tabs pressed
+    // state and body[data-view]. Every entry point that sets the view calls
+    // this, and it is seeded once at startup because body[data-view] was
+    // previously only ever set by a click, so the chart tints never matched the
+    // default view on first paint.
+    function syncViewChrome(view) {
+      const v = view || state.activeFilter;
+      // Paint the whole page the view's colour: the activity charts share one
+      // blue/red recipe regardless of tab, so switching Timeline → Objects →
+      // All changed the data but not the look. body[data-view] drives the chart
+      // tints and is read by any other view-specific styling.
+      const btns = [...document.querySelectorAll('#filter-tabs .tab-btn')];
+      const pressed = viewTabStates(btns.map(b => b.dataset.filter), v);
+      btns.forEach(btn => {
+        const on = pressed[btn.dataset.filter] === 'true';
+        btn.classList.toggle('active', on);
+        btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+      });
+      document.body.dataset.view = v;
+    }
+    window.syncViewChrome = syncViewChrome;
+
     // Apply the cleared-filter state + sync DOM controls, then re-render. The
     // canonical "escape" so "Show all / Clear all filters" never dead-ends.
     // Does not switch Timeline / Objects / All.
@@ -4727,6 +4817,9 @@
       renderObjectFilters();
       renderDateSidebar();
       if (window.syncTimePills) window.syncTimePills();
+      // Reset keeps the current view but the tab bar / body[data-view] may have
+      // been left stale by a natural-language filter, so re-sync the chrome.
+      syncViewChrome();
       applyFiltersAndSearch();
     }
 
@@ -5041,6 +5134,14 @@
         }
       }
       if (changed) {
+        // Everything the NL layer can move has matching chrome, and that chrome
+        // used to be left behind: the view tab bar stayed on Timeline, the
+        // time chip kept reading "All day" (which also collapsed the whole time
+        // bar via .toolbar-bar:has(.range-collapsed)) and no object chip lit up,
+        // so an applied filter was invisible and unadjustable (issue #77).
+        syncViewChrome();
+        if (typeof updateSliderLabel === 'function') updateSliderLabel();
+        renderObjectFilters();
         if (window.syncTimePills) window.syncTimePills();
         applyFiltersAndSearch();
       }
@@ -6650,6 +6751,41 @@
       return s;
     }
 
+    // === pure:framePosition ===
+    // "3 of 12" indicator for the lightbox footer. 1-based, clamped into the
+    // result set so a stale index (auto-refresh re-render, empty grid) can never
+    // read "11 of 4" or "NaN". An empty set reads "0 of 0" — an honest "there is
+    // nothing to page through" rather than a frozen "1 of 0".
+    function framePosition(index, total) {
+      const n = (Number.isInteger(total) && total > 0) ? total : 0;
+      if (!n) return '0 of 0';
+      const i = Number.isInteger(index) ? index : 0;
+      return `${Math.min(Math.max(i, 0) + 1, n)} of ${n}`;
+    }
+    // === /pure:framePosition ===
+
+    // === pure:outsidePaintedImage ===
+    // Is (x, y) outside the *painted* photo? The lightbox <img> is width/height
+    // 100% of a full-viewport wrapper and uses object-fit:contain, so its
+    // element box covers the letterbox too — comparing e.target against
+    // #lightbox was therefore never true and backdrop click-to-close was
+    // unreachable dead code (issue #79). This fits the intrinsic image size
+    // into `box` the way object-fit:contain does and reports whether the point
+    // lands outside the fitted content rect. No intrinsic size yet (or a
+    // collapsed box) means nothing is painted, so the whole overlay is
+    // backdrop.
+    function outsidePaintedImage(x, y, box, natW, natH) {
+      if (!(natW > 0 && natH > 0)) return true;
+      if (!box || !(box.width > 0 && box.height > 0)) return true;
+      const scale = Math.min(box.width / natW, box.height / natH);
+      const pw = natW * scale;
+      const ph = natH * scale;
+      const left = box.left + (box.width - pw) / 2;
+      const top = box.top + (box.height - ph) / 2;
+      return x < left || x > left + pw || y < top || y > top + ph;
+    }
+    // === /pure:outsidePaintedImage ===
+
     function openLightbox(index) {
       state.lightboxIndex = index;
       const filename = state.filteredImages[index];
@@ -6729,6 +6865,7 @@
       }
 
       footer.innerHTML = `
+        <div class="lightbox-position" id="lightbox-position">${escapeHtml(framePosition(index, N))}</div>
         <div style="margin-bottom: 8px;">
           ${escapeHtml(lightboxFooterMeta(meta, aiText))}
         </div>
@@ -7200,9 +7337,11 @@
         }
       }
 
-      // Translate a natural-language query into filter state. Returns null
-      // on any failure so the caller can fall back to keyword matching without
-      // surfacing an error to the user.
+      // Translate a natural-language query into filter state. Returns null on
+      // any failure so the caller falls back to keyword matching, but records
+      // the reason on state.nlSearch.error so syncNlStatus() can tell the user
+      // the sentence was not understood. Swallowing it silently made a failed
+      // inference indistinguishable from a successful, filter-free one (#77).
       async function resolveNaturalLanguage(query) {
         if (!state.nlSearch.available) return null;
         if (state.nlSearch.busy) return null; // one at a time
@@ -7210,9 +7349,11 @@
         try {
           const filters = await needleModule.translate(query, filterToolSchema());
           if (!filters || typeof filters !== 'object') return null;
+          state.nlSearch.error = null;
           state.nlSearch.lastResolved = { query, filters };
           return filters;
         } catch (e) {
+          state.nlSearch.error = (e && e.message) ? e.message : String(e);
           return null;
         } finally {
           state.nlSearch.busy = false;
@@ -7252,26 +7393,42 @@
       // through it so a sentence can set date/time/object filters. The model
       // result is advisory — the keyword search still applies on top, so a
       // bad translation can only widen or narrow, never break, the view.
+      // The input lives inside the search popup, so this is the one handler for
+      // it (see the popup block below).
       let searchTimeout;
-      document.getElementById('search-input').addEventListener('input', (e) => {
-        syncSearchClear();
-        clearTimeout(searchTimeout);
-        searchTimeout = setTimeout(async () => {
-          const value = e.target.value;
-          state.searchQuery = value;
+      const runSearch = async (value) => {
+        state.searchQuery = value;
+        try {
           if (state.nlSearch.available) {
-            const filters = await resolveNaturalLanguage(value);
+            // Paint the in-flight state BEFORE awaiting. syncNlStatus() used to
+            // run only after the await, so .busy/.loading were unreachable and
+            // the status never visibly changed for the whole query (issue #77).
+            // resolveNaturalLanguage flips state.nlSearch.busy synchronously, so
+            // the status below is already the running one.
+            const pending = resolveNaturalLanguage(value);
+            syncNlStatus();
+            const filters = await pending;
             if (filters) applyNaturalLanguageFilters(filters);
           }
           applyFiltersAndSearch();
-          syncNlStatus();
           // Kick off lazy loading in the background. It does not block the
           // render above, and the first successful load enables the NL path
           // for the next query.
           if (!state.nlSearch.available && !state.nlSearch.loading) {
             loadNeedle().then(syncNlStatus);
           }
-        }, 300);
+        } finally {
+          // Always drop out of the running state, on every path.
+          syncNlStatus();
+          syncSearchPopupCount();
+        }
+      };
+      window.runSearch = runSearch;
+
+      document.getElementById('search-input').addEventListener('input', (e) => {
+        syncSearchClear();
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(() => runSearch(e.target.value), 300);
       });
 
       // Inline clear (×) for the search field.
@@ -7287,14 +7444,46 @@
       const searchPopup = document.getElementById('search-popup');
       const searchPopupInput = document.getElementById('search-input');
       const searchPopupCount = document.getElementById('search-popup-count');
+      let searchPopupRelease = null;
+
+      // A modal overlay already owns the keyboard. Ctrl+K is a document-level
+      // keydown the lightbox handler never stops, so without this the palette
+      // opened *behind* the lightbox (z 1000 vs 2000) and silently re-filtered
+      // the grid under the photo; toggling Ctrl+K again also cleared
+      // body.style.overflow, releasing the lightbox's own scroll lock (#79).
+      function modalIsOpen() {
+        const lb = document.getElementById('lightbox');
+        const zone = document.getElementById('zone-editor');
+        // The visit player builds its overlay without an id; #evp-stage only
+        // exists while it is on screen.
+        return !!((lb && lb.classList.contains('active'))
+          || (zone && !zone.hidden)
+          || document.getElementById('evp-stage'));
+      }
+      window.modalIsOpen = modalIsOpen;
 
       function openSearchPopup(prefill) {
         if (!searchPopup) return;
+        // One modal at a time (issue #79). The Ctrl+K handler already bails, but
+        // the trigger and window.openSearchPopup() funnel through here too, and a
+        // second overlay has nowhere useful to go.
+        if (modalIsOpen()) return;
+        // One popover at a time (issue #76). A popover left open under the
+        // palette kept its own focus trap live, so the first click into
+        // #search-input was swallowed by that popover's document outside-click
+        // handler, whose release closure pulled focus back to its trigger —
+        // every following keystroke went nowhere and state.searchQuery stayed
+        // empty while the grid silently kept its old filters.
+        closeAllPopovers(false);
         searchPopup.classList.add('open');
         searchPopup.setAttribute('aria-hidden', 'false');
         document.body.style.overflow = 'hidden';
         if (prefill != null) searchPopupInput.value = prefill;
-        setTimeout(() => searchPopupInput.focus(), 50);
+        // aria-modal="true" promises the page behind is inert. trapFocus is
+        // what makes that true for Tab: without it focus walked the whole page
+        // behind the overlay (issue #76). It also focuses #search-input, which
+        // is the palette's first focusable, replacing the old focus timeout.
+        searchPopupRelease = trapFocus(searchPopup);
         syncSearchPopupCount();
       }
       function closeSearchPopup() {
@@ -7302,6 +7491,13 @@
         searchPopup.classList.remove('open');
         searchPopup.setAttribute('aria-hidden', 'true');
         document.body.style.overflow = '';
+        if (searchPopupRelease) { searchPopupRelease(); searchPopupRelease = null; }
+        // trapFocus restores whatever was focused when the palette opened. When
+        // that was <body> (Ctrl+K from a non-focusable spot) focus would stay
+        // there, so put it on the trigger — every close path, not just Escape.
+        if (!document.activeElement || document.activeElement === document.body) {
+          (searchTrigger || searchPopupInput).focus();
+        }
         // Mirror the popup value back into the trigger label for context
         const v = searchPopupInput.value.trim();
         const ph = searchTrigger && searchTrigger.querySelector('.search-placeholder');
@@ -7323,14 +7519,14 @@
 
       document.addEventListener('keydown', (e) => {
         if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+          // A modal already owns the keyboard: Ctrl+K must not stack a second
+          // overlay behind (or over) it, nor fight it for the scroll lock.
+          if (modalIsOpen()) return;
           e.preventDefault();
           if (searchPopup.classList.contains('open')) closeSearchPopup();
           else openSearchPopup();
         }
-        if (e.key === 'Escape' && searchPopup.classList.contains('open')) {
-          closeSearchPopup();
-          searchTrigger && searchTrigger.focus();
-        }
+        if (e.key === 'Escape' && searchPopup.classList.contains('open')) closeSearchPopup();
       });
 
       searchPopup && searchPopup.addEventListener('click', (e) => {
@@ -7338,42 +7534,53 @@
       });
 
       // The popup input drives the same state.searchQuery + NL pipeline as the
-      // old inline field. We keep the nl-search-status element hidden here —
-      // the trigger badge already shows the NL state via syncNlStatus().
-      searchPopupInput && searchPopupInput.addEventListener('input', (e) => {
-        const value = e.target.value;
-        state.searchQuery = value;
-        syncSearchClear();
-        clearTimeout(searchTimeout);
-        searchTimeout = setTimeout(async () => {
-          if (state.nlSearch.available) {
-            const filters = await resolveNaturalLanguage(value);
-            if (filters) applyNaturalLanguageFilters(filters);
-          }
-          applyFiltersAndSearch();
-          syncNlStatus();
-          if (!state.nlSearch.available && !state.nlSearch.loading) {
-            loadNeedle().then(syncNlStatus);
-          }
-          syncSearchPopupCount();
-        }, 300);
-      });
+      // old inline field; the handler above is the single entry point for it.
+      // We keep the nl-search-status element here — the trigger badge shows the
+      // NL state via syncNlStatus() too.
 
       // Restore any saved query on load
       if (searchPopupInput && state.searchQuery) {
         searchPopupInput.value = state.searchQuery;
       }
 
-      // Reflect the natural-language search state beside the search box.
-      function syncNlStatus() {
-        const el = document.getElementById('nl-search-status');
-        if (!el) return;
-        if (state.nlSearch.busy) { el.textContent = 'NL search running…'; el.className = 'nl-search-status busy'; }
-        else if (state.nlSearch.loading) { el.textContent = 'NL search loading'; el.className = 'nl-search-status'; }
-        else if (state.nlSearch.available) { el.textContent = 'NL search ready'; el.className = 'nl-search-status ready'; }
-        else { el.textContent = ''; el.className = 'nl-search-status'; }
+    // === pure:nlStatusView ===
+    // Project the natural-language search state onto the status line beside the
+    // search box: the text, the class that colours it, and an optional title
+    // carrying the raw reason. syncNlStatus used to inline this, called only
+    // AFTER the query resolved, and rendered an empty string when no model was
+    // loaded — so state.nlSearch.busy/.loading were unreachable and a failed
+    // query looked exactly like a successful one (issue #77). Busy > loading >
+    // error > available; the fallthrough is "no model yet", which must be quiet
+    // and must never be blank.
+    function nlStatusView(nl) {
+      nl = nl || {};
+      if (nl.busy) return { text: 'NL search running…', cls: 'nl-search-status busy', title: '' };
+      if (nl.loading) return { text: 'NL search loading', cls: 'nl-search-status loading', title: '' };
+      if (nl.error) {
+        return {
+          text: 'NL search unavailable — keyword search only',
+          cls: 'nl-search-status error',
+          title: String(nl.error),
+        };
       }
-      window.syncNlStatus = syncNlStatus;
+      if (nl.available) return { text: 'NL search ready', cls: 'nl-search-status ready', title: '' };
+      return { text: 'Keyword search', cls: 'nl-search-status', title: '' };
+    }
+    // === /pure:nlStatusView ===
+
+    // Paint the state machine above into #nl-search-status. Accent on
+    // --bg-secondary is 4.85:1 and --danger is 4.74:1, both over the 4.5:1 AA
+    // floor, so ready and unavailable are told apart by hue and by words.
+    function syncNlStatus() {
+      const el = document.getElementById('nl-search-status');
+      if (!el) return;
+      const v = nlStatusView(state.nlSearch);
+      el.textContent = v.text;
+      el.className = v.cls;
+      if (v.title) el.setAttribute('title', v.title);
+      else el.removeAttribute('title');
+    }
+    window.syncNlStatus = syncNlStatus;
 
       if (searchClearBtn) {
         searchClearBtn.addEventListener('click', () => {
@@ -7409,11 +7616,10 @@
         if (ss) ss.value = state.timeStart; if (se) se.value = state.timeEnd;
         if (typeof updateSliderLabel === 'function') updateSliderLabel();
         if (window.syncTimePills) window.syncTimePills();
-        document.querySelectorAll('#filter-tabs .tab-btn').forEach(btn => {
-          const on = btn.dataset.filter === state.activeFilter;
-          btn.classList.toggle('active', on);
-          btn.setAttribute('aria-pressed', on ? 'true' : 'false');
-        });
+        // The recalled view can differ from the active tab; syncViewChrome owns
+        // the tab bar + body[data-view] so a saved Objects view repaints the
+        // chart tints too (issue #77).
+        syncViewChrome();
         renderObjectFilters();
         renderDateSidebar();
         applyFiltersAndSearch();
@@ -7458,22 +7664,21 @@
       // Category Event Tabs
       document.getElementById('filter-tabs').addEventListener('click', (e) => {
         if (e.target.classList.contains('tab-btn')) {
-          document.querySelectorAll('#filter-tabs .tab-btn').forEach(btn => {
-            btn.classList.remove('active');
-            btn.setAttribute('aria-pressed', 'false');
-          });
-          e.target.classList.add('active');
-          e.target.setAttribute('aria-pressed', 'true');
           state.activeFilter = e.target.dataset.filter;
           // Paint the whole page the view's colour: the activity charts share
           // one blue/red recipe regardless of tab, so switching Timeline →
           // Objects → All changed the data but not the look. body[data-view]
           // drives the chart tints above and is read by any other view-specific
-          // styling.
-          document.body.dataset.view = state.activeFilter;
+          // styling. syncViewChrome is the one implementation of that, shared
+          // with the NL pipeline, saved searches and reset (issue #77).
+          syncViewChrome();
           applyFiltersAndSearch();
         }
       });
+      // body[data-view] was previously only ever set by the click above, so it
+      // was missing on first paint and the chart tints never matched the
+      // default view. Seed it from the view the markup ships pressed.
+      syncViewChrome();
 
       // Time Slider Listeners
       const sliderStart = document.getElementById('time-start');
@@ -8097,6 +8302,10 @@ const props = schemaObj.properties || {};
       updateAiLiveIndicator();
       startAiPolling();
 
+      // The status refresh timer only belongs to an open popover, and the
+      // popover can now also be closed programmatically (Ctrl+K, Escape).
+      popoverCloseHooks.set('status', () => clearInterval(systemRefreshTimer));
+
       btnSystemStatus.addEventListener('click', (e) => {
         e.stopPropagation();
         const willOpen = !systemDropdown.classList.contains('active');
@@ -8265,28 +8474,31 @@ const props = schemaObj.properties || {};
         loadData(false);
       });
 
-      // Close lightbox on click outside the image frame
+      // Close the lightbox on a click on the backdrop (issue #79). e.target is
+      // never #lightbox here: the <img> is width/height 100% of a full-viewport
+      // wrapper, so elementFromPoint returned the image at every corner and the
+      // old e.target guard was unreachable dead code. Hit-test the contain-fitted
+      // photo instead — a click on the photo is a photo click (drag/zoom
+      // territory) and must not close. Chrome that is drawn over the letterbox
+      // (title, footer text, arrows, controls, progress bar) is excluded so
+      // selecting the caption or using the arrows never closes by accident.
+      // While zoomed the photo covers the overlay, so there is no backdrop and
+      // no click closes.
       document.getElementById('lightbox').addEventListener('click', (e) => {
-        if (e.target.id === 'lightbox' || e.target.classList.contains('lightbox-body')) {
-          closeLightbox();
-        }
+        if (state.zoomScale !== 1) return;
+        if (e.target.closest('button, a, input, .lightbox-header, .lightbox-footer, .slideshow-progress')) return;
+        const img = document.getElementById('lightbox-image');
+        if (!img) return;
+        if (!outsidePaintedImage(e.clientX, e.clientY, img.getBoundingClientRect(),
+                                 img.naturalWidth, img.naturalHeight)) return;
+        closeLightbox();
       });
 
       // Escape closes any open dropdown menu (keyboard parity with click-outside),
       // resets the trigger's aria-expanded, and returns focus to it.
       document.addEventListener('keydown', (e) => {
         if (e.key !== 'Escape') return;
-        [['settings', 'blacklist-dropdown', 'btn-manage-blacklist'],
-         ['filters', 'filters-dropdown', 'btn-filters'],
-         ['integrations', 'integrations-dropdown', 'btn-integrations'],
-         ['status', 'system-dropdown', 'btn-system-status']].forEach(([id, menuId, btnId]) => {
-          const menu = document.getElementById(menuId);
-          const btn = document.getElementById(btnId);
-          if (menu && menu.classList.contains('active')) {
-            setPopoverOpen(id, menu, btn, false);
-            if (btn) btn.focus();
-          }
-        });
+        closeAllPopovers(true);
       });
 
       // Global Key listener for lightbox controls

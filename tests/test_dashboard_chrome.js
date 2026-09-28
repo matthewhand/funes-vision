@@ -41,7 +41,16 @@ assert.ok(/id="search-popup"[^>]*role="dialog"/.test(html), '#search-popup dialo
 assert.ok(/id="search-input"[^>]*class="search-popup-input"/.test(html), '#search-input must remain');
 assert.match(html, /document\.addEventListener\('keydown', \(e\) => \{[\s\S]*?e\.metaKey \|\| e\.ctrlKey[\s\S]*?e\.key === 'k'/,
   'Ctrl/Cmd+K must open the search popup');
-assert.match(html, /e\.key === 'Escape'[\s\S]*?closeSearchPopup\(\)[\s\S]*?searchTrigger && searchTrigger\.focus\(\)/,
-  'Escape must close the popup and restore trigger focus');
+// Focus restore moved out of the Escape branch and into closeSearchPopup, which
+// releases trapFocus (issue #76) — every close path restores focus now, not
+// just Escape, so the assertion is on closeSearchPopup.
+const closePopup = html.match(/function closeSearchPopup\(\) \{([\s\S]*?)\n      \}/);
+assert(closePopup, 'closeSearchPopup not found');
+assert.match(closePopup[1], /if \(searchPopupRelease\) \{ searchPopupRelease\(\); searchPopupRelease = null; \}/,
+  'closeSearchPopup must release the palette focus trap');
+assert.match(closePopup[1], /document\.activeElement === document\.body[\s\S]*?searchTrigger \|\| searchPopupInput\)\.focus\(\)/,
+  'closeSearchPopup must put focus on the trigger when nothing else claimed it');
+assert.ok(!/if \(e\.key === 'Escape' && searchPopup\.classList\.contains\('open'\)\) \{[\s\S]*?searchTrigger && searchTrigger\.focus\(\)/.test(html),
+  'the manual Escape focus restore is superseded by the trapFocus release');
 
 console.log('dashboard-chrome: all assertions passed');
