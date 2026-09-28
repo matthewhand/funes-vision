@@ -856,11 +856,40 @@
     .chart-bar-wrapper {
       flex: 1;
       height: 100%;
+      /* Floor, not a size: the bars are ~5px wide by design (24 hours have to
+         share a 196px sidebar), so only the *target* is enlarged. min-height
+         keeps a wrapper from ever reporting a 0x0 box -- a collapsed chart
+         panel used to leave the day bar with no box at all. */
+      min-width: 0;
+      min-height: 24px;
+      position: relative;
       display: flex;
       flex-direction: column;
       justify-content: flex-end;
       align-items: center;
       cursor: pointer;
+    }
+
+    /* WCAG 2.5.8 Target Size (Minimum, AA) — the focusable target for a bar.
+       The coloured .chart-bar stays at its data-encoded ~5px, so the 24px
+       minimum is met by a transparent box that overlaps its neighbours
+       instead of by fattening the bar (which would misstate every hour).
+       Left-aligned, not centred: at any point inside a bar's own slot the
+       latest-in-DOM target on top is that bar's own, so hover and click still
+       land on the bar the pointer is over. Emitted after .chart-bar so it
+       paints above it (both are positioned; paint order decides hit testing).
+       The min-width/min-height are hard floors, so the target's box never
+       collapses with the wrapper's, whatever the panel is doing. */
+    .chart-hit {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: max(24px, 100%);
+      height: 100%;
+      min-width: 24px;
+      min-height: 24px;
+      z-index: 1;
+      border-radius: 3px;
     }
 
     .chart-bar {
@@ -3814,9 +3843,35 @@
     //    sized by volume. Click a day to drill in (again to clear).
     // 2) Hour histogram - events per hour over the selected date
     //    range; red = matching share. Click an hour to filter it.
+
+    // A closed <details> hides its content but leaves it in the DOM, so the
+    // bars used to stay tabbable inside a panel nobody can see -- and Chrome
+    // skips layout there, so the first bar measured in a collapsed panel came
+    // back 0x0, which is how the day bar got caught in #69. A control the user
+    // cannot see is not a target, so the bars are only built while the panel
+    // is open: a closed panel then holds no focusable element at all, and the
+    // 0x0 case is unreachable rather than merely unlikely.
+    const chartPanel = document.querySelector('.activity-chart-container');
+
+    function clearActivityChart() {
+      ['activity-chart', 'activity-chart-days', 'chart-x-axis-days'].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.innerHTML = '';
+      });
+    }
+
+    if (chartPanel) {
+      chartPanel.addEventListener('toggle', () => {
+        if (chartPanel.open) renderActivityChart();
+        else clearActivityChart();
+      });
+    }
+
     function renderActivityChart() {
+      clearActivityChart();
+      if (chartPanel && !chartPanel.open) return;
       const chartContainer = document.getElementById('activity-chart');
-      chartContainer.innerHTML = '';
+      const daysContainer = document.getElementById('activity-chart-days');
 
       // Does this image count as a "match" for red highlighting?
       // With an object filter: that object. Without: any visible detection.
@@ -3833,8 +3888,6 @@
       const what = objectFilterActive() ? Array.from(state.objectFilters).join(' / ') : 'detection';
 
       // ---- 1. Day planner: one bar per day, top=12AM bottom=12PM ----
-      const daysContainer = document.getElementById('activity-chart-days');
-      daysContainer.innerHTML = '';
       const days = {};
       state.allImages.forEach(filename => {
         if (!searchOk(filename)) return;
@@ -3869,12 +3922,20 @@
         const title = `${d.label}: ${d.total} events, ${d.matchTotal} ${what}${d.matchTotal !== 1 ? 's' : ''}`;
         // Alpha carries the day's volume; the hue comes from --chart-base-rgb so
         // the day planner re-colours with the rest of the chart on tab switch.
+        // .chart-hit is the focusable 24px target (WCAG 2.5.8); the coloured
+        // bar keeps its data-encoded size. It is emitted last so it paints
+        // above the bar and owns the pointer, and it carries the button
+        // semantics + name so the control announced is the real hit area.
+        const dayHit = document.createElement('div');
+        dayHit.className = 'chart-hit';
+        dayHit.title = title;
+        dayHit.setAttribute('aria-label', title);
+        dayHit.setAttribute('aria-pressed', String(!!activeDay));
         barWrapper.innerHTML = `
           <div class="chart-bar day-bar ${activeDay} ${viewClass}" style="height: 100%; background: rgba(var(--chart-base-rgb), ${intensity.toFixed(2)})" title="${escapeHtml(title)}">${segs}</div>
         `;
-        barWrapper.setAttribute('aria-label', title);
-        barWrapper.setAttribute('aria-pressed', String(!!activeDay));
-        bindActivatable(barWrapper, () => {
+        barWrapper.appendChild(dayHit);
+        bindActivatable(dayHit, () => {
           // Drill into that day; activating the active day clears it
           const dates = catalogDateStrs(state.allImages);
           state.activeDateFilter = state.activeDateFilter === dayStr
@@ -3927,12 +3988,19 @@
         // Hours with matches stay visible even when the hour is quiet
         const barPct = matchCount > 0 ? Math.max(pct, 8) : pct;
 
+        // Same split as the day bars: .chart-bar keeps the data-encoded height,
+        // .chart-hit is the 24px focusable/clickable target and carries the
+        // button semantics + name.
+        const hourHit = document.createElement('div');
+        hourHit.className = 'chart-hit';
+        hourHit.title = labelStr;
+        hourHit.setAttribute('aria-label', labelStr);
+        hourHit.setAttribute('aria-pressed', String(!!activeClass));
         barWrapper.innerHTML = `
           <div class="chart-bar ${activeClass}" style="height: ${barPct}%" title="${escapeHtml(labelStr)}">${matchHtml}</div>
         `;
-        barWrapper.setAttribute('aria-label', labelStr);
-        barWrapper.setAttribute('aria-pressed', String(!!activeClass));
-        bindActivatable(barWrapper, () => {
+        barWrapper.appendChild(hourHit);
+        bindActivatable(hourHit, () => {
           if (state.activeHourChartFilter === h) {
             state.activeHourChartFilter = null; // Toggle off
           } else {
