@@ -24,44 +24,63 @@
   SECTION MAP (single inline script, in file order)
   ----------------------------------------------------------------------------
   A. Router + camera registry   currentRoute / routeHref / pushRoute /
-     setWorkspaceMode / applyRoute / servedCameraId / cameras / getFeedProfile
-     sentinels: peerFeedUrl switchChipLabel
+     setWorkspaceMode / applyRoute / servedCameraId / cameras / syncSwitchChip
+     sentinels: switchChipLabel
   B. State                      const state — filters, tabs, view mode,
      lightbox, slideshow, zoom/pan, SSE status; localStorage-backed prefs
-  C. Pure helpers — time / filenames / captions
-     sentinels: cameraDisplayName resolveDisplayTz zonedTimeToUtc hourInZone
-       shortTimeZoneName parseFilenameFields filenamesOnDate visitAltText
-       lightboxTitle deleteConfirmText timelineEmptyState timelineEmptyDayCopy
-       lightboxFooterMeta showSearchClear isActivateKey clampPan inFlightState
+  C. Pure helpers — cameras / taxonomy / time / filenames / captions
+                                 cameraFeedKind / getFeedProfile / peerFeedUrl /
+     cameraDisplayName / TAXONOMY_FALLBACK + haTaxonomy / DISPLAY_TZ /
+     SOURCE_TZ / resolveDisplayTz / zonedTimeToUtc / hourInZone /
+     shortTimeZoneName / parseFilenameFields / filenamesOnDate /
+     catalogDateStrs / visitAltText / lightboxTitle / deleteConfirmText /
+     timelineEmptyState / timelineEmptyDayCopy / lightboxFooterMeta /
+     showSearchClear / isActivateKey
+     sentinels: cameraFeedKind peerFeedUrl cameraDisplayName taxonomy
+       resolveDisplayTz zonedTimeToUtc hourInZone shortTimeZoneName
+       parseFilenameFields filenamesOnDate visitAltText lightboxTitle
+       deleteConfirmText timelineEmptyState timelineEmptyDayCopy
+       lightboxFooterMeta showSearchClear isActivateKey
   D. DOM binding + catalog load bindActivatable / bindSwitch / parseFilename /
      catalogTag / drainBody / afterPaint / loadData
      sentinels: resolveGalleryCameraId pinnedSetFor pinSetsEqual pinResponseState
      also: galleryCameraId / fetchPinsFor / galleryLoadSeq
-  E. Dashboard view (/cameras/) loadDashboardCatalogs / renderDashboard /
-     loadGalleryForCamera
+  E. Dashboard view (/cameras/) dashboardState / loadDashboardCatalogs /
+     renderDashboard / loadGalleryForCamera
   F. Rendering — date rail + charts
-                                 renderDateSidebar / renderActivityChart
+                                 renderDateSidebar / renderActivityChart /
+     clearActivityChart  (chartPanel is the details host for the chart)
   G. Pure helpers — labels / badges / counts
      sentinels: labelStates badgeStateFor getHAFlags visibleLabels isRecent
        tabWrap formatCount formatGb countActiveFilters activeFilterBanner
        prefersReducedMotion hideLabelSwitchName spaceTogglesPlayback
+       frameDurations playbackToggleState clipButtonState inFlightState
        frameErrorFallbackSrc frameFadeMs scrubOwnsArrowKey frameAnnouncement
        isGifPayload lightboxImageState shouldRefreshSystemPanel emptyStateKind
        loadErrorKind sparklineHasData labelCounts visitsSummary gridStatsLabel
        visitDateLabel badgeLabel cardAriaLabel frameStatusBadge timePillRange
        hourInRange timeRangeIsDefault timeRangeCollapsed listRowSummary
        activeFiltersSummary actionsOverflow sidebarDefaultCollapsed escapeHtml
+     impure (no sentinel — they read state or the DOM): the labelStates /
+       effectiveLabels currying helpers, the focus-trap + popover machinery
+       (trapFocus / popoverFocus / POPOVERS / popoverCloseHooks /
+       closeAllPopovers / setPopoverOpen), and withInFlight
   H. Live SSE merge + saved searches
-     sentinels: mergeNewImage detectionEntry clearedFilters filterSnapshot
-       upsertSearch removeSearch labelsMatchFilter
+     sentinels: mergeNewImage detectionEntry clearedFilters viewTabStates
+       filterSnapshot upsertSearch removeSearch labelsMatchFilter
+     impure (no sentinel — they write state / the DOM): syncViewChrome /
+       resetAllFilters
   I. Object filters / blacklist renderObjectFilters / renderBlacklistMenu /
      toggleBlacklist / renderAliasToggle / toggleAliases / arraysEqual
+     also: objectFilterActive / labelsMatchObjectFilter
   J. Filtering pipeline         applyNaturalLanguageFilters /
      applyFiltersAndSearch  -> writes state.filteredImages
   K. Pure helpers — dates / visits / duration
      sentinels: todayDateStr homeDateFilter dayLabel relativeTime entryCaption
        matchesSearch visitPassesTimeFilter smoothFlicker burstContaining
        visitPlayFrames formatDuration
+     impure (no sentinel — they read state / the DOM): searchFields /
+       computeVisits / visitDuration
   L. Rendering — timeline + cards
                                  renderEventsView / openEventPlayer /
      shareLink / maybeOpenDeepLink / createImageCard
@@ -72,21 +91,32 @@
   N. Rendering — grid & pagination
                                  formatHour / updateSliderLabel /
      renderNextPage / showEmptyState / updateFilterActiveBanner /
-     isSentinelVisible / syncGridOffset
+     isSentinelVisible / syncGridOffset / moveSentinelToEnd
+     also: IMG_UNAVAILABLE / imageObserver
   O. Lightbox — zoom + slideshow
                                  openLightbox / closeLightbox /
      navigateLightbox / zoomLightbox / resetZoom / toggleSlideshow
+     also: clampPan / updateZoomTransform / setLightboxImageState /
+       startSlideshow / pauseSlideshow / resetSlideshowTimer
+     sentinels: clampPan framePosition outsidePaintedImage
   P. Live mode — polling + SSE   paintLiveBadge / toggleLiveMode / startPolling
      / stopPolling / stopEventStream / startEventStream / bumpActivity /
      showToast
      sentinels: streamStatusText liveBadgeCopy
-  Q. Bootstrap + event wiring   DOMContentLoaded handler: camera menu, tabs,
-     search popup + natural-language search, saved searches, time slider,
-     blacklist, integrations, status panel, keyboard shortcuts
-     sentinels: formatSeconds bucketByHour busiestHour backfillProgress
-  R. System status + AI polling renderSystemPanel / updateAiLiveIndicator /
+  Q. DOMContentLoaded, 1 of 3   bootstrap + event wiring: camera menu, tabs,
+     search popup + natural-language search (and its status line), saved
+     searches, time slider, blacklist, integrations
+     sentinels: nlStatusView
+  R. DOMContentLoaded, 2 of 3   system status + AI polling
+                                 renderSystemPanel / updateAiLiveIndicator /
      startAiPolling
-  S. Event listeners            grid scroll, lightbox gestures, global keys
+     sentinels: formatSeconds bucketByHour busiestHour backfillProgress
+  S. DOMContentLoaded, 3 of 3   event listeners: grid-scroll sentinel,
+     lightbox buttons + swipe / pinch / pan / wheel gestures, global keys
+  Q, R and S are three slices of the ONE DOMContentLoaded arrow function that
+  opens at the "--- Router: which view does this URL ask for? ---" banner, not
+  three top-level scopes. Everything from A to P above is top level in the one
+  classic inline script.
   ============================================================================
 -->
 <html lang="en">
@@ -3199,10 +3229,6 @@
         { id: 'Webcam22', label: 'Webcam22', source_dir: '/mnt/models/Webcam22', kind: 'back' },
       ];
       return camerasCache;
-    }
-
-    function cameraDisplayName(id) {
-      return (camerasCache ? camerasCache.find(c => c.id === id) : null) || { label: id };
     }
 
     // Point the header camera chip at `cameraId`. Called from applyRoute on
