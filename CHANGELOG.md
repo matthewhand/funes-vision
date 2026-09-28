@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The CSRF origin gate no longer refuses the app's own writes (#51).** The
+  `Origin` check added in #41 consulted only `WEBCAM_CORS_ORIGIN`, whose
+  default lists neither documented access path, so **every** browser mutation
+  (`pin`, `delete`, `settings`, `integrations`, `clip`) returned
+  **403 `origin not allowed`** — including the reverse-proxy deployment, where
+  the SPA and `/api/` are the same origin and the UI only showed a bare
+  `API 403`. A mutation is now accepted when its `Origin` matches the `Host` it
+  was addressed to, or the trusted `X-Forwarded-Host`, before the allowlist is
+  consulted. Cross-origin writes are refused exactly as before. The trust
+  boundary, the config surface and the operational changes are in
+  [API.md](API.md#api-server).
+
 ### Changed
 
 - **SSE transport.** `/api/events` now tails the pipeline's append-only

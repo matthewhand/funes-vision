@@ -22,6 +22,7 @@ Endpoints (JSON unless noted):
 """
 import base64
 import hmac
+import ipaddress
 import json
 import os
 import re
@@ -30,7 +31,7 @@ import subprocess
 import threading
 import time
 import urllib.request
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from log_config import get_logger
@@ -124,17 +125,186 @@ def redacted_settings(settings):
     return {k: v for k, v in settings.items() if not is_secret_key(k)}
 
 
-def cors_origins():
-    """Allowed browser origins for CORS, comma-separated via env.
+DEFAULT_CORS_ORIGIN = "http://localhost:8180,http://127.0.0.1:8180"
 
-    Defaults to the local gallery. There is deliberately no wildcard: the old
-    `Access-Control-Allow-Origin: *` let any page a user visited POST deletes
-    at the LAN host. Read per-call so tests (and ops) can change it live."""
-    raw = os.environ.get("WEBCAM_CORS_ORIGIN",
-                         "http://localhost:8180,http://127.0.0.1:8180")
-    # "*" is dropped even if configured: echoing it while credentials are
-    # allowed is both invalid and the exact hole this replaced.
-    return [o.strip() for o in raw.split(",") if o.strip() and o.strip() != "*"]
+# Origins are compared as opaque `scheme://host[:port]` strings, so anything
+# that is not one can never match a real Origin and is a config typo, not a
+# policy. Deliberately no wildcard: the old `Access-Control-Allow-Origin: *`
+# let any page a user visited POST deletes at the LAN host.
+_ORIGIN_RE = re.compile(r"^[a-z][a-z0-9+.\-]*://[a-z0-9._~%\-]+(?::\d{1,5})?$")
+
+# Values that are never honoured however they are spelled. `*` is the
+# "allow everything" reflex, and honouring it here is what turned an operator's
+# obvious upgrade into a total write outage (cors_origins() returns [], so
+# every browser mutation 403s while curl keeps working). `null` is what a
+# sandboxed iframe, a `file://` page and a redirect-out-of-a-page all send;
+# none of them is the operator's own gallery, so treating it as an allowed
+# origin would hand the write API to any page that can frame it.
+_NEVER_ALLOWED = ("*", "null")
+
+
+def cors_origins():
+    """Allowed browser origins, comma-separated via WEBCAM_CORS_ORIGIN.
+
+    Normalized (lowercased, trailing slash stripped) because an Origin header
+    never carries a trailing slash or uppercase, so an operator's
+    `https://dogcam.lan/` matched nothing and failed as a silent total write
+    outage. Read per-call so tests (and ops) can change it live."""
+    raw = os.environ.get("WEBCAM_CORS_ORIGIN", DEFAULT_CORS_ORIGIN)
+    out = []
+    for entry in raw.split(","):
+        origin = entry.strip().rstrip("/").lower()
+        if origin and origin not in _NEVER_ALLOWED:
+            out.append(origin)
+    return out
+
+
+def cors_origin_problems(raw=None):
+    """Why WEBCAM_CORS_ORIGIN is not doing what the operator probably meant.
+
+    Every way this variable can be *set* but *not* match the browser, which is
+    what #51 turned into a silent production outage:
+      - `*` (or an empty value): the list resolves to nothing at all, so every
+        browser mutation 403s while curl and the watchdog keep working.
+      - a trailing slash or mixed case: matches nothing (normalized away now,
+        but only silently -- the operator never learns it was wrong).
+      - anything not `scheme://host[:port]`: `localhost:8180`,
+        `http://dogcam.lan/*`, a bare hostname. Never matches a real Origin.
+    Returns one human-readable line per problem; [] means the list is usable.
+    Startup logs these, because none of them is visible from the UI -- the SPA
+    just says `API 403`."""
+    if raw is None:
+        raw = os.environ.get("WEBCAM_CORS_ORIGIN", DEFAULT_CORS_ORIGIN)
+    problems = []
+    for entry in raw.split(","):
+        given = entry.strip()
+        if not given:
+            continue
+        origin = given.rstrip("/").lower()
+        if origin in _NEVER_ALLOWED:
+            problems.append(
+                f"{given!r} is never allowed (a wildcard is the cross-origin "
+                f"hole #24 closed); it is dropped, so add the exact "
+                f"scheme://host[:port] origins your gallery is served from")
+            continue
+        if given != origin:
+            problems.append(
+                f"{given!r} is normalized to {origin!r} -- write it that way "
+                f"so the config reads the way it is matched")
+        if not _ORIGIN_RE.match(origin):
+            problems.append(
+                f"{given!r} is not scheme://host[:port], so no browser Origin "
+                f"can ever match it")
+    if not cors_origins():
+        problems.append(
+            "resolves to an EMPTY allowlist: every cross-origin browser "
+            "pin/delete/settings/integrations/clip will 403 while curl still "
+            "works (same-origin behind a reverse proxy is unaffected)")
+    return problems
+
+
+def report_cors_configuration(stream=print):
+    """Print the effective allowlist and loudly flag a list that cannot work.
+
+    Called once at startup. Before #51 a misconfigured allowlist produced no
+    log line at all and the only symptom was a bare `API 403` in the UI, so
+    an operator had no way to tell a config mistake from a bug."""
+    raw = os.environ.get("WEBCAM_CORS_ORIGIN", DEFAULT_CORS_ORIGIN)
+    origins = cors_origins()
+    stream(f"Webcam API CORS allowlist: {', '.join(origins) or '(EMPTY)'}")
+    for problem in cors_origin_problems(raw):
+        stream(f"WARNING: WEBCAM_CORS_ORIGIN: {problem}")
+        logger.warning("WEBCAM_CORS_ORIGIN: %s", problem)
+    if origins:
+        stream("Same-origin writes (the page and the API behind one reverse "
+               "proxy) are always accepted; the list above is only needed for "
+               "a gallery served from a different origin, e.g. LAN access at "
+               "http://<host>:8180.")
+
+
+def _is_loopback_peer(handler):
+    """True when the socket the request arrived on is a loopback connection.
+
+    Fails closed: a handler driven without a real socket (unit tests) or one
+    behind a socket that cannot say is not loopback, so the header stays
+    untrusted rather than the gate being opened by a missing attribute."""
+    try:
+        peer = handler.client_address[0]
+    except (AttributeError, IndexError, TypeError):
+        return False
+    try:
+        return ipaddress.ip_address(str(peer).split("%", 1)[0]).is_loopback
+    except ValueError:
+        return False
+
+
+def _authority(value):
+    """The `host[:port]` of an Origin or Host value, or None.
+
+    Accepts a full origin (`https://dogcam.lan:8443`) or a bare Host header
+    value (`dogcam.lan:8443`). Returns None for anything with no host part --
+    '', 'null', '://' -- so those can never compare equal to a real host and
+    quietly become a bypass. A comma is rejected for the same reason: a
+    comma-joined X-Forwarded-Host list must not match its first element."""
+    v = (value or "").strip().rstrip("/").lower()
+    if not v or "," in v or " " in v:
+        return None
+    if "://" in v:
+        v = urlsplit(v).netloc
+    if "@" in v:  # userinfo is not legal in Origin or Host
+        v = v.rsplit("@", 1)[1]
+    return v or None
+
+
+def _is_loopback_authority(authority):
+    """True when a host[:port] names this machine's loopback interface."""
+    v = (authority or "").strip().lower()
+    if v.startswith("["):  # [::1] or [::1]:8190
+        v = v[1:].split("]", 1)[0]
+    elif ":" in v:  # drop the port
+        v = v.rsplit(":", 1)[0]
+    v = v.split("%", 1)[0]  # IPv6 zone id
+    if not v:
+        return False
+    if v == "localhost" or v.endswith(".localhost"):
+        return True
+    try:
+        return ipaddress.ip_address(v).is_loopback
+    except ValueError:
+        return False
+
+
+def same_origin(origin, hosts):
+    """True when `origin`'s authority is one the request was addressed to.
+
+    Scheme is deliberately not compared. Behind a TLS-terminating reverse
+    proxy the API only ever sees a plaintext socket, so it cannot know the
+    browser used https; the proxy's `Host: dogcam.lan` has to satisfy
+    `Origin: https://dogcam.lan`. The residual is an attacker who can serve
+    their page at the API's own host:port over the other scheme, which means
+    they already control the front door (DNS or a MITM on the plaintext hop).
+
+    `hosts` is the list of authorities from `Handler._request_hosts`."""
+    target = _authority(origin)
+    if not target:
+        return False
+    return any(target == _authority(h) for h in hosts)
+
+
+def origin_allowed(origin, hosts=()):
+    """May a write with this Origin proceed? The single decision, shared by the
+    mutation gate and the CORS headers so the two can never disagree.
+
+    No Origin at all (curl, tools/watchdog.sh) is allowed: the gate exists to
+    stop a *browser* page on someone else's origin, and a client that chooses
+    not to send one is not that. Otherwise allowed if it is same-origin with
+    the Host the request arrived on, or explicitly allowlisted."""
+    origin = (origin or "").strip().rstrip("/").lower()
+    if not origin:
+        return True  # not a browser write: the gate does not apply
+    if origin in _NEVER_ALLOWED:
+        return False
+    return origin in cors_origins() or same_origin(origin, hosts)
 
 
 # --- SSE resource limits (#71) ---------------------------------------------
@@ -823,15 +993,19 @@ class Handler(BaseHTTPRequestHandler):
         return _env_int("WEBCAM_API_SOCKET_TIMEOUT", self.SOCKET_TIMEOUT_S)
 
     def _cors(self):
-        """Emit CORS headers scoped to the configured gallery origin.
+        """Emit CORS headers scoped to the origins this server will serve.
 
-        The request's Origin is echoed only when it is allowlisted; no Origin
-        (same-origin / non-browser) or an unknown one gets no grant. A wildcard
-        is never sent, so credentials stay safe."""
+        The request's Origin is echoed only when it is allowlisted *or*
+        same-origin with the Host it was addressed to, so the preflight answer
+        and the mutation gate can never disagree (that disagreement is what
+        turned a same-origin write into a 403, #51). No Origin (curl) falls
+        back to the first allowlisted entry. A wildcard is never sent, so
+        credentials stay safe."""
         origin = (self.headers.get("Origin") if self.headers else None) or ""
         allowed = cors_origins()
+        hosts = self._request_hosts()
         if origin:
-            if origin not in allowed:
+            if not origin_allowed(origin, hosts):
                 return
             chosen = origin
         else:
@@ -875,14 +1049,62 @@ class Handler(BaseHTTPRequestHandler):
         return bool(supplied) and hmac.compare_digest(
             supplied.encode("utf-8", "replace"), token.encode("utf-8", "replace"))
 
+    def _request_hosts(self):
+        """[authority] values this request legitimately arrived on, i.e. the
+        hosts a same-origin Origin is allowed to name (#51).
+
+        `Host` is trustworthy: it is the authority the client resolved and
+        connected to, and for a browser write it is the one header a page on
+        another origin cannot influence -- a cross-origin fetch, form post or
+        sendBeacon sets `Origin` and nothing else the attacker picks.
+
+        `X-Forwarded-Host` is NOT, so it is read only under a proxy shape the
+        caller cannot fake by accident or by habit:
+
+          * the socket peer is loopback, and
+          * `Host` does not itself name loopback.
+
+        A reverse proxy rewrites `Host` to the public vhost (`proxy_set_header
+        Host $host`), so a request from the proxy is recognisable: it came in
+        on 127.0.0.1 addressed to a name that is not loopback. A client that
+        dials the API directly sends `Host: 127.0.0.1:8190` -- loopback on
+        both counts -- so a spoofed `X-Forwarded-Host` from a direct caller is
+        ignored and the allowlist still applies. A request that did not come
+        from this host at all (WEBCAM_API_HOST=0.0.0.0) never gets the header
+        read, so the outer network cannot lift the allowlist with it either.
+
+        The honest limit: a *local* process can forge `Host` as well, and
+        nothing header-based can tell it from the proxy. That costs nothing --
+        a local caller is already inside the trust boundary, since a request
+        with no `Origin` at all is allowed by design (curl, tools/watchdog.sh)
+        and the API binds loopback. The check exists to keep the *unprivileged*
+        case (a direct loopback caller, a remote peer) inside the allowlist,
+        not to authenticate the proxy."""
+        hosts = []
+        host = (self.headers.get("Host") if self.headers else None) or ""
+        if host:
+            hosts.append(host)
+        forwarded = (self.headers.get("X-Forwarded-Host")
+                     if self.headers else None) or ""
+        if forwarded and _is_loopback_peer(self) and not _is_loopback_authority(host):
+            hosts.append(forwarded)
+        return hosts
+
     def _mutation_refusal(self):
         """Cross-origin guard for every mutation, ahead of auth and parsing.
 
         Two independent reasons to refuse, both applying whether or not a token
         is configured:
-        - an Origin outside the allowlist: some page the user visited. The
+        - an Origin that is neither allowlisted nor same-origin with the Host
+          the request was addressed to: some page the user visited. The
           response's missing CORS header does not undo the side effect, so the
-          request itself has to be refused.
+          request itself has to be refused. Same-origin is checked *first* and
+          unconditionally, because every browser POST carries an Origin --
+          including the SPA's own -- and #41 refused all of them, breaking
+          every documented access path (the reverse proxy and the LAN/dev
+          base URL) with a bare `API 403` in the UI. The gate is a defence
+          against *cross*-origin writes, so it must not fire on same-origin
+          ones.
         - a browser-shaped request that is not application/json. text/plain and
           the form encodings are CORS-safelisted, so a browser sends them with
           no preflight at all; requiring JSON forces a preflight, which the
@@ -894,7 +1116,14 @@ class Handler(BaseHTTPRequestHandler):
         origin = (self.headers.get("Origin", "") if self.headers else "") or ""
         if not origin:
             return None
-        if origin not in cors_origins():
+        if not origin_allowed(origin, self._request_hosts()):
+            # Logged, not silent: the SPA's only symptom is `API 403`, so a
+            # refused write was indistinguishable from a config mistake.
+            logger.warning("refused cross-origin mutation: origin=%r host=%r "
+                           "path=%s -- add the exact scheme://host[:port] the "
+                           "gallery is served from to WEBCAM_CORS_ORIGIN",
+                           origin[:200], (self.headers.get("Host") or "")[:200],
+                           self.path.split("?", 1)[0])
             return 403, {"error": "origin not allowed"}
         ctype = ((self.headers.get("Content-Type", "") or "").split(";")[0]
                  .strip().lower())
@@ -1553,6 +1782,7 @@ def harden_secret_files():
 
 if __name__ == "__main__":
     harden_secret_files()
+    report_cors_configuration()
     try:
         auth = "auth=token" if api_token() else "auth=off"
     except BlankTokenError as e:

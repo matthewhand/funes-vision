@@ -47,6 +47,20 @@ WEBCAM_OLLAMA_BIN="${WEBCAM_OLLAMA_BIN:-$(command -v ollama 2>/dev/null || echo 
 OLLAMA_MODELS="${OLLAMA_MODELS:-$WEBCAM_MODELS_DIR/ollama/models}"
 OLLAMA_HOST="${OLLAMA_HOST:-127.0.0.1:11434}"
 OLLAMA_KEEP_ALIVE="${OLLAMA_KEEP_ALIVE:-24h}"
+# Browser origins allowed to WRITE to the API. Behind the reverse proxy the
+# page and the API are the same origin and need no entry; this default only
+# covers the documented LAN/dev path (the page opened straight on a camera
+# container at :8180/:8280, where the SPA points cross-origin at :8190) as
+# seen from this box. Operators reaching the gallery from another machine must
+# add that machine's view of the address -- the box's LAN IP/hostname as typed
+# into the address bar, e.g. http://192.168.1.50:8180 -- which is why the LAN
+# forms are emitted as a commented hint below. `*` is NOT a valid value: it is
+# refused, and it used to resolve to an allowlist of nothing at all, which 403'd
+# every browser write while curl kept working (#51).
+WEBCAM_CORS_ORIGIN="${WEBCAM_CORS_ORIGIN:-http://localhost:8180,http://127.0.0.1:8180,http://localhost:8280,http://127.0.0.1:8280}"
+# Best-effort hint for LAN access; never auto-enabled, because the origin is
+# whatever the *client* typed, not something this host can know.
+WEBCAM_LAN_IP="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for (i = 1; i < NF; i++) if ($i == "src") { print $(i + 1); exit }}')"
 
 if ! id "$WEBCAM_USER" >/dev/null 2>&1; then
   echo "ERROR: WEBCAM_USER '$WEBCAM_USER' does not exist." >&2
@@ -73,10 +87,31 @@ WEBCAM_OLLAMA_BIN=$WEBCAM_OLLAMA_BIN
 OLLAMA_MODELS=$OLLAMA_MODELS
 OLLAMA_HOST=$OLLAMA_HOST
 OLLAMA_KEEP_ALIVE=$OLLAMA_KEEP_ALIVE
+WEBCAM_CORS_ORIGIN="$WEBCAM_CORS_ORIGIN"
 EOF
+  # LAN access is the one case this host cannot configure correctly on its
+  # own: the browser's Origin is the address the *client* typed. Offer the
+  # detected LAN IP as a commented line rather than guessing, since enabling
+  # the wrong origin silently 403s and a right one silently widens who may
+  # write (#51).
+  if [[ -n "$WEBCAM_LAN_IP" ]]; then
+    cat >> "$ENV_FILE" <<EOF
+# LAN access: uncomment and adjust to the address your browser actually uses.
+# WEBCAM_CORS_ORIGIN="$WEBCAM_CORS_ORIGIN,http://$WEBCAM_LAN_IP:8180,http://$WEBCAM_LAN_IP:8280"
+EOF
+  fi
   chmod 644 "$ENV_FILE"
   echo "Wrote $ENV_FILE"
 fi
+
+cat <<EOF
+CORS origin allowlist: $WEBCAM_CORS_ORIGIN
+  Same-origin writes (the reverse proxy: gallery and /api/ on one host) are
+  accepted with no entry at all. Browsing straight to a camera container
+  (:8180 front, :8280 back) is cross-origin and does need an entry; from
+  another machine add http://<this-box-as-the-client-types-it>:8180. Verify
+  with: journalctl -u webcam-api | grep 'CORS allowlist'
+EOF
 
 # systemd cannot expand environment variables in User=/Group=/HOME=, so those
 # three are shipped as __WEBCAM_*__ tokens and substituted here. Every other

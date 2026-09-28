@@ -5,13 +5,34 @@ The host write-API (`api_server.py`, port **8190**) — a stdlib
 read-only nginx mounts). All responses are JSON (`Content-Type:
 application/json`) except the SSE stream. `OPTIONS` on any path returns `204`.
 
-**CORS is an origin allowlist, never a wildcard.** `Access-Control-Allow-Origin`
-is set only when the request's `Origin` is in `WEBCAM_CORS_ORIGIN` (comma-separated,
-default `http://localhost:8180,http://127.0.0.1:8180`); a request with no `Origin`
-gets the first configured origin so same-origin/non-browser callers still work.
-A literal `*` in the env var is **dropped** — the old wildcard let any page a
-user visited POST deletes at the LAN host. Allowed responses also carry
-`Vary: Origin` and `Access-Control-Allow-Credentials: true`.
+**CORS is an origin allowlist, never a wildcard.** A request is granted
+`Access-Control-Allow-Origin` (and allowed to `POST`) when its `Origin` is
+either **same-origin** — the authority in `Origin` matches the `Host` the
+request was addressed to, or the trusted `X-Forwarded-Host` — or listed in
+`WEBCAM_CORS_ORIGIN` (comma-separated, default
+`http://localhost:8180,http://127.0.0.1:8180`). Every browser `POST` carries an
+`Origin`, so the same-origin case is what keeps the normal reverse-proxy
+deployment (`nginx.conf` proxies `/api/`, SPA and API on one host) working
+without any allowlist entry; the list is only needed when the gallery is
+served from a *different* origin, e.g. opening a camera container directly at
+`http://<host>:8180`. A request with no `Origin` (curl, `tools/watchdog.sh`) is
+not a browser threat model and is unaffected.
+
+`X-Forwarded-Host` is read **only** when the socket peer is loopback *and* the
+`Host` does not itself name loopback — the shape our own reverse proxy leaves
+behind, since it rewrites `Host` to the public vhost. A direct loopback caller
+sends `Host: 127.0.0.1:8190`, so a spoofed forwarded header is ignored. Forging
+`Host` as well is no new attack surface: that alone already satisfies the
+same-origin test, and a local caller could omit `Origin` altogether.
+
+Configured origins are lowercased and stripped of a trailing `/` (an `Origin`
+header is always lowercase and never ends in `/`). A literal `*` or `null` is
+**dropped** — the wildcard let any page a user visited POST deletes at the LAN
+host, and `null` is what a sandboxed iframe or `file://` page sends. Startup
+prints the effective allowlist and warns when it resolves empty or holds an
+entry that is not `scheme://host[:port]`, because an unusable list 403s every
+browser write while curl keeps working, with no other symptom (#51). Allowed
+responses also carry `Vary: Origin` and `Access-Control-Allow-Credentials: true`.
 
 **Bind.** `WEBCAM_API_HOST` (default `127.0.0.1`) is the only exposure control;
 the startup line prints `auth=token`, `auth=off` or `auth=broken` (see
