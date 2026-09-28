@@ -135,8 +135,11 @@ the box. Privacy became a guarantee rather than a preference.
 The fast tier became **YOLO** (`yolov4-tiny`), selectable in the UI, replacing
 OpenCV as the default detector. A **detector↔LLM consensus mode** was added to
 suppress Gemma false positives, and detections gained the
-**preliminary/verified/disputed lifecycle** with configurable intervals — the
-model still in use. Parked-car gating and idle Gemma backfill date from here.
+**preliminary/verified lifecycle** with configurable intervals — the
+model still in use. A third "the two passes disagreed" state and its consensus
+toggle have since been removed: a detector hit that never gets a vision verdict
+now stays **preliminary** and renders with an amber `?`. Parked-car gating and
+idle Gemma backfill date from here.
 
 ### Era 5 — Timeline, observability, live updates, integrations
 

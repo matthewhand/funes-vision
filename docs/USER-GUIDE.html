@@ -210,8 +210,7 @@
   <table>
     <tr><th>You see</th><th>It means</th></tr>
     <tr><td><code>Person</code> / <code>Dog</code> / <code>Car</code></td><td>YOLO saw that object</td></tr>
-    <tr><td><code>Car?</code> (amber)</td><td>Detector hit; no successful vision merge yet</td></tr>
-    <tr><td>Struck-through badge</td><td>Leftover disputed UI. Hidden unless Show unconfirmed is on. Rare with e2b</td></tr>
+    <tr><td>Any label with an amber <code>?</code> (<code>Car?</code>, <code>Person?</code>)</td><td>Detector hit; no successful vision merge yet. The <code>?</code> clears once the vision pass merges. With vision deep passes off there is no second pass, so the label renders plain</td></tr>
     <tr><td><code>Postal delivery</code> / <code>Porch access</code></td><td>HA flags from a finished vision pass</td></tr>
     <tr><td><strong>CLEAR</strong></td><td>Analyzed, no object</td></tr>
   </table>
@@ -257,7 +256,7 @@
   <h2 id="settings">11. Settings</h2>
   <figure>
     <img src="guide/img/settings.png" alt="Settings menu">
-    <figcaption>Green = on, red = off (the dot). Off rows are not struck through — strikethrough is only for a hidden object label.</figcaption>
+    <figcaption>Green = on, red = off (the dot). Off rows keep their label — the line-through styling is only for a hidden object label.</figcaption>
   </figure>
   <figure>
     <img src="guide/img/mobile-settings.png" alt="Mobile Settings sheet">
@@ -267,7 +266,6 @@
     <tr><th>Control</th><th>What it actually does</th></tr>
     <tr><td>Hide / Show labels</td><td>Drops that object from Timeline / Objects / Filters. Unhide is the escape; Clear all does not unhide</td></tr>
     <tr><td>Merge labels</td><td><code>face</code>/<code>body</code> → person</td></tr>
-    <tr><td>Show unconfirmed detections</td><td>Reveals disputed badges. <code>?</code> badges always show</td></tr>
     <tr><td>Fast detector</td><td>Keep YOLO</td></tr>
     <tr><td>Vision deep passes</td><td>Master switch for all vision-model work</td></tr>
     <tr><td>Idle backfill</td><td>Verify leftover empties and car-only skips, nearest a detection first. Leave off</td></tr>

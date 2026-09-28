@@ -141,6 +141,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The user guide no longer documents the removed consensus-detection UI.** The detector/vision-model consensus path was deleted from the app along with the toggle that surfaced it, but the shipped `docs/USER-GUIDE.html` — the page the gallery’s Help button opens, and the file `create-index.sh` and `tools/deploy-webroot.sh` publish — still described a line-through badge on the card and a Settings row for that toggle, so a user read about a control that does not exist. Both rows are gone, and the amber-badge row now describes the lifecycle the code actually implements: `preliminary` (detector only, awaiting the vision pass) renders an amber `?` on any label and drops it once `_llm` merges; with **Vision deep passes** off there is no second pass, so the label renders plain. The same corrections are applied to `docs/USER-GUIDE.md`, the Era 4 history in `ARCHITECTURE.md`, and the verdict/badge entries in `ROADMAP.md`. The line-through styling that *does* exist — hidden object labels and OFF feature rows in Settings — is documented as such. This changelog’s own lifecycle entry was already correct. No app, test or build changes.
 - **New env knob `WEBCAM_API_MAX_CONNECTIONS`** (default `64`, `0` disables),
   read per connection like the other limits — an `Environment=` edit applies
   to the next connection with no restart. Documented in

@@ -295,8 +295,7 @@ empty yard, unattended laundry). A backyard person with no dog spends
 | You see | It means |
 |---------|----------|
 | `Person` / `Dog` / `Car` | YOLO saw that object |
-| `Car?` (amber) | Detector hit; no successful `_llm` merge yet (includes parked-car skips) |
-| Struck-through badge | Leftover “disputed” UI (one pass said yes, the other did not). Hidden unless **Show unconfirmed detections** is on. The current e2b schema does **not** overwrite YOLO `person`/`dog`/`car`, so this is rare |
+| Any label with an amber `?` (`Car?`, `Person?`) | Detector hit; no successful `_llm` merge yet (includes parked-car skips). The `?` clears once the vision pass merges. With **Vision deep passes** off there is no second pass, so the label renders plain |
 | `Postal delivery` / `Porch access` / `Animal type: dog` | HA flags from a finished vision pass |
 | **CLEAR** | Analyzed, no object |
 | No badge, no CLEAR | Not in `analysis.json` yet |
@@ -442,8 +441,8 @@ You should see, in order:
 
 ![Mobile Settings sheet](guide/img/mobile-settings.png)
 
-Green = on, red = off (the dot). Off rows are **not** struck through —
-strikethrough is only for a hidden object label (person/dog/…) under
+Green = on, red = off (the dot). Off rows keep their label — the line-through
+styling is only for a hidden object label (person/dog/…) under
 **Hide / Show labels**. First paint matches this box: deep passes on,
 idle backfill off, multi-image summaries off.
 
@@ -451,7 +450,6 @@ idle backfill off, multi-image summaries off.
 |---------|------------------------|
 | **Hide / Show labels** | Drops that object from Timeline / Objects / Filters. A parked car you are tired of. **Unhide** is the escape; Clear all does not unhide |
 | **Merge labels** | `face`/`body` → person, `raccoon` → dog |
-| **Show unconfirmed detections** | Reveals struck-through disputed badges. Preliminary `?` badges always show |
 | **Fast detector** | YOLO (keep this) or Haar (legacy) |
 | **Vision deep passes** | Master switch for **all** vision-model work. Off = detector-only, frees RAM |
 | **Idle backfill** | When idle, verify leftover empties **and** car-only skips, nearest a real detection first. Leave **off** unless you want thousands of old empties queued. It is **not** “every image, newest first” |
