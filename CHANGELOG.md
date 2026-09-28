@@ -53,6 +53,80 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   becomes `["car"]` rather than `set("car") == {"c", "a", "r"}`. The int knobs
   now accept an exactly-integral float (`"5.0"` → 5) like the float knobs do,
   and refuse a fractional one rather than truncating it.
+- **A hostile `max_dir_gb` no longer takes `/api/status` and `/api/health`
+  down (#54).** #28 gave the pipeline `analyze_images.setting_num` for exactly
+  this and routed its own call sites through it, but both `api_server` call
+  sites were left doing `settings.get("max_dir_gb", 5.0)` and
+  `max_dir_gb * 1024**3` raw — the same "the two call sites disagreed" pattern
+  #22 fixed on the pipeline side. `null`, `"5.0"`, `"abc"` and `{}` raised
+  `TypeError` *while the response was being built*, so the handler thread died
+  with nothing written and the client saw the connection close with no reply
+  at all. Both endpoints are polled hard: the uptime monitor, the SPA, and
+  `tools/watchdog.sh::cmd_check`, which then read `cams=[]` → `MAX_BUDGET=0` and
+  lost its 90 %-budget retention kick silently. The call site is now routed
+  through the same guarded accessor. Non-finite values (`1e309`, `NaN`) are
+  refused too — they survived the multiply and reached the body as a bare
+  `Infinity`/`NaN`, which `JSON.parse` rejects, so a `200` came back the
+  browser could not read at all.
+- **`redacted_settings()` recurses, and matches the key, not the value
+  (#54).** It lowercased the *value* and tested the raw key, so `privateKey`
+  sailed through and the marker `api_key` never matched the hyphen in
+  `x-api-key`; and it did not recurse, so `integrations.slack.bot_token` and
+  `servers[0].token` were serialized verbatim into an **unauthenticated**
+  body. 17 of 36 hostile key shapes survived with the literal secret attached.
+  The filter now walks dicts and lists, normalises key case and separators,
+  treats any key ending in `key` as a secret, and drops a secret-named key's
+  whole subtree. Benign nested values are kept, and the documented shape of
+  `settings` in `/api/status` is unchanged.
+- **Non-finite numbers can no longer reach a JSON body.** `json.dumps` writes
+  `inf`/`nan` as bare `Infinity`/`NaN`, which is not JSON. Every response now
+  goes through one sanitizer, so no field can reintroduce the hole by
+  forgetting to sanitize itself.
+- **Connections are capped, so a burst cannot exhaust threads (#58).**
+  `ThreadingHTTPServer` starts a thread per accepted connection with no
+  ceiling; the per-connection socket timeout from #33 bounds a thread's
+  *lifetime*, not the thread *count*, so peers that connect and never finish a
+  request line each cost a thread for the whole timeout window. `/api/health` —
+  the uptime monitor and watchdog endpoint — is served by one of those threads.
+  A slot is now taken before the thread exists and released however the thread
+  ends; past `WEBCAM_API_MAX_CONNECTIONS` (default 64, `0` disables) the peer
+  gets a 503 and the socket closes. The listen backlog is raised from the
+  stdlib's 5 so a legitimate parallel load is queued before it is refused.
+  Ordinary single-user use is 1–2 concurrent connections and is untouched.
+- **A pin present in both pins files can be unpinned (#59).**
+  `analyze_images.retention_pins()` unions `<cam>/pins.json` with the legacy
+  `<repo>/pins.json`, but an unpin stopped as soon as the camera file was
+  cleaned. So a name in **both** — which is what every upgraded install has,
+  since both pre-#39 sync steps wrote the repo file into every camera dir —
+  reported `pinned: false`, showed unpinned in the UI, and still protected the
+  frame from every sweep forever. An unpin now clears both files, legacy first,
+  so a crash in between fails toward "keep the frame". A name that only ever
+  existed in the legacy file is still removed there, without materialising an
+  empty `pins.json` in the camera dir.
+- **`pins.json` no longer grows without bound (#59).** Pin names whose frame is
+  gone from the camera dir are dropped on the next write to that file, so
+  `/api/pins` stops reporting names with nothing behind them. An unreadable or
+  empty directory listing drops nothing, so a hiccup can never wipe a pin list,
+  and every reclaimed name is logged.
+- **A blank `api_token` answers once, not twice (#57).** `_authorized()` sent a
+  500 and the caller then sent a 401 after it, so one connection carried two
+  full HTTP responses with the second status line glued to the first body —
+  unparseable by anything, and the status that reached the client
+  misdescribed the fault. The refusal is now a single response.
+- **`WEBCAM_API_SOCKET_TIMEOUT` can no longer brick every request (#57).** It
+  had no lower bound, and `socketserver.setup()` passes it straight to
+  `settimeout()`, which raises `ValueError` for a negative number — inside
+  `BaseRequestHandler.__init__`, so one typo in the systemd `Environment=`
+  answered *no* request at all. A value `<= 0` now means "no read timeout"
+  (`settimeout(0)` is non-blocking mode, which would raise on the next read
+  anyway) and the startup banner says so.
+- **`harden_secret_files()` no longer follows symlinks (#57).** `os.stat` and
+  `os.chmod` both follow links, so a `settings.json` that was a symlink made
+  the startup hardening pass chmod its *target* — stripping the permissions
+  off an arbitrary file, reported under the config file's name. A symlink is
+  now refused and logged. `os.lchmod` is deliberately not the fix: on Linux it
+  is a no-op on a symlink, so the target would stay world-readable while the
+  log claimed `0600`.
 - **The CSRF origin gate no longer refuses the app's own writes (#51).** The
   `Origin` check added in #41 consulted only `WEBCAM_CORS_ORIGIN`, whose
   default lists neither documented access path, so **every** browser mutation
@@ -67,6 +141,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **New env knob `WEBCAM_API_MAX_CONNECTIONS`** (default `64`, `0` disables),
+  read per connection like the other limits — an `Environment=` edit applies
+  to the next connection with no restart. Documented in
+  [API.md — Request limits](API.md#request-limits) and
+  [DEVELOP.md](DEVELOP.md#api_serverpy-port-8190).
 - **SSE transport.** `/api/events` now tails the pipeline's append-only
   `events.jsonl` (`pipeline_events.py`) as the **primary** bus, so
   `image.new` / `detection.preliminary` / `new-detection` / `new-burst` are a

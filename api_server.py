@@ -24,6 +24,7 @@ import base64
 import hmac
 import ipaddress
 import json
+import math
 import os
 import re
 import stat
@@ -110,19 +111,86 @@ def api_token():
 # reader the key that authorizes deleting frames, rewriting settings and
 # swapping the Slack bot token. Mirrors redacted_integrations() -- report that
 # a secret exists, never its value.
-SECRET_SETTING_MARKERS = ("token", "secret", "password", "passwd", "api_key",
-                          "apikey", "private_key", "credential")
+#
+# Matched against the *normalised* key (see `_key_slug`), not its raw
+# spelling: the old test lowercased the value and left the key alone, so
+# `privateKey` sailed through, and the marker `api_key` never matches the
+# hyphen in `x-api-key`. Both are the same word.
+SECRET_SETTING_MARKERS = ("token", "secret", "password", "passwd", "apikey",
+                          "credential", "privatekey", "webhook", "auth",
+                          "signature", "bearer")
+
+
+def _key_slug(key):
+    """`key` lowercased with every non-alphanumeric character removed.
+
+    Collapses the spellings of one word -- `api_key`, `api-key`, `APIKey` --
+    into a single string, so the marker test below cannot be dodged by
+    changing case or swapping a separator. `x-api-key` -> `xapikey`,
+    `privateKey` -> `privatekey`, `AUTHORIZATION` -> `authorization`."""
+    return re.sub(r"[^a-z0-9]", "", str(key).lower())
 
 
 def is_secret_key(key):
-    return any(m in str(key).lower() for m in SECRET_SETTING_MARKERS)
+    """True when `key` names a secret, whatever case or separators it uses.
+
+    Also true for any slug *ending* in `key`, which is the one shape a marker
+    list would otherwise have to keep enumerating forever (`ssh_key`,
+    `openai_key`, `consumer_key`). The cost is a false positive on a
+    non-secret key that happens to end in "key" -- none of the settings.json
+    keys the SPA reads out of /api/status does, and dropping one from a
+    read-only view is not a security regression."""
+    slug = _key_slug(key)
+    return any(m in slug for m in SECRET_SETTING_MARKERS) or slug.endswith("key")
+
+
+def _redact(value):
+    if isinstance(value, dict):
+        return {k: _redact(v) for k, v in value.items() if not is_secret_key(k)}
+    if isinstance(value, list):
+        return [_redact(v) for v in value]
+    return value
 
 
 def redacted_settings(settings):
-    """settings.json with every secret key dropped, for unauthenticated reads."""
+    """settings.json with every secret key dropped, for unauthenticated reads.
+
+    Recursive (#54). A denylist applied only at the top level is no denylist at
+    all for a nested config: `integrations.slack.bot_token` and
+    `servers[0].token` were both serialized verbatim into an unauthenticated
+    body, 17 of 36 hostile key shapes survived with the literal secret
+    attached. Dicts and lists recurse, and a key that names a secret is dropped
+    whole, so nothing beneath it is serialized either. A non-dict input is
+    still {} -- a settings.json holding a list is unreadable, not publishable.
+    """
     if not isinstance(settings, dict):
         return {}
-    return {k: v for k, v in settings.items() if not is_secret_key(k)}
+    return _redact(settings)
+
+
+def json_safe(value):
+    """`value` with every non-finite float replaced by None.
+
+    json.dumps() emits inf/nan as bare `Infinity`/`NaN`, which is not JSON:
+    JSON.parse() throws on it. So one hostile settings value
+    (`max_dir_gb: 1e309`) answered /api/status with a 200 the browser could
+    not parse at all -- the whole status page gone over one number -- and
+    tools/watchdog.sh, which parses the same body, got nothing while reporting
+    a healthy API. `null` is the honest answer for "not a number", and every
+    reader already handles it (`budget_pct` is null when there is no budget).
+
+    Applied at the two json.dumps() call sites rather than per-value, so no
+    future field can reintroduce the hole by forgetting to sanitize itself.
+    """
+    if isinstance(value, bool) or isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, dict):
+        return {k: json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [json_safe(v) for v in value]
+    return value
 
 
 DEFAULT_CORS_ORIGIN = "http://localhost:8180,http://127.0.0.1:8180"
@@ -341,6 +409,122 @@ def sse_release():
 def sse_active():
     with _SSE_LOCK:
         return _sse_active
+
+
+# --- Connection cap (#58) ----------------------------------------------------
+# ThreadingMixIn starts one thread per accepted connection, unconditionally.
+# The per-connection socket timeout #33 added bounds a thread's *lifetime*,
+# not the thread *count*: a burst of peers that connect and never finish a
+# request line still put a thread on the stack each, for the whole timeout
+# window, and the documented 4-core box runs out long before the burst ends.
+# /api/health -- the uptime monitor and tools/watchdog.sh -- is served by one
+# of those threads, so exhausting them is an availability outage, not just a
+# slow response. SSE already had its own cap; this is the same shape for every
+# other connection.
+#
+# Read per connection, like WEBCAM_SSE_MAX_CLIENTS, so an edit to the systemd
+# Environment= takes effect on the next connection with no restart. 0 disables
+# the cap (the pre-#58 behaviour).
+_CONN_LOCK = threading.Lock()
+_conn_active = 0
+
+BUSY_RESPONSE_BODY = json.dumps(
+    {"error": "too many concurrent connections; retry later"})
+
+
+def conn_limit():
+    """WEBCAM_API_MAX_CONNECTIONS: the concurrent-connection ceiling.
+
+    Generous on purpose. Normal single-user use is one or two connections (a
+    browser opens at most 6 per host for HTTP/1.1, and a reverse proxy reuses
+    one upstream connection), so the default must never get in the way of a
+    page load. It exists to stop an unbounded burst, not to ration normal use.
+    """
+    return _env_int("WEBCAM_API_MAX_CONNECTIONS", 64)
+
+
+def conn_try_acquire():
+    """Reserve a connection slot. False at the ceiling (0 disables the cap).
+
+    Each accepted connection holds exactly one slot until its handler thread
+    ends, so a keep-alive connection is counted for its lifetime -- the same
+    accounting the SSE cap already used, and the accounting that actually
+    bounds thread count."""
+    global _conn_active
+    limit = conn_limit()
+    with _CONN_LOCK:
+        if 0 < limit <= _conn_active:
+            return False
+        _conn_active += 1
+        return True
+
+
+def conn_release():
+    global _conn_active
+    with _CONN_LOCK:
+        if _conn_active > 0:
+            _conn_active -= 1
+
+
+def conn_active():
+    with _CONN_LOCK:
+        return _conn_active
+
+
+class BoundedThreadingHTTPServer(ThreadingHTTPServer):
+    """ThreadingHTTPServer with a ceiling on concurrent connections.
+
+    The only place a bound can live is `process_request`, which is where the
+    thread would be created -- there is no thread yet to hold a lock. Past the
+    ceiling the peer gets a 503 and the socket closes, so a burst has a bounded
+    answer instead of unbounded threads. Not logged per refusal: the burst is
+    the interesting case and a log line per connection is itself the flood,
+    which is why the SSE cap above is silent too. The reason and the limit are
+    in the 503 body, so a client hitting the ceiling can tell why.
+
+    The slot is taken here and released in `process_request_thread`'s finally,
+    so it comes back even when `finish_request` raises; the `except` on the
+    other path covers the narrower window where the thread never started.
+    """
+
+    daemon_threads = True
+    # The listen backlog, not the cap: sockets that arrive while every slot is
+    # busy wait here instead of being refused at once, so a burst is queued
+    # first and only refused once the queue itself is full. The stdlib default
+    # of 5 refuses a legitimate parallel page load almost immediately.
+    request_queue_size = 64
+
+    def process_request(self, request, client_address):
+        if not conn_try_acquire():
+            self._refuse(request)
+            return
+        try:
+            super().process_request(request, client_address)
+        except BaseException:
+            conn_release()  # no thread will run the finally
+            raise
+
+    def process_request_thread(self, request, client_address):
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            conn_release()
+
+    def _refuse(self, request):
+        """One minimal 503 on the wire, then close. No Handler involved: the
+        request bytes are still unread in the socket, and parsing them to
+        produce a nicer error is exactly the work the cap exists to skip."""
+        try:
+            request.sendall(
+                b"HTTP/1.0 503 Service Unavailable\r\n"
+                b"Content-Type: application/json\r\n"
+                b"Content-Length: " +
+                str(len(BUSY_RESPONSE_BODY)).encode() + b"\r\n"
+                b"Connection: close\r\n\r\n" + BUSY_RESPONSE_BODY.encode())
+        except OSError:
+            pass  # the peer already went away; nothing left to answer
+        finally:
+            self.shutdown_request(request)
 
 
 # --- Camera registry -------------------------------------------------------
@@ -632,30 +816,42 @@ def load_pins(camera_id=None, include_legacy=True):
 def set_pin(camera_id, filename, pinned):
     """Pin/unpin `filename` on one camera. The only writer of pins.
 
-    camera's pins.json and nothing else, so a pin request on camera B can
-    never bake camera A's pins into B's world-readable file. An unpin of a
-    frame that only exists in the legacy repo-wide file is applied there (that
-    single entry) instead, so upgrading does not make old pins impossible to
-    release.
+    A pin lands in the camera's own pins.json and nothing else, so a pin
+    request on camera B can never bake camera A's pins into B's
+    world-readable file.
+
+    An unpin clears the name from **both** files (#59). The legacy repo-root
+    pins.json predates per-camera scoping, but
+    `analyze_images.retention_pins()` still unions the two, so a name present
+    in both was un-unpinnable: the camera file was emptied, the API answered
+    `pinned: false`, the UI showed the frame as unpinned -- and retention kept
+    the frame forever, because the legacy entry was still gating it. Legacy
+    first, then the camera's own, so a crash in between leaves the frame still
+    pinned (failing toward "keep the frame", never toward "silently delete
+    one the operator believes they released").
+
+    A name that only ever existed in the legacy file is still removed there,
+    without materialising an empty pins.json in the camera dir -- creating that
+    file is itself the cross-camera leak this module exists to prevent.
 
     Returns True if the frame is pinned for this camera after the call.
     """
     path = _pins_path(camera_id)
-    own = _pins_from_file(path)
     if pinned:
+        own = _pins_from_file(path)
         if filename in own:
             return True
         own.add(filename)
         save_pins(own, camera_id)
         return True
-    if filename in own:
-        own.discard(filename)
-        save_pins(own, camera_id)
-        return False
     legacy = _pins_from_file(PINS_FILE)
     if filename in legacy:
         from analyze_images import _atomic_write_json
         _atomic_write_json(PINS_FILE, sorted(legacy - {filename}), indent=2)
+    own = _pins_from_file(path)
+    if filename in own:
+        own.discard(filename)
+        save_pins(own, camera_id)
     return False
 
 
@@ -667,6 +863,43 @@ def set_pin(camera_id, filename, pinned):
 _PINS_LOCK = threading.Lock()
 
 
+def _gc_pins(pins, camera_id):
+    """Drop pin names whose frame is no longer in the camera dir (#59).
+
+    pins.json only ever grew: retention deletes pinned frames' neighbours for
+    years, `/api/delete` removes a frame, and neither ever rewrote the pin
+    list, so an install accumulates every frame it has ever held. Those names
+    are dead weight for retention -- nothing is there to protect -- and they
+    make `/api/pins` and the UI lie about what is pinned.
+
+    Deliberately narrow, because dropping a *live* pin is the one mistake that
+    loses data the operator asked to keep:
+      * only a name with no file in the camera dir goes, and a bare filename
+        (no separator) can only ever be that;
+      * an unreadable or empty listing drops nothing, so a camera dir that is
+        temporarily gone, a permissions problem or a filesystem hiccup cannot
+        wipe every pin at once;
+      * every drop is logged, so a wrong GC is visible rather than silent.
+    """
+    directory = camera_dir(camera_id)
+    if not directory:
+        return pins
+    try:
+        on_disk = set(os.listdir(directory))
+    except OSError as e:
+        logger.warning("not GC-ing pins for %s: %s", camera_id, e)
+        return pins
+    if not on_disk:
+        return pins
+    stale = {p for p in pins
+             if os.path.basename(str(p)) == str(p) and str(p) not in on_disk}
+    if stale:
+        logger.warning("dropping %d stale pin(s) with no frame in %s: %s",
+                       len(stale), camera_id, sorted(stale)[:10])
+        pins = set(pins) - stale
+    return pins
+
+
 def save_pins(pins, camera_id):
     """Write one camera's pins. `camera_id` is mandatory — saving "all cameras"
     as one set is exactly the leak this module exists to prevent.
@@ -675,7 +908,8 @@ def save_pins(pins, camera_id):
     read-only as www-data (mode is applied to the temp file before the rename,
     so there is no world-readable window)."""
     from analyze_images import _atomic_write_json
-    _atomic_write_json(_pins_path(camera_id), sorted(pins), indent=2, mode=0o644)
+    _atomic_write_json(_pins_path(camera_id), sorted(_gc_pins(pins, camera_id)),
+                       indent=2, mode=0o644)
 
 
 def find_image(filename, camera_id=None):
@@ -758,11 +992,57 @@ def _camera_stale_s(settings=None):
     return camera_offline_hours(settings) * 3600
 
 
+# The documented default disk budget per camera, and the fallback whenever
+# settings.json holds something that is not a usable number.
+DEFAULT_MAX_DIR_GB = 5.0
+
+
+def setting_budget_gb(settings, default=DEFAULT_MAX_DIR_GB):
+    """settings' `max_dir_gb` as a usable GB budget: a finite float >= 0.
+
+    #28 gave the pipeline `analyze_images.setting_num` for exactly this, and
+    left both api_server call sites doing a raw `settings.get("max_dir_gb",
+    5.0)` and a `max_dir_gb * 1024**3` (#54) -- "the two call sites disagreed"
+    again. One hostile value -- `null`, `"5.0"`, `"abc"`, `{}` -- raised
+    TypeError *inside* /api/status and /api/health, and over the wire that is
+    not a tidy 500: the handler thread dies before writing a response, so the
+    connection closes with nothing on it at all. Both endpoints are polled
+    hard -- the uptime monitor, the SPA, and `tools/watchdog.sh::cmd_check`,
+    which then read `cams=[]` -> `MAX_BUDGET=0` and lost its 90%-budget
+    retention kick silently.
+
+    `lo=0.0` matches the pipeline: 0 is the safe end here (#22 made it "no disk
+    budget, eviction skipped"), never "delete until empty".
+    """
+    from analyze_images import setting_num
+    return setting_num(settings if isinstance(settings, dict) else {},
+                       "max_dir_gb", default, lo=0.0)
+
+
+def _budget_bytes(max_dir_gb):
+    """`max_dir_gb` in GB -> the per-camera byte budget. Never raises.
+
+    The second half of the #54 guard, applied where the multiply happens so a
+    direct caller cannot reintroduce the crash by passing a raw value. A
+    non-finite budget is refused as well as a non-numeric one: it survives the
+    multiply and reaches the JSON body as a bare `Infinity`/`NaN` that
+    JSON.parse rejects in the browser, so `max_dir_gb: 1e309` turned a 200
+    into an unreadable page.
+    """
+    try:
+        gb = float(max_dir_gb)
+    except (TypeError, ValueError):
+        return DEFAULT_MAX_DIR_GB * 1024 ** 3
+    if not math.isfinite(gb) or gb < 0:
+        return DEFAULT_MAX_DIR_GB * 1024 ** 3
+    return gb * 1024 ** 3
+
+
 def _camera_stats(max_dir_gb, settings=None):
     """Per-camera liveness + disk usage (images + matching thumbs)."""
     from analyze_images import dir_image_usage
     now = time.time()
-    budget = max_dir_gb * 1024 ** 3
+    budget = _budget_bytes(max_dir_gb)
     stale_s = _camera_stale_s(settings)
     cams = []
     for d in WATCH_DIRS:
@@ -926,7 +1206,7 @@ def pipeline_status(camera_id=None):
         status["trigger"]["last_sweep_age_s"] = round(time.time() - os.path.getmtime(LASTRUN_MARKER))
     except OSError:
         status["trigger"]["last_sweep_age_s"] = None
-    all_cameras = _camera_stats(settings.get("max_dir_gb", 5.0), settings)
+    all_cameras = _camera_stats(setting_budget_gb(settings), settings)
     if camera_id:
         scoped = camera_dir(camera_id)
         status["cameras"] = [c for c in all_cameras
@@ -989,8 +1269,20 @@ class Handler(BaseHTTPRequestHandler):
     @property
     def timeout(self):
         """Socket timeout (s) for one connection; env so a slow client can be
-        given more headroom without a code change."""
-        return _env_int("WEBCAM_API_SOCKET_TIMEOUT", self.SOCKET_TIMEOUT_S)
+        given more headroom without a code change.
+
+        Clamped to a usable value (#57). socketserver.setup() passes this
+        straight to `settimeout()`, which raises `ValueError: Timeout value
+        out of range` for a negative number -- and it raises inside
+        `BaseRequestHandler.__init__`, so a single typo in the systemd
+        Environment= killed *every* request with no response at all, not just
+        the connection that set it. A value <= 0 becomes `None` ("no read
+        timeout", the pre-#33 behaviour) rather than a clamp to some other
+        number: `settimeout(0)` is not "0-second timeout", it is non-blocking
+        mode, which would make the next `readline()` raise instead of waiting.
+        """
+        return max(0, _env_int("WEBCAM_API_SOCKET_TIMEOUT",
+                               self.SOCKET_TIMEOUT_S)) or None
 
     def _cors(self):
         """Emit CORS headers scoped to the origins this server will serve.
@@ -1021,7 +1313,16 @@ class Handler(BaseHTTPRequestHandler):
 
         Accepts a Bearer token, or Basic with the shared secret as either
         the username or the password (so `curl -u :SECRET` and `-u SECRET:`
-        both work). Compared in constant time."""
+        both work). Compared in constant time.
+
+        Returns False for "not authenticated, the caller sends the 401", and
+        None for "already answered" (#57). A blank configured token used to
+        send a 500 from here *and* let the caller send a 401 after it, so one
+        connection carried two full HTTP responses and the second status line
+        arrived glued to the first body -- no client can parse that, and the
+        write was refused with a status that misdescribed the fault. A tri-state
+        return is what keeps the "exactly one response" rule enforceable at the
+        single place responses are written."""
         try:
             token = api_token()
         except BlankTokenError as e:
@@ -1029,7 +1330,7 @@ class Handler(BaseHTTPRequestHandler):
             logger.error("%s", e)
             self._send(500, {"error": "api_token is configured but blank; "
                                       "set a real token to enable the write API"})
-            return False
+            return None
         if not token:
             return True
         hdr = (self.headers.get("Authorization", "") if self.headers else "") or ""
@@ -1132,7 +1433,7 @@ class Handler(BaseHTTPRequestHandler):
         return None
 
     def _send(self, code, obj):
-        body = json.dumps(obj).encode()
+        body = json.dumps(json_safe(obj)).encode()
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
@@ -1422,7 +1723,8 @@ class Handler(BaseHTTPRequestHandler):
     def _sse(self, event, data):
         if event != "ping":
             self._last_event_ts = time.monotonic()
-        self.wfile.write(f"event: {event}\ndata: {json.dumps(data)}\n\n".encode())
+        self.wfile.write(
+            f"event: {event}\ndata: {json.dumps(json_safe(data))}\n\n".encode())
         self.wfile.flush()
 
     def stream_events(self):
@@ -1582,7 +1884,10 @@ class Handler(BaseHTTPRequestHandler):
         if refusal is not None:
             self._send(*refusal)
             return
-        if not self._authorized():
+        auth = self._authorized()
+        if auth is not True:
+            if auth is None:
+                return  # _authorized already sent the 500; one response only
             self._send(401, {"error": "unauthorized"})
             return
         # Parse `?camera=<id>` off the path first, then dispatch on the bare
@@ -1765,12 +2070,28 @@ def harden_secret_files():
     A deployment that predates the 0600 writes (or one whose settings.json was
     copied in by a deploy script) still has api_token readable by every local
     user, and nothing repaired it. Best effort: a file we do not own is
-    reported, not fatal."""
+    reported, not fatal.
+
+    `os.lstat`, not `os.stat` (#57). Both the check and the chmod followed
+    symlinks, so a `settings.json` that was a symlink made the API chmod its
+    *target* -- turning a hardening step into a way to strip the permissions
+    off an arbitrary file the operator can point it at, and reporting it under
+    this file's name. A symlink is refused instead of followed. `os.lchmod`
+    is not the fix: on Linux it is either unavailable or a no-op on a symlink,
+    so the target would stay world-readable while the log claimed 0600.
+    Nothing is unlinked -- the operator's own file is not ours to remove."""
     for path in (SETTINGS_FILE, INTEGRATIONS_FILE):
         try:
-            mode = stat.S_IMODE(os.stat(path).st_mode)
+            st = os.lstat(path)
         except OSError:
             continue
+        if stat.S_ISLNK(st.st_mode):
+            logger.warning("refusing to tighten %s: it is a symlink to %s. "
+                           "Point it at a regular file, or set the mode there "
+                           "yourself -- following it would chmod a file this "
+                           "API does not own.", path, os.readlink(path))
+            continue
+        mode = stat.S_IMODE(st.st_mode)
         if not mode & 0o077:
             continue
         try:
@@ -1783,6 +2104,17 @@ def harden_secret_files():
 if __name__ == "__main__":
     harden_secret_files()
     report_cors_configuration()
+    # A nonsense per-connection limit is clamped at the point of use (a
+    # negative socket timeout used to raise inside socketserver.setup() and
+    # answer no request at all), but "silently different from what you wrote"
+    # is the #51 failure mode, so say it once, here, where the operator sees
+    # the banner.
+    _st = max(0, _env_int("WEBCAM_API_SOCKET_TIMEOUT",
+                           Handler.SOCKET_TIMEOUT_S)) or None
+    if os.environ.get("WEBCAM_API_SOCKET_TIMEOUT") and _st is None:
+        print("WARNING: WEBCAM_API_SOCKET_TIMEOUT must be > 0; this server is "
+              "running with NO read timeout (a stalled peer can hold a "
+              "connection open indefinitely)")
     try:
         auth = "auth=token" if api_token() else "auth=off"
     except BlankTokenError as e:
@@ -1791,4 +2123,4 @@ if __name__ == "__main__":
         print(f"ERROR: {e}")
         raise SystemExit(1)
     print(f"Webcam API listening on {API_HOST}:{PORT} ({auth})")
-    ThreadingHTTPServer((API_HOST, PORT), Handler).serve_forever()
+    BoundedThreadingHTTPServer((API_HOST, PORT), Handler).serve_forever()

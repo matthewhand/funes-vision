@@ -298,6 +298,106 @@ class PinsContractTest(unittest.TestCase):
         with open(os.path.join(self.repo, "pins.json")) as f:
             self.assertEqual(json.load(f), ["legacy.jpg"])
 
+    # --- #59: a pin in BOTH files could never be unpinned -------------------
+    def test_unpin_clears_the_name_from_both_files(self):
+        """The un-unpinnable pin (#59).
+
+        `retention_pins()` unions `<cam>/pins.json` and the legacy
+        `<repo>/pins.json`, but `set_pin(pinned=False)` returned as soon as the
+        camera file was cleaned. So a name present in BOTH -- which is what
+        every upgraded install has, since both pre-#39 sync steps wrote the
+        repo file into every camera dir -- reported `pinned: false`, showed
+        unpinned in the UI, and still protected the frame from every
+        retention sweep forever."""
+        self._frame("camA", "stuck.jpg", age_days=90)
+        self._frame("camA", "old_empty.jpg", age_days=90)
+        self._analysis(["stuck.jpg", "old_empty.jpg"])
+        self._legacy_pins(["stuck.jpg"])
+        with open(os.path.join(self.cams["camA"], "pins.json"), "w") as f:
+            json.dump(["stuck.jpg"], f)  # the overlap, as an upgrade leaves it
+
+        # It really is pinned, through either file alone.
+        self._sweep()
+        self.assertTrue(os.path.exists(os.path.join(self.cams["camA"], "stuck.jpg")))
+
+        code, body = self._pin("camA", "stuck.jpg", pinned=False)
+        self.assertEqual(code, 200)
+        self.assertFalse(body["pinned"])
+        self.assertEqual(self._cam_pins("camA"), [])
+        self._legacy_pins([])
+        code, body = self.h.run("GET", "/api/pins?camera=camA")
+        self.assertEqual(code, 200)
+        self.assertNotIn("stuck.jpg", body, "/api/pins still reports it pinned")
+
+        # And the point of the whole thing: a sweep now really deletes it.
+        self._sweep()
+        self.assertFalse(os.path.exists(os.path.join(self.cams["camA"], "stuck.jpg")),
+                         "the frame the operator released survived the sweep")
+        self.assertFalse(
+            os.path.exists(os.path.join(self.cams["camA"], "thumbs", "stuck.jpg")))
+
+    def test_unpin_is_idempotent_across_the_union(self):
+        """Unpinning twice, and unpinping a name that is in neither file,
+        must both be quiet no-ops -- an unpin the API refuses to repeat is the
+        same bug from the other side."""
+        self._frame("camA", "both.jpg")
+        self._legacy_pins(["both.jpg"])
+        with open(os.path.join(self.cams["camA"], "pins.json"), "w") as f:
+            json.dump(["both.jpg"], f)
+
+        for _ in range(3):
+            code, body = self._pin("camA", "both.jpg", pinned=False)
+            self.assertEqual(code, 200)
+            self.assertFalse(body["pinned"])
+        code, body = self._pin("camA", "never_pinned.jpg", pinned=False)
+        self.assertEqual(code, 404)  # no such frame: nothing to unpin
+        self.assertEqual(self._cam_pins("camA"), [])
+        with open(os.path.join(self.repo, "pins.json")) as f:
+            self.assertEqual(json.load(f), [])
+
+    def test_pins_json_does_not_grow_without_bound(self):
+        """pins.json only ever grew: retention and /api/delete removed frames
+        and neither rewrote the pin list, so the file accumulated every frame
+        the camera had ever held and /api/pins reported names with nothing
+        behind them. Names whose frame is gone are dropped on the next write
+        to that camera -- retention has nothing to protect for them either."""
+        self._frame("camA", "here.jpg")
+        self._frame("camA", "also_here.jpg")
+        with open(os.path.join(self.cams["camA"], "pins.json"), "w") as f:
+            json.dump(["gone_1.jpg", "gone_2.jpg"], f)
+        self._legacy_pins([])
+
+        # Any write to this camera's pins reclaims them.
+        self._pin("camA", "here.jpg")
+        self._pin("camA", "also_here.jpg")
+        self.assertEqual(self._cam_pins("camA"), ["also_here.jpg", "here.jpg"])
+        self.assertTrue(os.path.exists(os.path.join(self.cams["camA"], "here.jpg")))
+        self.assertTrue(
+            os.path.exists(os.path.join(self.cams["camA"], "also_here.jpg")))
+
+    def test_pins_gc_drops_nothing_when_it_cannot_see_the_camera_dir(self):
+        """The one mistake that would lose data the operator asked to keep is
+        dropping a *live* pin, so an unreadable or empty listing must drop
+        nothing at all -- a vanished dir, a permissions problem or a
+        filesystem hiccup must never wipe the pin list."""
+        empty = os.path.join(self.root, "emptyCam")
+        os.makedirs(empty)
+        api_server.WATCH_DIRS = [empty]
+        try:
+            self.assertEqual(api_server._gc_pins({"a.jpg"}, "emptyCam"), {"a.jpg"})
+        finally:
+            api_server.WATCH_DIRS = list(self.cams.values())
+
+        # And an unreadable dir (OSError) is equally not evidence of absence.
+        with mock.patch("os.listdir", side_effect=OSError("EIO")):
+            self.assertEqual(
+                api_server._gc_pins({"a.jpg"}, "camA"), {"a.jpg"})
+
+    def test_pins_gc_keeps_everything_a_populated_dir_still_has(self):
+        self._frame("camA", "live.jpg")
+        self.assertEqual(
+            api_server._gc_pins({"live.jpg", "dead.jpg"}, "camA"), {"live.jpg"})
+
     def test_load_pins_reports_legacy_pins_for_the_ui(self):
         """Read paths keep seeing the legacy set, otherwise an upgraded
         install would show pinned frames as unpinned and re-pin them."""

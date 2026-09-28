@@ -389,7 +389,8 @@ The API's whole environment surface, defaults cross-checked against
 
 | Env | Default | Read | Meaning |
 |-----|---------|------|---------|
-| `WEBCAM_API_SOCKET_TIMEOUT` | `30` (s) | per connection | Read timeout on one client socket. A stalled peer can't park a handler thread and starve `/api/health`. Raise only for a genuinely slow client. |
+| `WEBCAM_API_SOCKET_TIMEOUT` | `30` (s) | per connection | Read timeout on one client socket. A stalled peer can't park a handler thread and starve `/api/health`. Raise only for a genuinely slow client. `0` or less means **no** read timeout (and warns at startup): `settimeout(0)` is non-blocking mode, and a negative value raises inside `socketserver.setup()`, which answers no request at all. |
+| `WEBCAM_API_MAX_CONNECTIONS` | `64` | per connection | Concurrent-connection ceiling, checked before the handler thread exists. Past it a new connection gets **503** `too many concurrent connections`, not another thread. The socket timeout above bounds a thread's lifetime; this bounds the count. `0` disables. Raise if something legitimate needs more than 64 at once — a browser uses at most 6 per host and a reverse proxy reuses one upstream connection, so single-user use is 1–2. Refusals are not logged per connection (the burst is the flood); the reason is in the 503 body. |
 | `WEBCAM_API_MAX_BODY` | `1048576` (1 MiB) | per `POST` | Largest accepted `Content-Length`; over it (or negative) is **413** `request body too large`, refused before the body is read. Every mutating endpoint is small JSON — leave it alone. |
 | `WEBCAM_PROBE_TTL` | `5` (s) | per probe call | Memoises the `pgrep` inotify probe and the Ollama `/api/version` reachability behind `/api/status` and `/api/health`, so 20 polls cost 2 forks instead of 20. `0` re-probes every call. Raise only if you need fresher `llm.reachable` than the default ~5 s. |
 | `WEBCAM_API_HOST` | `127.0.0.1` | **once at startup** | Bind address — the only exposure control. `0.0.0.0` only behind a proxy that does its own auth; restart the unit after changing. |
@@ -400,8 +401,8 @@ The API's whole environment surface, defaults cross-checked against
 | `WEBCAM_SSE_IDLE_TIMEOUT_S` | `600` (s) | per stream | Reap a stream that has seen no real event for this long (`event: close`); `0` disables. |
 | `WEBCAM_TZ` | settings.json `timezone` > `Australia/Sydney` | per `/api/status` | Display timezone for the UI. Pin it with `Environment=WEBCAM_TZ=...` in the `webcam-api` unit (see [Timezones](#indexhtml-single-file-spa)) so filenames (SOURCE_TZ) and the display agree year-round. |
 
-The first three are the per-request limits from #41; the HTTP contract they
-implement (including the **413**) is in
+The first four are the per-request limits from #41 and #58; the HTTP contract
+they implement (including the **413** and the connection-cap **503**) is in
 [API.md — Request limits](API.md#request-limits). Two more knobs live outside
 this section: `WEBCAM_LOG_LEVEL` (default `INFO`; unknown values fall back to
 `INFO`) is process-wide and applies to the pipeline too, and the host/systemd
