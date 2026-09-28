@@ -54,6 +54,30 @@ HOLDER = (
 )
 
 
+def _resolve_lock(env_overrides):
+    """PIPELINE_LOCK as a child process resolves it, given env overrides.
+
+    The value goes to a FILE, not stdout: importing analyze_images prints a
+    warning on a box without OpenCV ("Haar cascades unavailable ..."), and the
+    CI runner is exactly such a box, so a stdout comparison picks that up.
+    """
+    with tempfile.TemporaryDirectory(prefix="lockpath_") as td:
+        out = os.path.join(td, "resolved")
+        env = {k: v for k, v in os.environ.items() if k not in env_overrides}
+        env.update(env_overrides)
+        result = subprocess.run(
+            [sys.executable, "-c",
+             "import analyze_images, sys\n"
+             "open(sys.argv[1], 'w').write(analyze_images.PIPELINE_LOCK)\n",
+             out],
+            cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            env=env, capture_output=True, text=True)
+        if result.returncode != 0:
+            raise AssertionError(f"resolving PIPELINE_LOCK failed: {result.stderr}")
+        with open(out) as f:
+            return f.read().strip()
+
+
 class TestPipelineLock(unittest.TestCase):
     GLOBALS = ("BASE_DIR", "WATCH_DIRS", "_settings_path", "MAX_AGE_DAYS",
                "MAX_DIR_GB", "PERSIST_BUDGET_PCT", "RETENTION_LOG",
@@ -304,14 +328,8 @@ class TestPipelineLock(unittest.TestCase):
     def test_default_lock_path_is_unaffected_by_the_env_override(self):
         """Operators' /tmp/webcam_analysis.lock stays the default. Guarded in a
         child process so the module import happens with WEBCAM_LOCK cleared."""
-        out = subprocess.run(
-            [sys.executable, "-c",
-             "import analyze_images, sys; sys.stdout.write(analyze_images.PIPELINE_LOCK)"],
-            cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            env={k: v for k, v in os.environ.items() if k != "WEBCAM_LOCK"},
-            capture_output=True, text=True)
-        self.assertEqual(out.returncode, 0, out.stderr)
-        self.assertEqual(out.stdout.strip(), "/tmp/webcam_analysis.lock")
+        self.assertEqual(_resolve_lock({"WEBCAM_LOCK": ""}),
+                         "/tmp/webcam_analysis.lock")
 
 
 class TestLockPathOverride(unittest.TestCase):
@@ -326,23 +344,13 @@ class TestLockPathOverride(unittest.TestCase):
     WEBCAM_LOCK set and confirm it never touches the default path.
     """
 
-    REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-    def _resolve(self, lock):
-        out = subprocess.run(
-            [sys.executable, "-c",
-             "import analyze_images, sys; sys.stdout.write(analyze_images.PIPELINE_LOCK)"],
-            cwd=self.REPO, env={**os.environ, "WEBCAM_LOCK": lock},
-            capture_output=True, text=True)
-        self.assertEqual(out.returncode, 0, out.stderr)
-        return out.stdout.strip()
-
     def test_analyzer_honours_the_weblocam_lock_env_var(self):
         target = "/tmp/does-not-exist-webcam-test.lock"
-        self.assertEqual(self._resolve(target), target)
+        self.assertEqual(_resolve_lock({"WEBCAM_LOCK": target}), target)
 
     def test_empty_weblocam_lock_falls_back_to_the_default(self):
-        self.assertEqual(self._resolve(""), "/tmp/webcam_analysis.lock")
+        self.assertEqual(_resolve_lock({"WEBCAM_LOCK": ""}),
+                         "/tmp/webcam_analysis.lock")
 
 
 if __name__ == "__main__":
