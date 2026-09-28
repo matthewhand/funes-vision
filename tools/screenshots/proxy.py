@@ -12,6 +12,7 @@ import json
 import os
 import sys
 import time
+import urllib.parse
 import urllib.request
 from http.server import SimpleHTTPRequestHandler
 from socketserver import ThreadingMixIn, TCPServer
@@ -36,6 +37,8 @@ SSE_STUB_INTERVAL = 2.0  # seconds between stub `ping` events
 # Exact /api/* routes the screenshot harness (shots.js / ui_sweep.js driving
 # index.html) and the stub mode actually use. Live mode forwards ONLY these;
 # any other path is refused before it can reach SCREENSHOT_LIVE_API.
+# tests/test_stub_api_coverage.py re-derives this list from index.html, so a
+# new SPA endpoint fails CI here rather than 404ing behind the SPA's fallback.
 LIVE_API_ALLOWLIST = frozenset({
     "/api/cameras",
     "/api/catalogs",
@@ -50,7 +53,15 @@ LIVE_API_ALLOWLIST = frozenset({
     "/api/pins",
     "/api/settings",
     "/api/status",
+    "/api/taxonomy",
 })
+
+# Fixture-backed payloads (cameras, catalogs, taxonomy) shared with
+# tools/demo/build_demo.py, so the screenshot stub and the published demo
+# bundle cannot disagree about the API surface.
+if HERE not in sys.path:
+    sys.path.insert(0, HERE)
+import fixture_api  # noqa: E402  (must follow the sys.path insert)
 
 
 def _is_forbidden(path):
@@ -83,6 +94,8 @@ class H(SimpleHTTPRequestHandler):
         return
 
     def _send(self, code, body, ctype):
+        if isinstance(body, (dict, list)):
+            body = json.dumps(body)
         if isinstance(body, str):
             body = body.encode()
         self.send_response(code)
@@ -100,6 +113,9 @@ class H(SimpleHTTPRequestHandler):
             self.send_error(404)
             return
         self._send(200, body, ctype)
+
+    def _send_json(self, obj):
+        return self._send(200, json.dumps(obj).encode(), "application/json")
 
     def _stub_api(self):
         path = self.path.split("?", 1)[0]
@@ -149,6 +165,31 @@ class H(SimpleHTTPRequestHandler):
             return
         if path == "/api/health":
             return self._send(200, b'{"status":"ok","fixture":true}', "application/json")
+        # Camera registry, derived from the fixture stills rather than
+        # hardcoded, so it cannot claim a camera the gallery cannot load.
+        # The SPA has an offline fallback that looks exactly like success,
+        # which is how a 404 here went unnoticed until a browser trace.
+        if path == "/api/cameras":
+            return self._send_json(fixture_api.cameras(ROOT))
+        # Canonical HA taxonomy straight from the app's taxonomy.py, the same
+        # module api_server.py serves, so it cannot drift from the app.
+        if path == "/api/taxonomy":
+            tax = fixture_api.taxonomy()
+            if tax is None:
+                return self._send(500, {"error": "taxonomy.py not importable"}, "application/json")
+            return self._send_json(tax)
+        # /api/catalogs: no ?camera= returns every camera keyed by id (the
+        # dashboard form), ?camera=<id> returns that one camera. Derived from
+        # the same images.json the gallery serves.
+        if path == "/api/catalogs":
+            query = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+            want = (query.get("camera") or [None])[0]
+            if want in (None, "", "all"):
+                return self._send_json(fixture_api.catalogs(ROOT))
+            cat = fixture_api.catalogs(ROOT, want)
+            if cat is None:
+                return self._send(400, {"error": f"unknown camera {want}"}, "application/json")
+            return self._send_json(cat)
         self.send_error(404)
 
     def _proxy_live(self):

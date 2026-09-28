@@ -16,8 +16,17 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURE_GALLERY = ROOT / "tools" / "screenshots" / "fixtures" / "gallery"
 FIXTURE_API = ROOT / "tools" / "screenshots" / "fixtures" / "api"
+SCREENSHOTS = ROOT / "tools" / "screenshots"
 DEMO_SRC = Path(__file__).resolve().parent
 OUT = ROOT / "dist" / "demo"
+
+# One definition of the fixture-backed /api payloads, shared with the
+# screenshot stub (tools/screenshots/proxy.py). The bundle used to hardcode its
+# own camera list and omit /api/taxonomy entirely, so a visitor exercised the
+# SPA's offline fallback instead of the real endpoint.
+if str(SCREENSHOTS) not in sys.path:
+    sys.path.insert(0, str(SCREENSHOTS))
+import fixture_api  # noqa: E402  (needs SCREENSHOTS on sys.path first)
 
 CANONICAL = "https://github.com/matthewhand/webcam"
 
@@ -37,48 +46,19 @@ def _load(path: Path, fallback):
         return fallback
 
 
-def _split_images(images: list[str]) -> tuple[list[str], list[str]]:
-    front = [n for n in images if n.startswith("10.0.0.21_")]
-    back = [n for n in images if n.startswith("10.0.0.22_")]
-    return front, back
-
-
-def _catalog(images, analysis, bursts, pins) -> dict:
-    names = set(images)
-    ana = {k: v for k, v in analysis.items() if k in names}
-    bur = {k: v for k, v in bursts.items() if k in names}
-    pin = [p for p in pins if p in names]
-    thumb = f"thumbs/{images[0]}" if images else None
-    return {
-        "images": images,
-        "analysis": ana,
-        "bursts": bur,
-        "pins": pin,
-        "thumbUrl": thumb,
-    }
-
-
 def network_payload() -> dict:
-    images = _load(FIXTURE_GALLERY / "images.json", [])
-    analysis = _load(FIXTURE_GALLERY / "analysis.json", {})
-    bursts = _load(FIXTURE_GALLERY / "bursts.json", {})
-    pins = _load(FIXTURE_GALLERY / "pins.json", [])
-    front, back = _split_images(images)
-    cat21 = _catalog(front, analysis, bursts, pins)
-    cat22 = _catalog(back, analysis, bursts, pins)
-    cameras = [
-        {"id": "Webcam21", "kind": "front", "label": "Front",
-         "source_dir": "fixtures/gallery", "index": 0},
-        {"id": "Webcam22", "kind": "back", "label": "Back",
-         "source_dir": "fixtures/gallery", "index": 1},
-    ]
+    gallery = str(FIXTURE_GALLERY)
+    cams = fixture_api.cameras(gallery)
     settings = _load(FIXTURE_API / "settings.json", {})
     settings = dict(settings)
-    settings["cameras"] = cameras
+    settings["cameras"] = cams
     status = _load(FIXTURE_API / "status.json", {})
     integrations = _load(FIXTURE_API / "integrations.json", {})
     inference = _load(FIXTURE_API / "inference_log.json", [])
     schema = _load(FIXTURE_API / "llm-schema.json", {})
+    tax = fixture_api.taxonomy()
+    if tax is None:
+        raise SystemExit("taxonomy.py not importable; cannot build the demo bundle")
     health = {
         "status": "ok",
         "fixture": True,
@@ -88,28 +68,26 @@ def network_payload() -> dict:
             "recent_sweep": True,
             "disk_space": True,
         },
-        "cameras": cameras,
+        "cameras": cams,
     }
     static = {
         "/api/status": {"body": status, "delay": 40},
         "/api/health": {"body": health, "delay": 20},
         "/api/settings": {"body": settings, "delay": 30},
-        "/api/cameras": {"body": cameras, "delay": 30},
+        "/api/cameras": {"body": cams, "delay": 30},
+        "/api/taxonomy": {"body": tax, "delay": 30},
         "/api/integrations": {"body": integrations, "delay": 30},
         "/api/inference_log": {"body": inference, "delay": 30},
         "/api/llm-schema": {"body": schema, "delay": 30},
-        "/api/pins": {"body": pins, "delay": 20},
-        "/api/catalogs": {
-            "body": {"Webcam21": cat21, "Webcam22": cat22},
-            "delay": 50,
-        },
-        "/api/catalogs?camera=Webcam21": {"body": cat21, "delay": 50},
-        "/api/catalogs?camera=Webcam22": {"body": cat22, "delay": 50},
-        "/api/catalogs?camera=all": {
-            "body": {"Webcam21": cat21, "Webcam22": cat22},
-            "delay": 50,
-        },
+        "/api/pins": {"body": _load(FIXTURE_GALLERY / "pins.json", []), "delay": 20},
+        "/api/catalogs": {"body": fixture_api.catalogs(gallery), "delay": 50},
     }
+    for cam in cams:
+        static[f"/api/catalogs?camera={cam['id']}"] = {
+            "body": fixture_api.catalogs(gallery, cam["id"]),
+            "delay": 50,
+        }
+    static["/api/catalogs?camera=all"] = {"body": fixture_api.catalogs(gallery), "delay": 50}
     return {"static": static, "decks": {}}
 
 

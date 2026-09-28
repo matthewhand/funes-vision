@@ -128,8 +128,10 @@
       --radius-1: 4px;  --radius-2: 8px; --radius-3: 12px;
       --radius-pill: 999px; --radius-round: 50%;
       /* accent — ONE canonical blue + tint ladder (was three blues) */
-      --accent: #3b82f6;
-      --accent-fg: #60a5fa;        /* readable accent on tinted dark bg */
+      --accent: #3b82f6;            /* borders, fills, chart strokes — NOT text on
+                                      tinted dark surfaces (3.98:1 on --bg-tertiary) */
+      --accent-fg: #60a5fa;        /* readable accent on tinted dark bg; use for
+                                      TEXT on --bg-tertiary (5.75:1) */
       --accent-strong: #1d4ed8;    /* pressed/active primary */
       --accent-10: rgba(59, 130, 246, 0.10);
       --accent-15: rgba(59, 130, 246, 0.15);
@@ -247,7 +249,7 @@
       display: flex; align-items: center; justify-content: center;
       font-size: var(--fs-control-sm); transition: all var(--transition-speed);
     }
-    .segmented > button.active { background: var(--bg-tertiary); color: var(--accent); box-shadow: var(--elevation-1); }
+    .segmented > button.active { background: var(--bg-tertiary); color: var(--accent-fg); box-shadow: var(--elevation-1); }
 
     .menu {
       position: absolute; top: 100%; right: 0; min-width: 220px; margin-top: var(--space-2);
@@ -807,7 +809,9 @@
 
     .sidebar-item.active {
       background: var(--bg-tertiary);
-      color: var(--accent);
+      /* --accent-fg, not --accent: #3b82f6 on #1e293b is 3.98:1, under the
+         4.5:1 AA floor for the 13.6px label. #60a5fa is 5.75:1. */
+      color: var(--accent-fg);
       font-weight: 600;
     }
 
@@ -821,7 +825,7 @@
 
     .sidebar-item.active .count-badge {
       background: var(--accent-15);
-      color: var(--accent);
+      color: var(--accent-fg);
     }
 
     /* Hourly Activity Chart */
@@ -1142,7 +1146,7 @@
 
     .view-btn.active {
       background: var(--bg-tertiary);
-      color: var(--accent);
+      color: var(--accent-fg);
       box-shadow: var(--elevation-1);
     }
 
@@ -1159,7 +1163,7 @@
       white-space: nowrap;
     }
     .filter-meta-btn:hover { color: var(--text-primary); }
-    .filter-meta-btn.active { color: var(--accent); border-color: var(--accent); }
+    .filter-meta-btn.active { color: var(--accent-fg); border-color: var(--accent); }
 
     /* AI Label Styles */
     .ai-labels-overlay {
