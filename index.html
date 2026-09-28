@@ -548,7 +548,18 @@
         box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25);
       }
       .search-trigger i { width: 15px; height: 15px; flex-shrink: 0; }
-      .search-trigger .search-placeholder { flex: 1; }
+      /* The label is a flex item in a row that also holds the ⌘K chip, so its
+         automatic minimum size is the full text width: when the header gets
+         narrow the text wrapped to four lines inside a 58px box and painted
+         past the trigger's own border (issue #88). min-width:0 plus
+         nowrap/ellipsis keeps it on one line inside the box at every width. */
+      .search-trigger .search-placeholder {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
       .search-trigger .search-kbd {
         display: inline-flex;
         align-items: center;
@@ -2423,10 +2434,17 @@
       /* Search shares the controls row instead of owning a full-height band;
          the switch-feed + refresh buttons collapse to icons to make room. This
          reclaims the single biggest chunk of vertical space above the feed. */
+      /* flex-basis 100% (not 120px): the row is nowrap, so a 120px basis let
+         the trigger collapse to 64px and spill its children over the Filters
+         button (issue #88). Claiming the full row width keeps the label
+         readable; the ellipsis on .search-placeholder is the backstop. */
       .search-trigger {
-        flex: 1 1 120px;
+        flex: 1 1 100%;
         min-width: 0;
       }
+      /* The ⌘K chip is a desktop affordance — a phone has no Cmd key — and on a
+         narrow row it is what pushed the trigger's content past its border. */
+      .search-trigger .search-kbd { display: none; }
       #switch-feed-label,
       #btn-refresh span {
         display: none;
@@ -7495,13 +7513,25 @@
         : profile.subtitle;
       document.title = `${profile.title} - CamLog`;
 
-      // Phone search box is ~120px; the desktop placeholder clips to "Search time,".
+      // The phone search box is far too narrow for the full label, so both the
+      // palette's input and the visible trigger label read from this one string
+      // (issue #88: the trigger used to keep the desktop wording, wrap it to
+      // four lines and paint outside its own box).
+      const searchPlaceholderText = () =>
+        window.matchMedia('(max-width: 768px)').matches
+          ? 'Search…'
+          : 'Search time, labels, or caption…';
       const syncSearchPlaceholder = () => {
         const si = document.getElementById('search-input');
         if (!si) return;
-        si.placeholder = window.matchMedia('(max-width: 768px)').matches
-          ? 'Search…'
-          : 'Search time, labels, or caption…';
+        const text = searchPlaceholderText();
+        si.placeholder = text;
+        // getElementById, not the `searchTrigger` const below: this runs during
+        // init, before that binding is initialised.
+        const trigger = document.getElementById('search-trigger');
+        const ph = trigger && trigger.querySelector('.search-placeholder');
+        // Don't stomp the label while it is echoing an open query.
+        if (ph && !ph.dataset.query) ph.textContent = text;
       };
       syncSearchPlaceholder();
       window.addEventListener('resize', syncSearchPlaceholder);
@@ -7816,7 +7846,12 @@
         // Mirror the popup value back into the trigger label for context
         const v = searchPopupInput.value.trim();
         const ph = searchTrigger && searchTrigger.querySelector('.search-placeholder');
-        if (ph) ph.textContent = v || 'Search time, labels, or caption…';
+        if (ph) {
+          // `dataset.query` marks "this is an open query, not the hint" so
+          // syncSearchPlaceholder() (resize) leaves it alone.
+          if (v) ph.dataset.query = v; else delete ph.dataset.query;
+          ph.textContent = v || searchPlaceholderText();
+        }
       }
       window.openSearchPopup = openSearchPopup;
       window.closeSearchPopup = closeSearchPopup;
