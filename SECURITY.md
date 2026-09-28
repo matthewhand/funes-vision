@@ -42,7 +42,11 @@ operator knowingly exposes the loopback-only service.
   authentication: `auth_basic` in `nginx.conf` in front of `/api/`, plus
   `WEBCAM_API_TOKEN` for the mutating endpoints; put TLS in front of it.
 - Browser access to the API is scoped by `WEBCAM_CORS_ORIGIN`, an origin
-  allowlist — a literal `*` is dropped, so list every origin you use.
+  allowlist — a literal `*` is dropped, so list every origin you use. Writes
+  whose `Origin` matches the `Host` they were sent to are same-origin and
+  always allowed, which is the normal reverse-proxy deployment; the list is
+  only for a gallery served from a different origin (e.g. `http://<host>:8180`
+  opened directly).
 - Cloud inference is off unless you explicitly set `allow_cloud: true`. Slack
   and HA MQTT are the only default-outbound paths and are opt-in.
 - State files (`analysis.json`, `alert_state.json`, `inference_log.json`, ...)
