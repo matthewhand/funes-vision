@@ -10,6 +10,7 @@ Mostly socket-free: the handler is driven directly, matching
 test_api_cameras.py / test_api_endpoints.py. The only real threads are the
 concurrent pins in TestPinConcurrency, which is the point of that test.
 """
+import http.client
 import io
 import json
 import os
@@ -283,11 +284,18 @@ class TestBlankTokenFailsClosed(SandboxCase):
             api_server.api_token()
 
     def test_blank_settings_token_refuses_writes(self):
+        # Exactly ONE response (#57). The 500 already refuses the write and
+        # names the fault, but do_POST then sent a 401 after it as well, so
+        # one connection carried two full HTTP responses with the second
+        # status line glued to the first body -- unparseable by anything, and
+        # the status that reached the client misdescribed the fault. Asserting
+        # the count is the regression: before, `sent` was
+        # [(500, ...), (401, ...)].
         self.write_settings(api_token="   ", watch_dirs=[self.front])
-        code, _ = self.h.run("POST", "/api/does-not-exist", b"{}")
-        self.assertEqual(self.h.sent[0][0], 500)
-        self.assertIn("blank", self.h.sent[0][1]["error"])
-        self.assertEqual(code, 401)
+        code, body = self.h.run("POST", "/api/does-not-exist", b"{}")
+        self.assertEqual(len(self.h.sent), 1, msg=f"sent {self.h.sent}")
+        self.assertEqual(code, 500)
+        self.assertIn("blank", body["error"])
 
     def test_empty_string_settings_token_is_still_auth_off(self):
         # The documented default: an empty value means "no token configured".
@@ -453,6 +461,28 @@ class TestSecretFilePermissions(SandboxCase):
         self.assertEqual(self.mode_of(self.settings_path), 0o600)
         self.assertEqual(os.stat(self.settings_path).st_mtime_ns, before)
 
+    def test_harden_secret_files_refuses_a_symlinked_config(self):
+        """#57: os.stat + os.chmod both follow symlinks, so a `settings.json`
+        that was a symlink made the hardening step chmod its *target* -- a way
+        to strip the permissions off any file the operator can point the link
+        at, reported under this file's name. os.lchmod is not the fix: on
+        Linux it is a no-op (or absent) on a symlink, so the target would stay
+        world-readable while the log claimed 0600."""
+        victim = os.path.join(self.tmp, "not-ours.txt")
+        with open(victim, "w") as f:
+            f.write("innocent")
+        os.chmod(victim, 0o644)
+        os.symlink(victim, self.settings_path)
+
+        with self.assertLogs(api_server.logger, "WARNING") as logs:
+            api_server.harden_secret_files()
+
+        self.assertTrue(os.path.islink(self.settings_path),
+                        "the symlink was replaced instead of refused")
+        self.assertEqual(self.mode_of(victim), 0o644,
+                         "harden_secret_files chmod-ed a file it does not own")
+        self.assertTrue(any("symlink" in m for m in logs.output), logs.output)
+
     def test_concurrent_deliveries_do_not_drop_each_other(self):
         def record(i):
             integrations._record_delivery(f"prov{i % 2}", "burst", True, f"ok{i}")
@@ -514,6 +544,41 @@ class TestRequestResourceLimits(SandboxCase):
         self.assertEqual(h.timeout, 30)
         os.environ["WEBCAM_API_SOCKET_TIMEOUT"] = "5"
         self.assertEqual(h.timeout, 5)
+
+    def test_negative_socket_timeout_does_not_raise(self):
+        """#57: socketserver.setup() passes `timeout` straight to settimeout(),
+        which raises ValueError for a negative number -- inside
+        BaseRequestHandler.__init__, so the thread died before writing
+        anything and EVERY request got no response at all. A typo in the
+        systemd Environment= took the whole API down, not one connection."""
+        h = api_server.Handler.__new__(api_server.Handler)
+        for bad in ("-1", "-3600"):
+            os.environ["WEBCAM_API_SOCKET_TIMEOUT"] = bad
+            # None is settimeout()'s "no timeout"; any number is the bug.
+            self.assertIsNone(h.timeout, msg=f"{bad} must not reach settimeout")
+        # 0 is not a usable timeout either: settimeout(0) is non-blocking mode,
+        # which makes the next readline() raise instead of waiting.
+        os.environ["WEBCAM_API_SOCKET_TIMEOUT"] = "0"
+        self.assertIsNone(h.timeout)
+        os.environ["WEBCAM_API_SOCKET_TIMEOUT"] = "banana"
+        self.assertEqual(h.timeout, 30)  # unparseable -> the documented default
+
+    def test_a_negative_socket_timeout_still_answers_a_request(self):
+        """The end-to-end shape of the same defect, over a real socket."""
+        os.environ["WEBCAM_API_SOCKET_TIMEOUT"] = "-1"
+        self.write_settings(watch_dirs=[self.front])
+        srv = api_server.BoundedThreadingHTTPServer(
+            ("127.0.0.1", 0), api_server.Handler)
+        self.addCleanup(srv.server_close)
+        thread = threading.Thread(target=srv.serve_forever, daemon=True)
+        self.addCleanup(srv.shutdown)
+        thread.start()
+        conn = http.client.HTTPConnection("127.0.0.1", srv.server_address[1],
+                                          timeout=10)
+        self.addCleanup(conn.close)
+        conn.request("GET", "/api/health", headers={"Host": "127.0.0.1"})
+        # 503 = degraded (no pipeline in this sandbox), but a real response.
+        self.assertIn(conn.getresponse().status, (200, 503))
 
     def test_status_probes_are_cached(self):
         self.write_settings(api_token="SUPERSECRET", watch_dirs=[self.front])

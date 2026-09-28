@@ -32,7 +32,11 @@ operator knowingly exposes the loopback-only service.
 - **Never commit secrets.** Slack bot/app tokens (`integrations.json` → `slack`),
   MQTT credentials, the API token, and passwords belong in the gitignored
   `settings.json` / `integrations.json` files, not in tracked files or issue
-  bodies.
+  bodies. `GET /api/status` is unauthenticated, so it filters `settings.json`
+  on the way out — **recursively**, through nested dicts and lists, and with
+  key matching normalised for case and separators so `privateKey`, `x-api-key`
+  and `integrations.slack.bot_token` are all dropped. Report that a secret
+  exists; never its value.
 - The gallery is published on **loopback only** by default
   (`127.0.0.1:8180` in `docker-compose.yml`). The write API binds
   **`127.0.0.1:8190` on the host** — that bind comes from
@@ -52,6 +56,19 @@ operator knowingly exposes the loopback-only service.
 - State files (`analysis.json`, `alert_state.json`, `inference_log.json`, ...)
   are gitignored. If you believe a secret was committed, rotate it and open a
   private advisory so the history can be handled.
+- **Config files must be regular files.** The startup pass that tightens
+  `settings.json` / `integrations.json` to `0600` refuses a **symlink** and
+  logs it instead of following it — `chmod` through a link would change the
+  permissions of a file the API does not own, while reporting the change under
+  the config file's name. If you point a config at a symlink, set the mode at
+  the target yourself.
+- **The write API is resource-capped.** Concurrent connections are bounded by
+  `WEBCAM_API_MAX_CONNECTIONS` (default 64; a burst past it gets 503 rather
+  than another thread), concurrent `/api/events` streams by
+  `WEBCAM_SSE_MAX_CLIENTS` (default 8), each connection's read by
+  `WEBCAM_API_SOCKET_TIMEOUT` (default 30 s), and each `POST` body by
+  `WEBCAM_API_MAX_BODY` (default 1 MiB). A misconfigured value is clamped to a
+  usable one rather than left to raise inside the request.
 
 ## Supported versions
 

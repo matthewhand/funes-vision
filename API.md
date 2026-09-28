@@ -81,7 +81,8 @@ empty value — raises at startup: the banner prints `auth=broken`, the error
 explains why, and the process exits **1**, so writes stay closed until it is
 fixed. If a configured token later goes blank under a live process, `_authorized()`
 answers **500** `{"error": "api_token is configured but blank; ..."}` rather than
-letting the write through. The startup banner has three states, not two:
+letting the write through — and that is the **only** response on the connection.
+The startup banner has three states, not two:
 `auth=token`, `auth=off`, `auth=broken`.
 
 In production the UI reaches this **same-origin at `/api/`** via the reverse
@@ -95,14 +96,15 @@ please update this file in the same change.
 
 ## Request limits
 
-Two per-connection resource guards plus one probe cache. All three are
-env-tunable (no code change to tighten them) and all three are read **per
+Three per-connection resource guards plus one probe cache. All four are
+env-tunable (no code change to tighten them) and all four are read **per
 request / per call**, not latched at startup — so an edit to the systemd
 `Environment=` takes effect on the next request, with no restart.
 
 | Env | Default | Unit | Read | Governs |
 |-----|---------|------|------|---------|
 | `WEBCAM_API_SOCKET_TIMEOUT` | `30` | seconds | per connection | Read timeout on one client socket |
+| `WEBCAM_API_MAX_CONNECTIONS` | `64` | connections | per connection | Concurrent connections served at once (`0` disables) |
 | `WEBCAM_API_MAX_BODY` | `1048576` | bytes (1 MiB) | per `POST` | Largest accepted `Content-Length` |
 | `WEBCAM_PROBE_TTL` | `5` | seconds | per probe call | How long `/api/status` and `/api/health` reuse a probe answer |
 
@@ -114,7 +116,26 @@ cron watchdog both depend on. An idle `GET /api/events` SSE stream is
 unaffected: that path only writes, so it never trips a read timeout. *Guidance:*
 at the default, a client that takes more than 30 s to send its request is
 dropped. Raise it only for a client on a genuinely slow link — a stalled peer is
-exactly what this defends against.
+exactly what this defends against. A value of `0` or less is **not** a short
+timeout: it disables the read timeout entirely, because `settimeout(0)` is
+non-blocking mode (the next read would raise rather than wait) and a negative
+number raises `ValueError` inside `socketserver.setup()`, which would answer
+*no* request at all. The server prints a startup warning when it is running
+with no read timeout.
+
+**`WEBCAM_API_MAX_CONNECTIONS`** — the thread-count ceiling. The socket timeout
+above bounds a thread's *lifetime*; this bounds how many there are. Each
+accepted connection takes a slot for its lifetime; past the ceiling the peer
+gets **503** `{"error": "too many concurrent connections; retry later"}` and
+the socket closes, so a burst has a bounded answer instead of one thread per
+connection. *Guidance:* the default is deliberately far above ordinary use —
+a browser opens at most 6 connections per host and a reverse proxy reuses one
+upstream connection, so single-user use is 1–2 concurrent. Lower it only if
+something on the box is opening connections it does not need; `0` restores the
+uncapped behaviour. The refusal is deliberately not logged per connection: the
+burst is the interesting case, and a log line per connection is itself the
+flood. `GET /api/events` has its own, separate cap
+(`WEBCAM_SSE_MAX_CLIENTS`).
 
 **`WEBCAM_API_MAX_BODY`** — every `POST` validates the declared
 `Content-Length` **before reading a byte of it**, so `Content-Length:
@@ -170,6 +191,26 @@ Requires `?camera=<id>` (folder basename from `GET /api/cameras`). Writing witho
 
 `filename` must be a bare basename (no path separators, no leading `.`); path
 traversal is rejected.
+
+**An unpin clears the name from every file that can pin it.** `<cam>/pins.json`
+is the canonical file, but `analyze_images.retention_pins()` still unions it
+with the pre-camera-scoping `<repo>/pins.json`, and on any upgraded install the
+name is in both (both pre-#39 sync steps wrote the repo file into every camera
+dir). A name present in both used to be un-unpinnable: the camera file was
+emptied and the API answered `pinned: false`, but retention kept protecting the
+frame from every sweep forever, while the UI showed it as unpinned. An unpin
+now removes the entry from the legacy file and the camera's own, in that order,
+so a crash in between leaves the frame pinned (failing toward "keep the frame",
+never toward "silently delete one the operator believes they released"). A name
+that only ever existed in the legacy file is removed there, without
+materialising an empty `pins.json` in the camera dir.
+
+Pin names whose frame is no longer in the camera dir are dropped on the next
+write to that camera's `pins.json` — retention has nothing to protect for them
+either, and without that the file only ever grew. The reclaim is deliberately
+narrow: an unreadable or empty directory listing drops **nothing**, so a
+vanished dir, a permissions problem or a filesystem hiccup can never wipe a pin
+list, and every reclaimed name is logged.
 
 ### `POST /api/delete`
 Permanently remove an image and its thumbnail, and unpin it.
@@ -262,7 +303,8 @@ Send a Slack test message using the stored config.
 
 ### `GET /api/status`
 Live pipeline snapshot. Shape (keys may be absent if a source is unavailable):
-- `watch_dirs`, `settings` (full settings.json — includes `max_age_days`,
+- `watch_dirs`, `settings` (full settings.json, minus secrets at **every**
+  depth — see [Redaction](#redaction) — including `max_age_days`,
   `max_dir_gb`, `persist_budget_pct`, even though those are not
   `POST /api/settings`-mutable)
 - `trigger` → `{inotify_active, idle_sweep_seconds, last_sweep_age_s}`
@@ -305,6 +347,43 @@ Live pipeline snapshot. Shape (keys may be absent if a source is unavailable):
   `WEBCAM_PROBE_TTL` seconds (default 5; `0` = re-probe every call) — see
   [Request limits](#request-limits). Every other value in the snapshot is read
   fresh.
+- `max_dir_gb` is read through the same guarded accessor the pipeline uses
+  (`analyze_images.setting_num`), so a hostile value — `null`, `"5.0"`,
+  `"abc"`, `{}` — leaves the default **5 GB** budget in place instead of
+  raising. A non-positive budget means "no disk budget" (eviction skipped),
+  never "delete until empty", and `cameras[].budget_pct` is then `null`.
+- Every number in the response is **finite**. `json.dumps` would otherwise
+  write a non-finite float as a bare `Infinity` / `NaN`, which `JSON.parse`
+  rejects — so one hostile setting produced a `200` the browser could not read
+  at all, and `tools/watchdog.sh`, which parses the same body, silently
+  computed `MAX_BUDGET=0` and never reached its 90 %-budget retention kick.
+  Non-finite values are serialized as `null` instead.
+
+### Redaction
+
+`GET /api/status` is **unauthenticated** — the gallery, the uptime monitor and
+`tools/watchdog.sh` all read it — so it is the widest possible hole: a
+serialized `api_token` hands every reader the key that authorizes deleting
+frames, rewriting settings and swapping the Slack bot token. `settings` is
+therefore filtered on the way out, and the filter is **recursive**: it walks
+dicts and lists and applies the secret-key test at every level, so a nested
+`integrations.slack.bot_token` or `servers[0].token` is dropped as thoroughly
+as a top-level `api_token`. A key that names a secret takes its **whole
+subtree** with it; a benign key keeps its non-secret children.
+
+Key matching is case- and separator-insensitive: the key is lowercased and
+stripped of non-alphanumerics before being tested, so `api_key`, `api-key`,
+`API-Key` and `apiKey` are one word, and `privateKey` matches `privatekey`. A
+key that *ends* in `key` (`ssh_key`, `openai_key`) is treated as a secret, since
+that shape is otherwise open-ended. The cost is a false positive on a
+non-secret key that happens to end in "key"; none of the settings keys the SPA
+reads out of this endpoint does, and dropping one from a read-only view is not
+a security regression.
+
+The same treatment applies to every other `json.dumps` on the response path, so
+no field can reintroduce a non-finite number by forgetting to sanitize itself.
+`GET /api/integrations` is filtered separately and stays a fixed,
+hand-written shape (presence of tokens, never their values).
 
 ### `GET /api/health`
 Compact health for an external uptime monitor (and the cron watchdog).
