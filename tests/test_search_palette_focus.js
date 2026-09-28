@@ -15,26 +15,8 @@
 //     stayed empty while the grid kept its old filters.
 //
 // Run: node tests/test_search_palette_focus.js
-const fs = require('fs');
 const assert = require('assert');
-
-const html = fs.readFileSync(__dirname + '/../index.html', 'utf8');
-
-// Pull one `function NAME(...) { ... }` out of the inline script, at whatever
-// nesting depth it happens to sit (the palette lives inside DOMContentLoaded).
-function grabFn(name) {
-  const re = new RegExp('\\n([ \\t]*)function ' + name + '\\(');
-  const m = re.exec(html);
-  assert(m, name + ' not found in index.html');
-  const at = m.index;
-  let i = html.indexOf('{', at);
-  let depth = 0;
-  for (; i < html.length; i++) {
-    if (html[i] === '{') depth++;
-    else if (html[i] === '}' && --depth === 0) return html.slice(at, i + 1);
-  }
-  throw new Error('unbalanced braces in ' + name);
-}
+const { src: html, grabFn } = require('./helpers/load.cjs');
 
 const open = grabFn('openSearchPopup');
 const close = grabFn('closeSearchPopup');

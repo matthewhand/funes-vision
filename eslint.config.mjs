@@ -1,5 +1,6 @@
-// ESLint flat config for the tests/*.js Node suites and the SPA's inline
-// <script> (extracted from index.html — see tools/lint/extract-inline.mjs).
+// ESLint flat config for the tests/*.js Node suites, the shared test loader
+// (tests/helpers/load.cjs) and the SPA's inline <script> (extracted from
+// index.html — see tools/lint/extract-inline.mjs).
 //
 // NPM-FREE: this file imports nothing and the repo has no package.json. It only
 // needs an `eslint` binary. CI stays npm-free (no `npm install`), so JS linting
@@ -89,7 +90,7 @@ export default [
     ignores: ["node_modules/**", "dist/**", "lucide.min.js", ".lint/**"],
   },
   {
-    files: ["tests/**/*.js"],
+    files: ["tests/**/*.js", "tests/**/*.cjs"],
     languageOptions: {
       ecmaVersion: "latest",
       sourceType: "commonjs",

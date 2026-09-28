@@ -6,19 +6,13 @@
 // sites use them, so a helper nobody calls still fails.
 //
 // Run: node tests/test_issue80_empty_and_chip.js
-const fs = require('fs');
 const assert = require('assert');
-
-const html = fs.readFileSync(__dirname + '/../index.html', 'utf8');
+const { src: html, loadSentinel } = require('./helpers/load.cjs');
 
 // Each helper is eval'd at module scope, so a helper that calls another
 // (switchChipLabel -> cameraDisplayName) sees it — same style as
 // tests/test_timeline_empty_state.js.
-const grabSentinel = (name) => {
-  const m = html.match(new RegExp(`pure:${name} ===\\n([\\s\\S]*?)\\n\\s*// === \\/pure:${name}`));
-  assert(m, name + ' sentinel block not found in index.html');
-  return m[1];
-};
+const grabSentinel = (name) => loadSentinel(name)[name];
 
 eval(grabSentinel('timelineEmptyDayCopy')); // defines timelineEmptyDayCopy
 eval(grabSentinel('cameraDisplayName'));    // defines cameraDisplayName

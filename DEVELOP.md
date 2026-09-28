@@ -807,7 +807,9 @@ with `sudo apt-get install -y libgl1 libglib2.0-0` (CI does this).
 tests/*.js` would only execute the first file (the shell passes the rest as
 `argv`), silently skipping the others. The runner loops over every sorted
 `tests/*.js`, prints `PASS <file>` / `FAIL <file>`, stops at the first failure
-with a non-zero exit, and prints a final passed/total count.
+with a non-zero exit, and prints a final passed/total count. Files under
+`tests/helpers/` are not suites; `tests/test_helpers_selftest.js` is the
+one-line entry point that puts the loader self-test into that count.
 
 - **Python** (`tests/test_helpers.py`) imports `api_server` + the `integrations`
   package and covers the pure logic: settings validation, timezone resolution,
@@ -832,10 +834,58 @@ with a non-zero exit, and prints a final passed/total count.
 - **Regression guard** (`tests/test_dom_refs.js`): cross-checks every
   `getElementById('x')` the SPA relies on against an `id="x"` in the markup
   (minus a tiny allowlist of runtime-created elements), catching a broken/renamed
-  DOM reference the pure-helper tests can't see.
+  DOM reference the pure-helper tests can't see. It asserts the reference set is
+  **non-empty** first, so an empty or moved source fails loudly instead of
+  iterating zero ids and reporting success.
+- **Static-asset coverage** (`tests/test_static_asset_manifest.js`): derives every
+  local `src`/`href` in `index.html` and asserts each one is enumerated by all
+  four places that decide what ships — `create-index.sh`,
+  `tools/deploy-webroot.sh`, `tools/demo/build_demo.py` and
+  `tools/screenshots/proxy.py`. Add a `js/` or `css/` file to the page and this
+  is what stops it 404ing in one deployment target only. (Known pre-existing
+  deviation: the demo bundle ships no `USER-GUIDE.html`, so Help 404s there; it
+  is a named entry in that test, and the entry fails if it ever goes stale.)
 - **Inline JS sanity:** extract each `<script>` body and `node --check` it
   before deploying (catches syntax errors the single-file SPA would otherwise
   only reveal in a browser).
+
+### Reading `index.html` from a suite (`tests/helpers/load.cjs`)
+
+Every `tests/*.js` suite that asserts on the page as TEXT — a CSS rule body, an
+`@media` block, a markup fragment, a function body, a `pure:NAME` sentinel —
+should read it through the shared loader, not a private `readFileSync` + regex:
+
+```js
+const { src, css, rule, ruleN, decl, rules, mediaBodies,
+        markup, head, meta, ids, hasId, appSource,
+        grabFn, loadSentinel } = require('./helpers/load.cjs');
+```
+
+- **Every lookup throws** on a miss, naming the selector/function/id and the file
+  it was not found in. That is the whole point: a scraper that answers `''` turns
+  `assert.ok(!/x/.test(rule('.gone')))` into a permanent green light. Use
+  `rules(sel)` when a rule legitimately has several bodies, and
+  `ruleN(sel, n)` for the nth.
+- `rule()` matches a selector **exactly** (whitespace collapsed, comma lists
+  split), so `rule('.toast')` can never return `.toast i`'s body. `css()` strips
+  `/* … */` comments, because a comment in this page carries the "why" for ~90
+  rules.
+- `grabFn(name)` walks braces with a real JS lexer — strings, template literals,
+  regex literals and comments are skipped, not counted — so a `}` inside any of
+  them cannot truncate the body. It finds `async function` too.
+- `appSource()` is byte-identical to `node tools/lint/extract-inline.mjs`, so the
+  suites and the `node --check` / ESLint gate see the same script. It throws
+  rather than returning `''`, because every "this banned pattern is ABSENT"
+  assertion goes vacuous on an empty string.
+- `loadSentinel('a', 'b')` returns `{a, b}` — the source between each
+  `pure:NAME` marker pair, ready to `eval`. It is transitional: it exists so the
+  sentinel suites can move off their private regex one at a time, and it goes
+  away once the helpers are real ES modules.
+
+`node tests/test_helpers_selftest.js` (fixture in `tests/helpers/selftest.js`)
+proves each of those throws on a miss, against a synthetic document so it keeps
+working after the app is split. If you add a lookup to the loader, add its
+failure case there too.
 
 ### Browser gate (`tools/screenshots/a11y_audit.js`)
 
@@ -903,8 +953,9 @@ same sources the tests use.
   ruff check .
   ```
 - **JavaScript — ESLint flat config** ([`eslint.config.mjs`](eslint.config.mjs)).
-  Covers `tests/*.js` (Node + browser globals, because the suites `eval`
-  extracted SPA helpers) and the SPA's inline `<script>`, pulled out with
+  Covers `tests/**/*.js` and `tests/helpers/*.cjs` (Node + browser globals,
+  because the suites `eval` extracted SPA helpers) and the SPA's inline
+  `<script>`, pulled out with
   [`tools/lint/extract-inline.mjs`](tools/lint/extract-inline.mjs). Rules are
   correctness-only (no stylistic churn) and the config imports nothing.
   ```sh

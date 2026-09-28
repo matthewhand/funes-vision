@@ -9,23 +9,8 @@
 // by reading the source.
 //
 // Run: node tests/test_lightbox_slideshow.js
-const fs = require('fs');
 const assert = require('assert');
-
-const html = fs.readFileSync(__dirname + '/../index.html', 'utf8');
-
-// Pull one top-level `function NAME(...) { ... }` out of the inline script.
-function grabFn(name) {
-  const at = html.indexOf('\n    function ' + name + '(');
-  assert.notStrictEqual(at, -1, name + ' not found in index.html');
-  let i = html.indexOf('{', at);
-  let depth = 0;
-  for (; i < html.length; i++) {
-    if (html[i] === '{') depth++;
-    else if (html[i] === '}' && --depth === 0) return html.slice(at, i + 1);
-  }
-  throw new Error('unbalanced braces in ' + name);
-}
+const { src: html, grabFn } = require('./helpers/load.cjs');
 
 const FNS = [
   'clampPan',

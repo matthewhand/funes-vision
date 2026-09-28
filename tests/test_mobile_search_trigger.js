@@ -8,39 +8,25 @@
 // tools/screenshots/a11y_audit.js (the trigger now measures 63.8x38 at 390x844
 // with every child inside it, the label on one line with an ellipsis, and the
 // ⌘K chip display:none). Run: node tests/test_mobile_search_trigger.js
-const fs = require('fs');
 const assert = require('assert');
-
-const html = fs.readFileSync(__dirname + '/../index.html', 'utf8');
-
+const { src: html, rule, mediaBodies, grabFn } = require('./helpers/load.cjs');
 // Every `@media (max-width: 768px)` block, concatenated: these declarations are
 // what apply on a phone, wherever in the cascade they sit.
-const phone = [...html.matchAll(/@media\s*\(max-width:\s*768px\)\s*\{/g)]
-  .map((m) => {
-    // Walk braces from the opening one so nested rules are included verbatim.
-    let depth = 0;
-    for (let i = m.index + m[0].length - 1; i < html.length; i++) {
-      if (html[i] === '{') depth++;
-      else if (html[i] === '}' && --depth === 0) return html.slice(m.index, i + 1);
-    }
-    return html.slice(m.index);
-  })
-  .join('\n');
+const phone = mediaBodies(/max-width:\s*768px/).join('\n');
 assert(phone.length > 200, 'expected at least one @media (max-width: 768px) block');
 
 // --- 1. The label truncates instead of wrapping, at any width -----------------
 // A flex item's automatic minimum size is its content width, so without an
 // explicit min-width:0 the label refuses to shrink below the full text and
 // spills out of the trigger.
-const labelRule = html.match(/\.search-trigger \.search-placeholder\s*\{([^}]*)\}/);
-assert(labelRule, 'expected a .search-trigger .search-placeholder rule');
+const labelRule = rule('.search-trigger .search-placeholder');
 for (const [prop, why] of [
   ['min-width:\\s*0', 'a flex item must be allowed to shrink below its text width'],
   ['overflow:\\s*hidden', 'the text must be clipped to the trigger box'],
   ['text-overflow:\\s*ellipsis', 'the clipped text must read as truncated'],
   ['white-space:\\s*nowrap', 'the label must stay on one line'],
 ]) {
-  assert(new RegExp(prop).test(labelRule[1]),
+  assert(new RegExp(prop).test(labelRule),
     `.search-trigger .search-placeholder must declare ${prop} -- ${why}`);
 }
 
@@ -84,9 +70,8 @@ assert(/dataset\.query/.test(sync[1]),
 
 // closeSearchPopup() resets the label to the hint -- from that same string, so
 // closing the popup on a phone cannot restore the long wording.
-const closeFn = html.match(/function closeSearchPopup\(\) \{([\s\S]*?)\n {6}\}/);
-assert(closeFn, 'expected a closeSearchPopup() body');
-assert(/ph\.textContent = v \|\| searchPlaceholderText\(\)/.test(closeFn[1]),
+const closeFn = grabFn('closeSearchPopup');
+assert(/ph\.textContent = v \|\| searchPlaceholderText\(\)/.test(closeFn),
   'closeSearchPopup() must reset the trigger label via searchPlaceholderText()');
 
 console.log('mobile-search-trigger: all assertions passed');

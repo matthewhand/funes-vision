@@ -8,35 +8,11 @@
 // This is the static backstop (no browser in CI). The measured proof is a
 // headless-browser run against tools/screenshots/proxy.py; see the PR.
 // Run: node tests/test_chart_target_size.js
-const fs = require('fs');
 const assert = require('assert');
-
-const html = fs.readFileSync(__dirname + '/../index.html', 'utf8');
+const { src: html, rule } = require('./helpers/load.cjs');
 
 // WCAG 2.5.8 Target Size (Minimum), Level AA: 24x24 CSS px.
 const MIN_TARGET = 24;
-
-// Body of the first CSS rule whose selector list contains `selector`.
-// Returns null when the rule is absent.
-const cssRules = [];
-{
-  // index.html has exactly one <style> block, so a flat scan is enough: no
-  // nesting in the sheet, and `{}` inside the rule body is not used.
-  const style = html.match(/<style[^>]*>([\s\S]*?)<\/style>/);
-  assert(style, 'expected a <style> block in index.html');
-  // Comments carry a lot of the "why" for these rules, so strip them before
-  // parsing or they get mistaken for part of the selector.
-  const sheet = style[1].replace(/\/\*[\s\S]*?\*\//g, '');
-  const re = /([^{}]+)\{([^{}]*)\}/g;
-  let m;
-  while ((m = re.exec(sheet)) !== null) {
-    cssRules.push({ selector: m[1].trim(), body: m[2] });
-  }
-}
-function ruleBody(selector) {
-  const hit = cssRules.find((r) => r.selector.split(',').some((s) => s.trim() === selector));
-  return hit ? hit.body : null;
-}
 
 // Every px value a declaration assigns, so the assertions read the number out
 // of the stylesheet instead of trusting a literal.
@@ -52,7 +28,7 @@ function pxValues(body, prop) {
 }
 
 // --- 1. the target element exists and is floored at 24px in both axes -------
-const hit = ruleBody('.chart-hit');
+const hit = rule('.chart-hit');
 assert(hit, 'expected a .chart-hit rule: the focusable target must not be the painted bar');
 const hitMinW = pxValues(hit, 'min-width');
 const hitMinH = pxValues(hit, 'min-height');
@@ -75,7 +51,7 @@ assert(/position\s*:\s*absolute/.test(hit),
 assert(hit.indexOf('z-index') !== -1, '.chart-hit needs a z-index to sit above .chart-bar');
 
 // --- 2. the wrapper itself can never be a zero-box focusable ---------------
-const wrapper = ruleBody('.chart-bar-wrapper');
+const wrapper = rule('.chart-bar-wrapper');
 assert(wrapper, 'expected a .chart-bar-wrapper rule');
 assert(Math.min(...pxValues(wrapper, 'min-height')) >= MIN_TARGET,
   '.chart-bar-wrapper must keep min-height >= 24px so a bar never collapses to 0 height');
@@ -102,7 +78,7 @@ assert(!/barWrapper\.setAttribute\('aria-(label|pressed)'/.test(html),
 assert(!/bindActivatable\(\s*barWrapper\b/.test(html),
   'bindActivatable(barWrapper, ...) would make the ~5px wrapper the target again');
 // The painted bar must keep its data-encoded size (no fat blocks).
-const bar = ruleBody('.chart-bar');
+const bar = rule('.chart-bar');
 assert(bar, 'expected a .chart-bar rule');
 assert(/width\s*:\s*100%/.test(bar), '.chart-bar stays width: 100% of its flex slot (~5px)');
 assert(!/min-width\s*:/.test(bar), '.chart-bar must not gain a min-width (that would fatten the data encoding)');

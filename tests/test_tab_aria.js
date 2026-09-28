@@ -1,10 +1,9 @@
 // Timeline/Objects/All are a pressed-button group, not a fake WAI-ARIA tablist
 // (we never implemented arrow-key tablist behavior).
 // Run: node tests/test_tab_aria.js
-const fs = require('fs');
 const assert = require('assert');
-
-const html = fs.readFileSync(__dirname + '/../index.html', 'utf8');
+const { markup } = require('./helpers/load.cjs');
+const html = markup();
 
 const grp = html.match(/<div class="tab-group" id="filter-tabs"[^>]*>/);
 assert(grp, '#filter-tabs container not found');

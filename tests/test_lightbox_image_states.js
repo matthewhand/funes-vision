@@ -3,20 +3,8 @@
 // header controls on screen and the DOM wiring that makes the behaviours real.
 // Every block here fails against the pre-fix index.html.
 // Run: node tests/test_lightbox_image_states.js
-const fs = require('fs');
 const assert = require('assert');
-
-const html = fs.readFileSync(__dirname + '/../index.html', 'utf8');
-
-function rules(selector) {
-  const re = new RegExp(selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*\\{([^}]*)\\}', 'g');
-  const found = [...html.matchAll(re)].map(m => m[1]);
-  assert(found.length, selector + ' rule not found');
-  return found;
-}
-function rule(selector) {
-  return rules(selector)[0];
-}
+const { src: html, rules, rule } = require('./helpers/load.cjs');
 
 // ===================================================================== #73
 // A long unparseable filename used to give .lightbox-title a min-content width

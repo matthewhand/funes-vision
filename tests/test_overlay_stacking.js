@@ -19,36 +19,9 @@
 //     backdrop guard was unreachable dead code — only Escape and × closed it.
 //
 // Run: node tests/test_overlay_stacking.js
-const fs = require('fs');
 const assert = require('assert');
-
-const html = fs.readFileSync(__dirname + '/../index.html', 'utf8');
-
-function grabFn(name) {
-  const m = new RegExp('\\n([ \\t]*)function ' + name + '\\(').exec(html);
-  assert(m, name + ' not found in index.html');
-  const at = m.index;
-  let i = html.indexOf('{', at);
-  let depth = 0;
-  for (; i < html.length; i++) {
-    if (html[i] === '{') depth++;
-    else if (html[i] === '}' && --depth === 0) return html.slice(at, i + 1);
-  }
-  throw new Error('unbalanced braces in ' + name);
-}
-
-function sentinel(name) {
-  const m = html.match(new RegExp('// === pure:' + name + ' ===\\n([\\s\\S]*?)\\n\\s*// === /pure:' + name));
-  assert(m, name + ' sentinel block not found in index.html');
-  return m[1];
-}
-
-function rule(selector) {
-  const re = new RegExp(selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*\\{([^}]*)\\}', 'g');
-  const found = [...html.matchAll(re)].map(m => m[1]);
-  assert(found.length, selector + ' rule not found');
-  return found[0];
-}
+const { src: html, rule, grabFn, loadSentinel } = require('./helpers/load.cjs');
+const sentinel = (name) => loadSentinel(name)[name];
 
 function zIndexOf(selector) {
   const m = rule(selector).match(/z-index:\s*(\d+)/);

@@ -14,15 +14,8 @@
 // widen the hit area, not the paint.
 //
 // Run: node tests/test_status_panel_a11y.js
-const fs = require('fs');
 const assert = require('assert');
-
-const html = fs.readFileSync(__dirname + '/../index.html', 'utf8');
-// Only the <style> block: stripping /* */ across the whole document would eat
-// past </style> (the inline script contains `/*` inside regex literals).
-const styleBlocks = [...html.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)];
-assert(styleBlocks.length >= 1, 'expected a <style> block in index.html');
-const css = styleBlocks.map((m) => m[1]).join('\n').replace(/\/\*[\s\S]*?\*\//g, '');
+const { src: html, rule } = require('./helpers/load.cjs');
 
 // ---- token maths (WCAG 2.x relative luminance) --------------------------
 const root = html.match(/:root\s*\{([\s\S]*?)\n\s*\}/);
@@ -109,14 +102,6 @@ assert.deepStrictEqual(opacityOnText, [],
   'the alpha before the contrast maths runs:\n' + opacityOnText.join('\n'));
 
 // ---- the 24px target floor (WCAG 2.5.8 AA) -----------------------------
-function rule(selector) {
-  for (const m of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
-    for (const sel of m[1].split(',')) {
-      if (sel.trim().replace(/\s+/g, ' ') === selector) return m[2];
-    }
-  }
-  return null;
-}
 const summaryRule = rule('#system-status-content > details > summary');
 assert(summaryRule,
   'no #system-status-content > details > summary rule: the two disclosure rows ' +

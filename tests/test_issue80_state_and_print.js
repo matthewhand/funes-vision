@@ -8,29 +8,23 @@
 // get/setAttribute). The rest are contract tests over index.html.
 //
 // Run: node tests/test_issue80_state_and_print.js
-const fs = require('fs');
 const assert = require('assert');
-
-const html = fs.readFileSync(__dirname + '/../index.html', 'utf8');
+const { src: html, loadSentinel, grabFn: grabTopLevelFn } = require('./helpers/load.cjs');
 const markup = html.replace(/<!--[\s\S]*?-->/g, '');
-const grabSentinel = (name) => {
-  const m = html.match(new RegExp(`pure:${name} ===\\n([\\s\\S]*?)\\n\\s*// === \\/pure:${name}`));
-  assert(m, name + ' sentinel block not found in index.html');
-  return m[1];
-};
-// Harvest a function body by brace counting (same trick as
-// tests/test_lightbox_slideshow.js) for the non-pure DOM helpers. Handles both
+const grabSentinel = (name) => loadSentinel(name)[name];
+// Harvest a function body for the non-pure DOM helpers. Handles both
 // `function name(...)` and `const name = (...) => {`.
 const grabFn = (name) => {
-  const decl = html.indexOf('function ' + name);
+  const at = html.indexOf('function ' + name);
+  if (at !== -1) return grabTopLevelFn(name);
   const arrow = html.search(new RegExp('(?:const|let|var)\\s+' + name + '\\s*=\\s*(?:async\\s*)?\\('));
-  const at = decl !== -1 ? decl : arrow;
-  assert(at !== -1, name + ' not found in index.html');
-  let i = html.indexOf('{', at);
+  assert(arrow !== -1, name + ' not found in index.html');
+  let i = html.indexOf('{', arrow);
+  assert(i !== -1, name + ' has no block body');
   let depth = 0;
   for (; i < html.length; i++) {
     if (html[i] === '{') depth++;
-    else if (html[i] === '}' && --depth === 0) return html.slice(at, i + 1);
+    else if (html[i] === '}' && --depth === 0) return html.slice(arrow, i + 1);
   }
   throw new Error('unbalanced braces in ' + name);
 };

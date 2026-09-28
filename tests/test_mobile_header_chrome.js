@@ -1,37 +1,17 @@
 // Contract: phone header is one compact bar (camera + view tabs). CSS-only
 // at 768/960 — do not hide the time row or move Help/Refresh (#15/#18).
 // Run: node tests/test_mobile_header_chrome.js
-const fs = require('fs');
 const assert = require('assert');
+const { src: html, mediaBodies } = require('./helpers/load.cjs');
 
-const html = fs.readFileSync(__dirname + '/../index.html', 'utf8');
-
-function braceBody(src, openIdx) {
-  let depth = 0;
-  for (let i = openIdx; i < src.length; i++) {
-    if (src[i] === '{') depth++;
-    else if (src[i] === '}') {
-      depth--;
-      if (depth === 0) return src.slice(openIdx + 1, i);
-    }
-  }
-  return '';
-}
-
+// The body of the first `@media (max-width: N) { ... }` block that mentions
+// `needle` -- the media query a declaration is scoped to is the whole point.
 function mediaContaining(query, needle) {
-  const marker = '@media (max-width: ' + query + ')';
-  let from = 0;
-  while (true) {
-    const idx = html.indexOf(marker, from);
-    if (idx < 0) return null;
-    const brace = html.indexOf('{', idx);
-    if (brace < 0) return null;
-    const body = braceBody(html, brace);
-    if (body.includes(needle)) return body;
-    from = idx + marker.length;
-  }
+  return mediaBodies(new RegExp('max-width:\\s*' + query))
+    .find((b) => b.includes(needle)) || null;
 }
 
+// A rule body inside an already-extracted @media body.
 function rule(block, selector) {
   const re = new RegExp(
     selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*\\{([^}]+)}'

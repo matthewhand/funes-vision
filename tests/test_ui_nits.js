@@ -1,8 +1,6 @@
 // Contract tests for leftover first-paint + copy nits. Run: node tests/test_ui_nits.js
-const fs = require('fs');
 const assert = require('assert');
-
-const html = fs.readFileSync(__dirname + '/../index.html', 'utf8');
+const { src: html, grabFn } = require('./helpers/load.cjs');
 
 // Backfill first-paints OFF (pipeline default / settings.json deep_backfill).
 assert.ok(/let backfillOn = false/.test(html), 'backfillOn default must be false');
@@ -39,12 +37,11 @@ assert.ok(/img\.alt = cardAriaLabel\(meta, lbLabels\)/.test(html),
   'lightbox alt must use cardAriaLabel on every open/navigate');
 
 // GET /api/integrations 409 must not look like "not configured".
-const loadInt = html.match(/async function loadIntegrations\(\) \{([\s\S]*?)\n      \}/);
-assert(loadInt, 'loadIntegrations not found');
-assert.ok(/includes\('409'\)/.test(loadInt[1]), 'loadIntegrations must special-case 409');
-assert.ok(/integrations\.json unreadable/.test(loadInt[1]),
+const loadInt = grabFn('loadIntegrations');
+assert.ok(/includes\('409'\)/.test(loadInt), 'loadIntegrations must special-case 409');
+assert.ok(/integrations\.json unreadable/.test(loadInt),
   '409 status must say integrations.json unreadable');
-assert.ok(!/409[\s\S]{0,200}not configured/.test(loadInt[1]),
+assert.ok(!/409[\s\S]{0,200}not configured/.test(loadInt),
   '409 path must not blank tokens as not configured');
 
 // Filters popover shares the mobile sheet treatment.

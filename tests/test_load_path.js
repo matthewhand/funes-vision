@@ -3,10 +3,9 @@
 // Run: node tests/test_load_path.js
 const fs = require('fs');
 const assert = require('assert');
+const { src: html, head } = require('./helpers/load.cjs');
 
-const root = __dirname + '/..';
-const html = fs.readFileSync(root + '/index.html', 'utf8');
-const createIndex = fs.readFileSync(root + '/create-index.sh', 'utf8');
+const createIndex = fs.readFileSync(__dirname + '/../create-index.sh', 'utf8');
 
 assert.ok(!/images\.json\?t=/.test(html), 'must not cache-bust images.json with ?t=');
 assert.ok(!/analysis\.json\?t=/.test(html), 'must not cache-bust analysis.json with ?t=');
@@ -16,8 +15,7 @@ assert.ok(/filenamesOnDate/.test(html),
   'Timeline must scope visit grouping to the selected day');
 assert.ok(/cache:\s*'no-cache'/.test(html), 'catalog fetches must revalidate, not bypass cache');
 
-const head = html.split(/<body/i)[0];
-assert.ok(!/<script[^>]+src="lucide\.min\.js"/.test(head),
+assert.ok(!/<script[^>]+src="lucide\.min\.js"/.test(head()),
   'lucide.min.js must not be render-blocking in <head>');
 assert.ok(/<script[^>]+src="lucide\.min\.js"/.test(html),
   'lucide.min.js must still load locally');
