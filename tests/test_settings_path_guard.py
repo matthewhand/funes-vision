@@ -11,15 +11,25 @@ repo's real one, so they hold on any machine:
 * the first proves an explicit ``settings_path`` wins over the module default;
 * the second proves the default is still the module default, so a deploy that
   edits ``settings.json`` keeps working.
+
+The same reasoning applies to ``PIPELINE_LOCK``, the other machine-global the
+sweep reads: it is redirected into the throwaway tree too, so a live sweep on
+the developer's box cannot turn "the frame survived" into an answer about the
+lock instead of about the settings path.
 """
 import io
 import json
 import os
+import sys
 import tempfile
 import time
 import unittest
 from contextlib import redirect_stdout
 from unittest import mock
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import hermetic
 
 import analyze_images
 
@@ -42,6 +52,11 @@ class SettingsPathGuardTest(unittest.TestCase):
         analyze_images.GATE_IGNORE_LABELS = ["car"]
         # Stand in for the box's deployed settings.json.
         analyze_images._settings_path = self.deployed
+        # The other half of the same trap as settings.json: main() takes the
+        # machine-global /tmp/webcam_analysis.lock non-blocking and returns a
+        # benign exit 0 when it is busy. On a box with a sweep running, both
+        # tests below then "passed" or failed on a sweep that never ran.
+        hermetic.pin_private_lock(self, analyze_images, self.root)
         patcher = mock.patch.object(analyze_images, "ollama_available", return_value=False)
         patcher.start()
         self.addCleanup(patcher.stop)
@@ -69,8 +84,12 @@ class SettingsPathGuardTest(unittest.TestCase):
             json.dump({"stale.jpg": {"fast_pass": "negative"}}, f)
         with open(os.path.join(self.root, "pins.json"), "w") as f:
             json.dump([], f)
-        with redirect_stdout(io.StringIO()):
+        out = io.StringIO()
+        with redirect_stdout(out):
             analyze_images.main(retention_only=True, **kwargs)
+        # A busy global lock or an unconfigured sweep also exits 0, so `stale.jpg`
+        # surviving would otherwise not mean what the caller thinks it means.
+        hermetic.assert_sweep_ran(self, out.getvalue())
         return os.path.exists(path)
 
     def test_chosen_path_wins_over_deployed_settings(self):

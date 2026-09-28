@@ -23,7 +23,11 @@ assumed: the tests put a 100-day-old analyzed frame and a populated catalog in
 the tree and check both are byte-identical afterwards.
 
 The last test drives the real `__main__` in a subprocess, because the exit code
-create-index.sh keys the success marker off is the *process* exit code.
+create-index.sh keys the success marker off is the *process* exit code. That
+subprocess gets its own PIPELINE_LOCK too: main() takes the machine-global
+/tmp/webcam_analysis.lock non-blocking and reports a busy lock as a benign
+exit 0, so on a box mid-sweep the exit-0 tests below were answering a
+question about the lock (#30/#53).
 
 Run from the repo root:  python3 -m unittest discover -s tests
 """
@@ -40,6 +44,8 @@ from contextlib import redirect_stderr, redirect_stdout
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import hermetic
 
 import analyze_images
 
@@ -322,17 +328,54 @@ class TestProcessExitCode(unittest.TestCase):
     MODULES = ("analyze_images.py", "log_config.py", "scans.py", "taxonomy.py",
                "catalog.py", "zones.py", "pipeline_events.py", "ha_mqtt.py")
 
+    # PIPELINE_LOCK is a module constant hardcoded to the machine-global
+    # /tmp/webcam_analysis.lock, so a child process cannot be told to use a
+    # private one except by importing the module and re-running its own
+    # `if __name__ == "__main__":` block against that same module object --
+    # which keeps the real entrypoint (and so the real process exit code that
+    # create-index.sh reads) and changes nothing else.
+    DRIVER = '''\
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import analyze_images
+
+analyze_images.PIPELINE_LOCK = sys.argv.pop(1)
+
+_path = analyze_images.__file__
+with open(_path) as _fh:
+    _src = _fh.read()
+_guard = 'if __name__ == "__main__":'
+assert _src.count(_guard) == 1, "expected exactly one __main__ guard in " + _path
+_real_name = analyze_images.__dict__["__name__"]
+analyze_images.__dict__["__name__"] = "__main__"
+try:
+    exec(compile(_src[_src.index(_guard):], _path, "exec"), analyze_images.__dict__)
+finally:
+    analyze_images.__dict__["__name__"] = _real_name
+'''
+
     def setUp(self):
         self.td = tempfile.TemporaryDirectory(prefix="webcam_cli_")
         self.base = self.td.name
         for name in self.MODULES:
             shutil.copy2(os.path.join(REPO_ROOT, name), os.path.join(self.base, name))
         self.settings = os.path.join(self.base, "settings.json")
+        self.driver = os.path.join(self.base, "run_entrypoint.py")
+        with open(self.driver, "w") as f:
+            f.write(self.DRIVER)
+        # Private lock, so a sweep in progress on this box cannot decide these
+        # exit codes -- it used to: main() takes the lock non-blocking and a
+        # busy lock is a benign exit 0, indistinguishable from "nothing to do"
+        # or from a sweep that ran (#30/#53).
+        self.lock = hermetic.pin_private_lock(self, analyze_images, self.base,
+                                             filename="pipeline.lock")
         self.addCleanup(self.td.cleanup)
 
     def _run(self, *args):
         return subprocess.run(
-            [sys.executable, "analyze_images.py", *args], cwd=self.base,
+            [sys.executable, "run_entrypoint.py", self.lock, *args], cwd=self.base,
             capture_output=True, text=True, timeout=120)
 
     def test_cli_exits_three_on_a_corrupt_settings_file(self):
@@ -354,7 +397,12 @@ class TestProcessExitCode(unittest.TestCase):
 
     def test_cli_exits_zero_when_the_sweep_runs(self):
         """A real configured sweep still exits 0 -- the gate is not a blanket
-        failure, only the settings fault turns it red."""
+        failure, only the settings fault turns it red.
+
+        The exit-0-on-a-busy-lock skip is also a 0, so assert the sweep really
+        happened: otherwise this test passes on a box mid-sweep while proving
+        nothing about the gate.
+        """
         with open(self.settings, "w") as f:
             json.dump({"watch_dirs": [os.path.join(self.base, "cam")]}, f)
         os.makedirs(os.path.join(self.base, "cam"))
@@ -362,6 +410,10 @@ class TestProcessExitCode(unittest.TestCase):
         result = self._run("--retention-only")
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        combined = result.stdout + result.stderr
+        hermetic.assert_sweep_ran(self, combined)
+        self.assertIn("Scanning", combined,
+                      "the sweep exited 0 without scanning anything: " + combined)
 
 
 if __name__ == "__main__":
