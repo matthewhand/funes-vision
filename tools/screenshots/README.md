@@ -70,7 +70,9 @@ reproducible instead of following the fixture gaps. Widths are tuned
 non-zero if any output is not actually animated (Pillow frame count `< 2`).
 `--out DIR` and `--no-demo` are available for scratch runs, and `--check`
 validates the already-committed GIFs read-only (animated, one uniform hold,
-under budget) without rewriting them.
+under budget) without rewriting them, and byte-compares them against the
+`sha256` manifest in `make_gifs.py` (re-pin Pillow first, then copy the digests
+the write run prints into `COMMITTED_SHA256`).
 
 ## Env
 
