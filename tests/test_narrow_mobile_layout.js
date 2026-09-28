@@ -27,66 +27,14 @@
 //          feed or -- if the name has no break opportunities -- pushes the whole
 //          page sideways. max-width caps the pill, min-width:0 lets it shrink,
 //          and the ellipsis on the label keeps the name on one readable line.
-const fs = require('fs');
 const assert = require('assert');
+const { src: html, css, rule, decl, mediaBodies } = require('./helpers/load.cjs');
 
-const html = fs.readFileSync(__dirname + '/../index.html', 'utf8');
-
-// Only the <style> block: stripping /* */ across the whole document would eat
-// past </style> (the inline script contains `/*` inside regex literals).
-const styleBlocks = [...html.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)];
-assert.ok(styleBlocks.length >= 1, 'expected a <style> block in index.html');
-const css = styleBlocks.map((m) => m[1]).join('\n').replace(/\/\*[\s\S]*?\*\//g, '');
-
-function bodyOf(src, openIdx) {
-  let depth = 0;
-  for (let i = openIdx; i < src.length; i++) {
-    if (src[i] === '{') depth++;
-    else if (src[i] === '}') {
-      depth--;
-      if (depth === 0) return src.slice(openIdx + 1, i);
-    }
-  }
-  return '';
-}
-
-// Every `selector { body }` pair, keyed by exact selector (comma-separated
-// selector lists are split, so `.a, .b` registers twice).
-function styleRules() {
-  const out = [];
-  for (const m of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
-    for (const sel of m[1].split(',')) {
-      const s = sel.trim().replace(/\s+/g, ' ');
-      if (s) out.push({ selector: s, body: m[2] });
-    }
-  }
-  return out;
-}
-const rules = styleRules();
-const find = (selector) => rules.find((r) => r.selector === selector) || null;
-const rule = (selector) => {
-  const hit = find(selector);
-  assert(hit, `no rule for selector "${selector}" in index.html`);
-  return hit.body;
-};
-const decl = (body, prop) => {
-  const m = body.match(new RegExp('(?:^|[;{\\s])' + prop + '\\s*:\\s*([^;]+);'));
-  assert(m, `declaration "${prop}" not found (body: ${body.trim().slice(0, 120)})`);
-  return m[1].trim();
-};
 // The body of the first `@media (max-width: N) { ... }` block that contains
 // `selector` -- the media query a declaration is scoped to is the whole point.
 function inMedia(query, selector) {
-  const marker = '@media (max-width: ' + query + ')';
-  let from = 0;
-  while (true) {
-    const idx = css.indexOf(marker, from);
-    if (idx < 0) return null;
-    const brace = css.indexOf('{', idx);
-    const body = bodyOf(css, brace);
-    if (body.includes(selector)) return body;
-    from = idx + marker.length;
-  }
+  const want = new RegExp('max-width:\\s*' + query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  return mediaBodies(want).find((b) => b.includes(selector)) || null;
 }
 
 // ---- #78.1 -- 320px horizontal overflow ---------------------------------
@@ -176,7 +124,7 @@ for (const [prop, why] of [
     assert.ok(new RegExp('overflow:\\s*hidden').test(apply), 'saved-apply: ' + why);
   }
 }
-assert.ok(/@media\s*\(max-width:\s*768px\)[\s\S]*?\.saved-chip\s*\{[^}]*min-height:\s*36px/.test(css),
+assert.ok(/@media\s*\(max-width:\s*768px\)[\s\S]*?\.saved-chip\s*\{[^}]*min-height:\s*36px/.test(css()),
   'the coarse-pointer 36px chip floor must survive the rewrite (WCAG 2.5.8)');
 // The unbounded input that motivates all of the above must stay unbounded here:
 // clamping belongs in CSS, not in the prompt handler.

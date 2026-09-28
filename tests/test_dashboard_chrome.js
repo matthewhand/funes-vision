@@ -1,14 +1,11 @@
 // Contract: dashboard mode hides gallery review chrome (tabs, search, Live,
 // Help) without removing IDs or hiding the dashboard itself.
 // Run: node tests/test_dashboard_chrome.js
-const fs = require('fs');
 const assert = require('assert');
+const { src: html, grabFn } = require('./helpers/load.cjs');
 
-const html = fs.readFileSync(__dirname + '/../index.html', 'utf8');
-
-const setMode = html.match(/function setWorkspaceMode\(mode\) \{([\s\S]*?)\n    \}/);
-assert(setMode, 'setWorkspaceMode not found');
-assert.match(setMode[1], /document\.body\.classList\.toggle\('mode-dashboard',\s*isDash\)/,
+const setMode = grabFn('setWorkspaceMode');
+assert.match(setMode, /document\.body\.classList\.toggle\('mode-dashboard',\s*isDash\)/,
   'setWorkspaceMode must toggle body.mode-dashboard');
 
 const hideRules = [...html.matchAll(/body\.mode-dashboard[^{\n]*\{[^}]*\}/g)].map(m => m[0]);
@@ -25,9 +22,8 @@ assert.ok(!/body\.mode-dashboard[^{]*#dashboard-view/.test(html),
 assert.ok(!/body\.mode-dashboard[^{]*#toolbar-actions/.test(html),
   'must not hide #toolbar-actions as a whole');
 
-const currentRoute = html.match(/function currentRoute\(\) \{([\s\S]*?)\n    \}/);
-assert(currentRoute, 'currentRoute not found');
-assert.match(currentRoute[1], /path === '\/cameras'[\s\S]*ROUTE_DASHBOARD/,
+const currentRoute = grabFn('currentRoute');
+assert.match(currentRoute, /path === '\/cameras'[\s\S]*ROUTE_DASHBOARD/,
   'currentRoute /cameras must be dashboard');
 
 for (const id of ['stats-label', 'live-toggle', 'btn-help', 'sidebar-toggle',
@@ -44,11 +40,10 @@ assert.match(html, /document\.addEventListener\('keydown', \(e\) => \{[\s\S]*?e\
 // Focus restore moved out of the Escape branch and into closeSearchPopup, which
 // releases trapFocus (issue #76) — every close path restores focus now, not
 // just Escape, so the assertion is on closeSearchPopup.
-const closePopup = html.match(/function closeSearchPopup\(\) \{([\s\S]*?)\n      \}/);
-assert(closePopup, 'closeSearchPopup not found');
-assert.match(closePopup[1], /if \(searchPopupRelease\) \{ searchPopupRelease\(\); searchPopupRelease = null; \}/,
+const closePopup = grabFn('closeSearchPopup');
+assert.match(closePopup, /if \(searchPopupRelease\) \{ searchPopupRelease\(\); searchPopupRelease = null; \}/,
   'closeSearchPopup must release the palette focus trap');
-assert.match(closePopup[1], /document\.activeElement === document\.body[\s\S]*?searchTrigger \|\| searchPopupInput\)\.focus\(\)/,
+assert.match(closePopup, /document\.activeElement === document\.body[\s\S]*?searchTrigger \|\| searchPopupInput\)\.focus\(\)/,
   'closeSearchPopup must put focus on the trigger when nothing else claimed it');
 assert.ok(!/if \(e\.key === 'Escape' && searchPopup\.classList\.contains\('open'\)\) \{[\s\S]*?searchTrigger && searchTrigger\.focus\(\)/.test(html),
   'the manual Escape focus restore is superseded by the trapFocus release');

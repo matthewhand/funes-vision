@@ -3,10 +3,11 @@
 // stale-cache risk. Run: node tests/test_manifest.js
 const fs = require('fs');
 const assert = require('assert');
+const { src: html, meta } = require('./helpers/load.cjs');
 
-const path = __dirname + '/../manifest.json';
-assert(fs.existsSync(path), 'manifest.json not found at repo root');
-const m = JSON.parse(fs.readFileSync(path, 'utf8'));
+const manifestPath = __dirname + '/../manifest.json';
+assert(fs.existsSync(manifestPath), 'manifest.json not found at repo root');
+const m = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
 
 for (const k of ['name', 'short_name', 'start_url', 'display', 'background_color', 'theme_color', 'icons']) {
   assert(k in m, `manifest missing required key: ${k}`);
@@ -17,10 +18,7 @@ for (const ic of m.icons) {
   assert(ic.src && ic.sizes && ic.type, 'each icon needs src/sizes/type');
 }
 // theme_color should match the <meta name="theme-color"> in index.html (#080c14).
-const html = fs.readFileSync(__dirname + '/../index.html', 'utf8');
-const meta = html.match(/name="theme-color"\s+content="([^"]+)"/);
-assert(meta, 'theme-color meta not found in index.html');
-assert.strictEqual(m.theme_color.toLowerCase(), meta[1].toLowerCase(),
+assert.strictEqual(m.theme_color.toLowerCase(), meta('theme-color').toLowerCase(),
   'manifest theme_color must match index.html theme-color meta');
 
 // index.html must link the manifest.

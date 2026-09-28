@@ -9,29 +9,16 @@
 // block and is exercised numerically.
 //
 // Run: node tests/test_issue80_css_and_zoom.js
-const fs = require('fs');
 const assert = require('assert');
-
-const html = fs.readFileSync(__dirname + '/../index.html', 'utf8');
-const grabSentinel = (name) => {
-  const m = html.match(new RegExp(`pure:${name} ===\\n([\\s\\S]*?)\\n\\s*// === \\/pure:${name}`));
-  assert(m, name + ' sentinel block not found in index.html');
-  return m[1];
-};
-// The rule body for a selector, from the page's own <style>.
-const rule = (selector) => {
-  const re = new RegExp('(^|[}\\s])' + selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*\\{([^}]*)\\}');
-  const m = html.match(re);
-  assert(m, 'no CSS rule for ' + selector);
-  return m[2];
-};
+const { src: html, css, rule, mediaBodies, loadSentinel, grabFn } = require('./helpers/load.cjs');
+const grabSentinel = (name) => loadSentinel(name)[name];
 
 // ---------------------------------------------------------------------------
 // Item 4 — the two filter-panel toggles were 17.9px tall on coarse pointers
 // ---------------------------------------------------------------------------
-const coarse = html.match(/@media[^{]*pointer:\s*coarse[^{]*\{([\s\S]*?)\n\s{0,6}\}/);
-assert(coarse, 'expected an @media (pointer: coarse) block');
-assert(/\.filter-meta-btn\s*\{[^}]*min-height:\s*44px/.test(coarse[1]),
+const coarse = mediaBodies(/pointer:\s*coarse/);
+assert(coarse.length, 'expected an @media (pointer: coarse) block');
+assert(/\.filter-meta-btn\s*\{[^}]*min-height:\s*44px/.test(coarse[0]),
   '#sticky-toggle / #hide-filters-toggle are painted at 0.62rem + 1px padding and\n' +
   '  measured 17.9px tall at 320/360/390/414 on touch pointers; the coarse block\n' +
   '  must give .filter-meta-btn a 44px floor like every other small control');
@@ -50,8 +37,20 @@ const spin = html.match(/\.lucide-animate-spin\s*\{([^}]*)\}/);
 assert(spin, 'no .lucide-animate-spin rule');
 assert(/animation:\s*lucide-spin/.test(spin[1]),
   '.lucide-animate-spin must run the lucide-spin keyframes: ' + spin[1]);
-assert(html.indexOf('@keyframes lucide-spin') < html.indexOf('lucide-animate-spin') ||
-  true, 'ordering is not load-bearing');
+// Source order inside the stylesheet, comments stripped. The old version of
+// this compared offsets in the RAW file and finished with `|| true`, so it could
+// never fail: the first `lucide-animate-spin` in index.html is the explanatory
+// comment ABOVE the keyframes, so the comparison was false and `|| true` forced
+// the pass. Comparing in the sheet is what the assertion meant, and it can now
+// fail. (CSS does not require @keyframes to precede its use -- the point being
+// pinned is that the definition and its only consumer stay together in the one
+// stylesheet, which the split into js/ + css/ must not separate.)
+const sheet = css();
+const keyframesAt = sheet.indexOf('@keyframes lucide-spin');
+const consumerAt = sheet.indexOf('.lucide-animate-spin');
+assert(keyframesAt !== -1 && consumerAt !== -1 && keyframesAt < consumerAt,
+  '@keyframes lucide-spin must be defined before the .lucide-animate-spin rule that ' +
+  'runs it (keyframes at ' + keyframesAt + ', rule at ' + consumerAt + ' in the stylesheet)');
 // lucide.min.js is external and contains no animate-spin rule (checked in the
 // browser: 0 matches), so the keyframes above are the only definition — assert
 // the page is self-sufficient.
@@ -60,7 +59,7 @@ assert(!/<script[^>]*src="[^"]*lucide[^"]*"[^>]*>\s*@keyframes/s.test(html),
 // And it must stay neutralised under prefers-reduced-motion, which the gate
 // checks numerically (nothing may animate longer than 50ms there). The page has
 // several reduce blocks; the blanket kill is the one that matters to a spinner.
-const reduceBlocks = html.match(/@media[^{]*prefers-reduced-motion:\s*reduce[^{]*\{[\s\S]*?\n\s{0,6}\}/g) || [];
+const reduceBlocks = mediaBodies(/prefers-reduced-motion:\s*reduce/);
 assert(reduceBlocks.length > 0, 'expected @media (prefers-reduced-motion: reduce) blocks');
 assert(reduceBlocks.some((b) => /animation-duration:\s*0\.001ms\s*!important/.test(b)),
   'a reduce block must keep the blanket animation kill so the new spinner measures\n' +
@@ -69,17 +68,20 @@ assert(reduceBlocks.some((b) => /animation-duration:\s*0\.001ms\s*!important/.te
 // ---------------------------------------------------------------------------
 // Item 8 — closeLightbox wrote overflow:auto over the stylesheet's hidden
 // ---------------------------------------------------------------------------
-const closeLb = html.match(/function closeLightbox\(\) \{([\s\S]*?)\n    \}/);
-assert(closeLb, 'closeLightbox not found');
-assert(/document\.body\.style\.overflow\s*=\s*''/.test(closeLb[1]),
+const closeLb = grabFn('closeLightbox');
+assert(/document\.body\.style\.overflow\s*=\s*''/.test(closeLb),
   "closeLightbox must restore the empty string (as closeSearchPopup does), not 'auto' —\n" +
   "  body carries overflow-x:hidden and 'auto' overrode it (measured: effective\n" +
   "  overflow-x went from hidden to auto after closing the lightbox)");
-assert(!/document\.body\.style\.overflow\s*=\s*'auto'/.test(closeLb[1]),
+assert(!/document\.body\.style\.overflow\s*=\s*'auto'/.test(closeLb),
   "the live 'auto' override must be gone");
-assert(/overflow-x:\s*hidden/.test(rule('body')) === false ||
-  /body\s*\{[^}]*overflow-x:\s*hidden/.test(html),
-  'body must still carry overflow-x:hidden in the stylesheet');
+// The assertion used to be `assert(/overflow-x:\s*hidden/.test(rule('body')) === false
+// || /body\s*\{[^}]*overflow-x:\s*hidden/.test(html))`, which could not fail in
+// either direction: with the declaration present the first term is false and the
+// second is true, and with it REMOVED the first term is true. Assert the thing
+// that is actually load-bearing instead.
+assert(/overflow-x:\s*hidden/.test(rule('body')),
+  'body must carry overflow-x:hidden in the stylesheet');
 
 // ---------------------------------------------------------------------------
 // Item 9 — lightbox pan was unclamped
@@ -101,9 +103,8 @@ assert.strictEqual(clampPan(300, 0, 0), 0, 'a hidden lightbox measures 0x0');
 
 // Every paint clamps, not just the drag handler: pinch, wheel-zoom and the
 // arrow paths all go through updateZoomTransform.
-const uzt = html.match(/function updateZoomTransform\(\) \{([\s\S]*?)\n    \}/);
-assert(uzt, 'updateZoomTransform not found');
-assert(/clampPan\(state\.translateX/.test(uzt[1]) && /clampPan\(state\.translateY/.test(uzt[1]),
+const uzt = grabFn('updateZoomTransform');
+assert(/clampPan\(state\.translateX/.test(uzt) && /clampPan\(state\.translateY/.test(uzt),
   'updateZoomTransform must clamp both axes before writing the transform');
 
 // ---------------------------------------------------------------------------

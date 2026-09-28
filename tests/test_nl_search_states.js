@@ -20,29 +20,9 @@
 //     up and #filters-active-count stayed hidden.
 //
 // Run: node tests/test_nl_search_states.js
-const fs = require('fs');
 const assert = require('assert');
-
-const html = fs.readFileSync(__dirname + '/../index.html', 'utf8');
-
-function grabFn(name) {
-  const m = new RegExp('\\n([ \\t]*)function ' + name + '\\(').exec(html);
-  assert(m, name + ' not found in index.html');
-  const at = m.index;
-  let i = html.indexOf('{', at);
-  let depth = 0;
-  for (; i < html.length; i++) {
-    if (html[i] === '{') depth++;
-    else if (html[i] === '}' && --depth === 0) return html.slice(at, i + 1);
-  }
-  throw new Error('unbalanced braces in ' + name);
-}
-
-function sentinel(name) {
-  const m = html.match(new RegExp('// === pure:' + name + ' ===\\n([\\s\\S]*?)\\n\\s*// === /pure:' + name));
-  assert(m, name + ' sentinel block not found in index.html');
-  return m[1];
-}
+const { src: html, rule, grabFn, loadSentinel } = require('./helpers/load.cjs');
+const sentinel = (name) => loadSentinel(name)[name];
 
 // Same brace-walk, for `const NAME = [async ](...) => { ... }`.
 function grabArrow(name) {
@@ -98,16 +78,14 @@ assert.ok(!/error/.test(nlStatusView({}).cls), 'a cold state must not read as an
 assert.ok(!/error/.test(nlStatusView(null).cls), 'a missing state must not throw or read as an error');
 
 // The .error colour has to be legible, and different from .ready.
-const readyRule = html.match(/\.nl-search-status\.ready\s*\{([^}]*)\}/);
-const errorRule = html.match(/\.nl-search-status\.error\s*\{([^}]*)\}/);
-assert(readyRule, '.nl-search-status.ready rule missing');
-assert(errorRule, '.nl-search-status.error rule missing — a failed query has no visual state');
-assert.ok(/color:/.test(errorRule[1]), '.error must set its own colour');
+const readyRule = rule('.nl-search-status.ready');
+const errorRule = rule('.nl-search-status.error');
+assert.ok(/color:/.test(errorRule), '.error must set its own colour');
 assert.notStrictEqual(
-  (readyRule[1].match(/var\(--[a-z-]+\)/) || [])[0],
-  (errorRule[1].match(/var\(--[a-z-]+\)/) || [])[0],
+  (readyRule.match(/var\(--[a-z-]+\)/) || [])[0],
+  (errorRule.match(/var\(--[a-z-]+\)/) || [])[0],
   '.error must not reuse the .ready colour token');
-assert.ok(/var\(--accent\)/.test(readyRule[1]),
+assert.ok(/var\(--accent\)/.test(readyRule),
   '.ready keeps the accent (it already passes AA at 4.85:1 — the bug was the missing ' +
   'state machine, not the colour)');
 
@@ -137,8 +115,8 @@ const ratio = (a, b) => {
   return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
 };
 const popupBg = resolveToken((html.match(/\.search-popup-inner\s*\{[^}]*background:\s*([^;]+);/) || [, ''])[1] || 'var(--bg-secondary)');
-const errColor = resolveToken((errorRule[1].match(/color:\s*([^;]+);/) || [])[1]);
-const readyColor = resolveToken((readyRule[1].match(/color:\s*([^;]+);/) || [])[1]);
+const errColor = resolveToken((errorRule.match(/color:\s*([^;]+);/) || [])[1]);
+const readyColor = resolveToken((readyRule.match(/color:\s*([^;]+);/) || [])[1]);
 assert.ok(ratio(errColor, popupBg) >= 4.5,
   `.nl-search-status.error ${errColor} on ${popupBg} is ${ratio(errColor, popupBg).toFixed(2)}:1, under the 4.5:1 AA floor`);
 assert.ok(ratio(readyColor, popupBg) >= 4.5,
@@ -167,20 +145,7 @@ assert.ok(/syncSearchPopupCount\(\)/.test(finallyBody),
 // A thrown translation must be recorded, not swallowed into silence.
 // `async function resolveNaturalLanguage` — a declaration, but the regex above
 // only looks for `function NAME(` on its own line.
-function grabAsyncFn(name) {
-  const m = new RegExp('\\n([ \\t]*)async function ' + name + '\\(').exec(html);
-  assert(m, name + ' not found in index.html');
-  const at = m.index;
-  let i = html.indexOf('{', at);
-  let depth = 0;
-  for (; i < html.length; i++) {
-    if (html[i] === '{') depth++;
-    else if (html[i] === '}' && --depth === 0) return html.slice(at, i + 1);
-  }
-  throw new Error('unbalanced braces in ' + name);
-}
-
-const resolveNl = grabAsyncFn('resolveNaturalLanguage');
+const resolveNl = grabFn('resolveNaturalLanguage');
 assert.ok(/catch \(e\) \{[\s\S]*?state\.nlSearch\.error = /.test(resolveNl),
   'resolveNaturalLanguage must record the failure on state.nlSearch.error, or the error ' +
   'state can never be reached (#77)');

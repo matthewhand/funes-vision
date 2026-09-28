@@ -1,12 +1,8 @@
 // Contract: Timeline visits are a CSS-owned log, not JS card chrome.
 // CSS owns density so media queries win. Run: node tests/test_visit_row_log.js
-const fs = require('fs');
 const assert = require('assert');
-
-const html = fs.readFileSync(__dirname + '/../index.html', 'utf8');
-const ev = html.match(/function renderEventsView\([^)]*\) \{([\s\S]*?)\n    function openEventPlayer/);
-assert(ev, 'renderEventsView not found');
-const body = ev[1];
+const { src: html, rule, grabFn } = require('./helpers/load.cjs');
+const body = grabFn('renderEventsView');
 
 assert.ok(/list\.className = 'visit-log'/.test(body), 'list must be class visit-log');
 assert.ok(!/list\.style\.cssText/.test(body), 'list must not set inline layout');
@@ -28,13 +24,10 @@ assert.ok(/bindActivatable\(row/.test(body), 'row stays keyboard-activatable');
 assert.ok(/escapeHtml\(v\.label\)/.test(body), 'label stays escaped');
 assert.ok(/escapeHtml\(v\.caption\)/.test(body), 'caption stays escaped');
 
-const log = html.match(/\.visit-log\s*\{([^}]*)\}/);
-assert(log, '.visit-log rule missing');
-assert.ok(/gap:\s*0/.test(log[1]), '.visit-log gap must be 0');
+assert.ok(/gap:\s*0/.test(rule('.visit-log')), '.visit-log gap must be 0');
 
-const row = html.match(/\.visit-row\s*\{([^}]*)\}/);
-assert(row, '.visit-row rule missing');
-assert.ok(/border-bottom:/.test(row[1]), '.visit-row is a log line (border-bottom, not a card)');
+assert.ok(/border-bottom:/.test(rule('.visit-row')),
+  '.visit-row is a log line (border-bottom, not a card)');
 
 assert.ok(/\.visit-row\s+\.card-img\s*\{[^}]*width:\s*48px/.test(html) &&
           /\.visit-row\s+\.card-img\s*\{[^}]*height:\s*48px/.test(html),

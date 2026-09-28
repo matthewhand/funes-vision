@@ -9,9 +9,9 @@
 const fs = require('fs');
 const path = require('path');
 const assert = require('assert');
+const { src: html } = require('./helpers/load.cjs');
 
 const root = __dirname + '/..';
-const html = fs.readFileSync(root + '/index.html', 'utf8');
 const createIndex = fs.readFileSync(root + '/create-index.sh', 'utf8');
 
 const remote = html.match(/https?:\/\/[^\s"'<>]+/gi) || [];

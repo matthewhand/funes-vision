@@ -2,20 +2,8 @@
 // Header/footer are absolute gradient overlays; the image fills the body;
 // close is always-on (not inside the header); Escape still closes.
 // Run: node tests/test_lightbox_chrome.js
-const fs = require('fs');
 const assert = require('assert');
-
-const html = fs.readFileSync(__dirname + '/../index.html', 'utf8');
-
-function rules(selector) {
-  const re = new RegExp(selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*\\{([^}]*)\\}', 'g');
-  const found = [...html.matchAll(re)].map(m => m[1]);
-  assert(found.length, selector + ' rule not found');
-  return found;
-}
-function rule(selector) {
-  return rules(selector)[0];
-}
+const { src: html, rules, rule, mediaBodies } = require('./helpers/load.cjs');
 
 const headerBlocks = rules('.lightbox-header');
 assert(headerBlocks.some(b => /position:\s*absolute/.test(b)),
@@ -72,11 +60,11 @@ assert.ok(/id="lightbox-close"/.test(lbMarkup),
 assert.ok(/if \(e\.key === 'Escape'\) closeLightbox\(\)/.test(html),
   'Escape must still close the lightbox');
 
-const coarse = html.match(/@media[^{]*pointer:\s*coarse[^{]*\{([\s\S]*?)\n\s{0,6}\}/);
-assert(coarse, 'expected an @media (pointer: coarse) block');
-assert(/lightbox-btn/.test(coarse[1]) && /nav-arrow/.test(coarse[1]),
+const coarse = mediaBodies(/pointer:\s*coarse/);
+assert(coarse.length, 'expected an @media (pointer: coarse) block');
+assert(/lightbox-btn/.test(coarse[0]) && /nav-arrow/.test(coarse[0]),
   'coarse-pointer block must enlarge .lightbox-btn and .nav-arrow');
-assert(/min-width:\s*44px/.test(coarse[1]) && /min-height:\s*44px/.test(coarse[1]),
+assert(/min-width:\s*44px/.test(coarse[0]) && /min-height:\s*44px/.test(coarse[0]),
   'coarse-pointer lightbox controls must be 44px');
 
 assert.ok(/\.lightbox\s*\{[\s\S]{0,240}?z-index:\s*2000/.test(html),

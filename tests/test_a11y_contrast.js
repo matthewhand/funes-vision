@@ -11,10 +11,8 @@
 // selectors, so a new component reproducing the bug fails here.
 //
 // Run: node tests/test_a11y_contrast.js
-const fs = require('fs');
 const assert = require('assert');
-
-const html = fs.readFileSync(__dirname + '/../index.html', 'utf8');
+const { src: html, cssRules } = require('./helpers/load.cjs');
 
 // ---- tokens -------------------------------------------------------------
 const rootBlock = html.match(/:root\s*\{([\s\S]*?)\n\s*\}/);
@@ -73,21 +71,18 @@ const ratio = (a, b) => {
 };
 
 // ---- rule scan ----------------------------------------------------------
-// Every `{ ... }` declaration block in every <style> block, with its selector.
+// Every `{ ... }` declaration block in the page's <style>, with its selector.
 // `raw` keeps the token reference (so the patterns below read as authored) and
 // `value` resolves var() chains for the numeric check.
 const blocks = [];
-for (const style of html.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)) {
-  for (const m of style[1].matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
-    const selector = m[1].trim().replace(/\s+/g, ' ');
-    if (selector.startsWith('@') || selector.includes('%')) continue; // at-rules / keyframes
-    const decls = {};
-    for (const d of m[2].matchAll(/([-a-z]+)\s*:\s*([^;]+);/g)) {
-      const raw = d[2].trim();
-      decls[d[1].toLowerCase()] = { raw, value: resolve(raw) };
-    }
-    blocks.push({ selector, decls });
+for (const { selector, body } of cssRules()) {
+  if (selector.startsWith('@') || selector.includes('%')) continue; // at-rules / keyframes
+  const decls = {};
+  for (const d of body.matchAll(/([-a-z]+)\s*:\s*([^;]+);/g)) {
+    const raw = d[2].trim();
+    decls[d[1].toLowerCase()] = { raw, value: resolve(raw) };
   }
+  blocks.push({ selector, decls });
 }
 assert(blocks.length > 200, `expected to parse the stylesheet, got ${blocks.length} rules`);
 
