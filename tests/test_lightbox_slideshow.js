@@ -28,6 +28,7 @@ function grabFn(name) {
 }
 
 const FNS = [
+  'framePosition',
   'updateZoomTransform', 'resetZoom', 'openLightbox', 'closeLightbox',
   'navigateLightbox', 'toggleSlideshow', 'startSlideshow', 'pauseSlideshow',
   'resetSlideshowTimer',
