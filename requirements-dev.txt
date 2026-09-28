@@ -1,0 +1,23 @@
+# Dev-only dependencies for funes-vision. NEVER install this on the target
+# box: requirements.txt is the runtime set (pipeline + API) and is the only
+# file systemd/nginx care about. This file is for contributors and for the
+# browser CI job.
+-r requirements.txt
+
+# Python linting, so `ruff check .` (DEVELOP.md -> Linting) is reproducible.
+# CI does not run a Python linter yet; this is for local runs.
+ruff==0.15.8
+
+# --- Node / browser tooling (not pip-installable) -------------------------
+# Playwright is a Node package and the repo deliberately has no package.json,
+# so its pin lives here as a comment: pip still accepts this file, and CI gets
+# exactly one source of truth for the browser version shared by the screenshot
+# harness (tools/screenshots/) and the a11y/visual gate
+# (tools/screenshots/a11y_audit.js). The a11y gate's job reads this line, so
+# the pin cannot drift from the version the gate was verified against.
+#
+#   version:  grep -oE '^# ?playwright==[0-9.]+' requirements-dev.txt
+#   install:  npm install --no-save --no-package-lock playwright@<version>
+#   browser:  npx playwright install --with-deps chromium
+#
+# playwright==1.63.0

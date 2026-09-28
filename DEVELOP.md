@@ -795,6 +795,10 @@ python3 -m unittest discover -s tests   # backend pure helpers
 bash tests/run.sh                        # SPA pure helpers (all tests/*.js suites)
 ```
 
+Dev-only extras (currently just `ruff`) live in
+[`requirements-dev.txt`](requirements-dev.txt), which also carries the
+Playwright pin for the browser gate. It is never installed on the target box.
+
 On a headless Linux box, `import cv2` also needs the shared libraries
 `opencv-python` links against (`libGL.so.1`, `libglib-2.0.so.0`); install them
 with `sudo apt-get install -y libgl1 libglib2.0-0` (CI does this).
@@ -833,9 +837,56 @@ with a non-zero exit, and prints a final passed/total count.
   before deploying (catches syntax errors the single-file SPA would otherwise
   only reveal in a browser).
 
+### Browser gate (`tools/screenshots/a11y_audit.js`)
+
+The suites above all inspect the DOM **as text** — regex over `index.html`,
+`eval` of extracted helpers. That is blind to what a human sees: a 404 that
+leaves a blank screen, a label painted at 4.21:1, a 19.67px-tall disclosure
+triangle, a header chip that runs 10px off a 320px phone. A headless-browser
+audit of the fixture gallery found ~43 of those while every other check was
+green.
+
+```sh
+# one-time: the browser download is ~170MB
+version=$(grep -oE '^# ?playwright==[0-9.]+' requirements-dev.txt | sed 's/.*playwright==//')
+npm install --no-save --no-package-lock "playwright@$version"
+npx playwright install --with-deps chromium
+
+python3 tools/screenshots/proxy.py &     # synthetic fixture stub on :8899
+node tools/screenshots/a11y_audit.js     # ~20s, non-zero on any finding
+```
+
+It asserts six families — no 4xx/5xx/console/uncaught errors on load, no
+interactive target below 24×24 CSS px (WCAG 2.5.8), no visible text below
+4.5:1 / 3:1 measured against the *composited* background (WCAG 1.4.3), no
+horizontal page overflow at 320–1440px, nothing animating over 50ms under
+`prefers-reduced-motion: reduce`, and every image carrying an `alt` with no
+visible image left broken. Full measurement notes, thresholds and how to add
+an assertion: [`tools/screenshots/README.md`](tools/screenshots/README.md).
+
+Two guarantees make the gate trustworthy:
+
+- `--selfcheck` drives the same collectors and checkers over a seeded page
+  (6px target, 3.45:1 text, 2000px block, alt-less and broken images, a
+  refused request, an uncaught exception, a 700ms spin) and fails unless that
+  page **is** caught and a clean page **is not**.
+- `tests/test_a11y_audit_gate.js` (fast, no browser) pins the WCAG thresholds,
+  the check registry, the documented carve-outs, and the CI wiring — so the
+  gate cannot be emptied, re-thresholded or made non-blocking silently.
+
+CI runs it as a **separate `browser-a11y-gate` job**, deliberately not part of
+the fast `test` matrix: a browser flake must never block the Python/Node
+suites. The job installs the version pinned in `requirements-dev.txt`, caches
+`~/.cache/ms-playwright`, runs the self-check, then serves the fixture gallery
+from `tools/screenshots/proxy.py`. The audit refuses to start if the fixtures
+root resolves under `/mnt/models`, if the origin is not loopback, or if
+`/api/health` does not report the fixture stub — it can never read a live
+camera path.
+
 **Workflow (TDD):** write/extend a failing test first (confirm RED), implement
 minimally (confirm GREEN), run both suites, then deploy/commit. DOM behaviour
-that can't be reduced to a pure helper is proven via the deployed app.
+that can't be reduced to a pure helper is proven via the deployed app, or by
+the browser gate.
 
 ## Linting
 
@@ -864,10 +915,13 @@ same sources the tests use.
 - **Editor defaults:** [`.editorconfig`](.editorconfig) pins 4-space Python,
   2-space JS/HTML, LF, a final newline, and trailing-whitespace trimming.
 
-**CI note (npm-free):** the repo has no `package.json`, so CI never runs
-`npm install`. Ruff is a single dependency-free binary; ESLint is invoked ad hoc
-via `npx` when available. Dedicated lint jobs are deferred — run the commands
-above locally before pushing. The CI job does install the Python runtime deps
+**CI note (npm-free):** the repo has no `package.json`, so the `test` job never
+runs `npm install`. Ruff is a single dependency-free binary; ESLint is invoked
+ad hoc via `npx` when available. The one job that does need Node packages is
+`browser-a11y-gate`, which installs the pinned Playwright with
+`npm install --no-save --no-package-lock` from `requirements-dev.txt` and then
+runs the a11y gate. Dedicated lint jobs are deferred — run the commands above
+locally before pushing. The `test` job does install the Python runtime deps
 (`pip install -r requirements.txt`) plus `libgl1`/`libglib2.0-0` before running
 either suite.
 
@@ -890,9 +944,13 @@ is gitignored — old live-camera captures; do not commit it.)
   `domcontentloaded`, never `networkidle` (the SSE stub stays open).
   `PUBLISH_GUIDE_IMG=1 bash tools/screenshots/run_shots.sh` copies the
   named map into `docs/guide/img/` — do not glob-copy `desktop-*.png`.
+- `a11y_audit.js` uses the same stub to gate accessibility and visual
+  regressions; it has its own CI job (see [Testing](#testing)).
 
-Playwright-as-CI is still deferred ([ROADMAP.md](ROADMAP.md)); this harness is
-only for fixture-first stills.
+Playwright-as-CI exists for the **a11y/visual gate only**
+(`browser-a11y-gate`); screenshot *diffing* is still deferred
+([ROADMAP.md](ROADMAP.md)), and the stills harness remains a fixture-first,
+locally-run tool.
 
 ## Services & infrastructure
 
