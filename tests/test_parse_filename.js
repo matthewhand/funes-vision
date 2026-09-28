@@ -18,7 +18,20 @@ assert.strictEqual(f.hour, 6);
 assert.strictEqual(f.dateStr, '2026-06-18');
 assert.strictEqual(f.timeStr, '06:45:25');
 assert.strictEqual(f.eventType, 'Motion Detected');   // MOTDEC -> friendly
-assert.deepStrictEqual(f.parts, [2026, 6, 18, 6, 45, 25]);
+assert.deepStrictEqual(f.parts, [2026, 6, 18, 6, 45, 25, 84]);
+// The millisecond group (the last capture digit) must survive parsing, not be
+// discarded: it is the sub-second half of the 17-digit stamp, and dropping it
+// collapsed every frame onto a whole second so playback could never be faster
+// than 1000ms (issue #74).
+assert.strictEqual(f.parts[6], 84);
+assert.deepStrictEqual(
+  parseFilenameFields('10.0.0.21_01_20260618101418060_MOTDEC.jpg').parts,
+  [2026, 6, 18, 10, 14, 18, 60]
+);
+assert.deepStrictEqual(
+  parseFilenameFields('10.0.0.21_01_20260618101418000_MOTDEC.jpg').parts,
+  [2026, 6, 18, 10, 14, 18, 0]
+);
 assert.strictEqual(f.original, '10.0.0.21_01_20260618064525084_MOTDEC.jpg');
 
 // GENERIC and other suffixes pass through unmapped.

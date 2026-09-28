@@ -32,4 +32,23 @@ assert.strictEqual(zonedTimeToUtc(2026, 6, 17, 4, 0, 0, 'UTC'), Date.UTC(2026, 5
 assert.strictEqual(zonedTimeToUtc(2026, 7, 1, 12, 0, 0, 'Europe/London'),
                    Date.UTC(2026, 6, 1, 11, 0, 0));
 
+// Millisecond field (issue #74). Captures inside the same second differ ONLY by
+// this group, so dropping it made real burst cadence unplayable: every frame
+// landed on a whole second and the minimum gap became 1000ms.
+assert.strictEqual(zonedTimeToUtc(2026, 6, 18, 10, 14, 18, 'Australia/Sydney', 60),
+                   Date.UTC(2026, 5, 18, 0, 14, 18, 60));
+assert.strictEqual(zonedTimeToUtc(2026, 6, 18, 10, 14, 18, 'UTC', 750),
+                   Date.UTC(2026, 5, 18, 10, 14, 18, 750));
+// Omitted / non-numeric ms stays second-exact (the old signature's contract).
+assert.strictEqual(zonedTimeToUtc(2026, 6, 18, 10, 14, 18, 'UTC'),
+                   zonedTimeToUtc(2026, 6, 18, 10, 14, 18, 'UTC', 0));
+assert.strictEqual(zonedTimeToUtc(2026, 6, 18, 10, 14, 18, 'UTC', undefined),
+                   zonedTimeToUtc(2026, 6, 18, 10, 14, 18, 'UTC', 0));
+assert.strictEqual(zonedTimeToUtc(2026, 6, 18, 10, 14, 18, 'UTC', NaN),
+                   zonedTimeToUtc(2026, 6, 18, 10, 14, 18, 'UTC', 0));
+// Consecutive 60ms burst frames land 60ms apart, not 1000ms apart.
+assert.strictEqual(
+  zonedTimeToUtc(2026, 6, 18, 10, 14, 18, 'UTC', 120) -
+  zonedTimeToUtc(2026, 6, 18, 10, 14, 18, 'UTC', 60), 60);
+
 console.log('zonedTimeToUtc: all assertions passed');
