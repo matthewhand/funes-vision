@@ -25,14 +25,14 @@
   ----------------------------------------------------------------------------
   A. Router + camera registry   currentRoute / routeHref / pushRoute /
      setWorkspaceMode / applyRoute / servedCameraId / cameras / getFeedProfile
-     sentinels: peerFeedUrl
+     sentinels: peerFeedUrl switchChipLabel
   B. State                      const state — filters, tabs, view mode,
      lightbox, slideshow, zoom/pan, SSE status; localStorage-backed prefs
   C. Pure helpers — time / filenames / captions
      sentinels: cameraDisplayName resolveDisplayTz zonedTimeToUtc hourInZone
        shortTimeZoneName parseFilenameFields filenamesOnDate visitAltText
-       lightboxTitle deleteConfirmText timelineEmptyState lightboxFooterMeta
-       showSearchClear isActivateKey
+       lightboxTitle deleteConfirmText timelineEmptyState timelineEmptyDayCopy
+       lightboxFooterMeta showSearchClear isActivateKey clampPan inFlightState
   D. DOM binding + catalog load bindActivatable / bindSwitch / parseFilename /
      catalogTag / drainBody / afterPaint / loadData
      sentinels: resolveGalleryCameraId pinnedSetFor pinSetsEqual pinResponseState
@@ -409,9 +409,19 @@
     .cam-chip #switch-feed-label { font-weight: 600; }
     .camera-switch-menu {
       position: absolute;
+      /* Anchor to the chip, not to the menu's static position: below 960px the
+         header wraps the tab row onto its own line, and the static position put
+         the menu on that wrapped line — measured at y=-28 on a 390px phone, i.e.
+         28px above the page, painted over the header. */
+      top: 100%;
+      left: 0;
       z-index: 20;
       margin-top: 4px;
       min-width: 150px;
+      /* A settings.json display name ("Front - Northside Driveway and Side
+         Gate (CAM 01)") used to size the menu to its content, wrapping to
+         three lines and growing 113px tall over the tab row. */
+      max-width: min(100%, 320px);
       padding: 4px;
       background: var(--bg-secondary);
       border: 1px solid var(--border-color);
@@ -419,9 +429,26 @@
       box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
     }
     .camera-switch-menu[hidden] { display: none; }
+    /* Narrow phones put the Timeline/Objects/Motion tabs on their own row
+       directly under the logo area, so an absolutely-positioned popover from
+       the chip sat on top of them: elementFromPoint over Timeline and Objects
+       returned .camera-switch-option, i.e. they were untappable. There is no
+       spare band in a wrapped header, so below 960px the open menu joins the
+       flow instead: the logo area takes the full first row and the menu drops
+       to a line of its own, which pushes the tab row (and everything under it)
+       down instead of under the menu. */
+    @media (max-width: 960px) {
+      body.cam-menu-open .logo-area { flex: 1 0 100%; flex-wrap: wrap; }
+      body.cam-menu-open .camera-switch-menu {
+        position: static;
+        width: 100%;
+        margin-top: 4px;
+      }
+    }
     .camera-switch-option {
       display: block;
       width: 100%;
+      max-width: 100%;
       padding: 7px 9px;
       border: 0;
       border-radius: 4px;
@@ -429,6 +456,9 @@
       color: var(--text-primary);
       text-align: left;
       cursor: pointer;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
     .camera-switch-option:hover,
     .camera-switch-option:focus-visible { background: var(--surface-hover); }
@@ -1264,6 +1294,26 @@
       flex-wrap: wrap;
       max-width: 100%;
     }
+
+    /* A long flag/label name must not push the badge row past the card.
+       .image-card clips at overflow:hidden, so anything wider than the card was
+       cut mid-token with no ellipsis and no tooltip. Same clamp as
+       .scene-line below; the inner span carries the ellipsis because .badge is
+       a flex container (a flex item's min-width:auto would refuse to shrink). */
+    .detection-badges .badge {
+      max-width: 100%;
+      overflow: hidden;
+      white-space: nowrap;
+    }
+    .detection-badges .badge > span {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    /* Keep the leading icon out of the ellipsis budget. */
+    .detection-badges .badge > svg,
+    .detection-badges .badge > i { flex: none; }
 
     .badge-ai {
       display: inline-flex;
@@ -2424,6 +2474,21 @@
       .workspace { padding: 12px; }
     }
 
+    /* The 'Force Reload' button adds .lucide-animate-spin to #refresh-icon for
+       the duration of a load, but nothing in the page or in lucide.min.js ever
+       defined that class — the icon's computed animationName stayed 'none' and
+       animationDuration '0s' in both motion modes, so a reload looked like a
+       dead click. Keep it here, immediately above the reduced-motion block,
+       whose blanket `animation-duration: 0.001ms !important` is what makes
+       this safe under prefers-reduced-motion (the a11y gate compares the
+       computed duration numerically, so a 1s spinner is fine and a
+       reduced-motion spinner measures 0.001ms). */
+    @keyframes lucide-spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+    .lucide-animate-spin { animation: lucide-spin 1s linear infinite; }
+
     /* Accessibility: honor the OS "reduce motion" preference — kill the
        hover-scale transforms, transitions, and smooth scrolling. */
     @media (prefers-reduced-motion: reduce) {
@@ -2434,6 +2499,15 @@
         scroll-behavior: auto !important;
       }
     }
+    /* Print: the SPA is a dark, scroll-clipped app. On paper the body kept its
+       near-black background and .image-grid's max-height (100dvh - offset) kept
+       its overflow-y: auto, so only the visible slice of the gallery printed on
+       a dark sheet. Print white paper and let the grid grow to its full height. */
+    @media print {
+      body { background: #fff; color: #000; }
+      .image-grid { max-height: none; overflow: visible; }
+    }
+
     /* Saved searches */
     .saved-list { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
     /* Quiet empty state: the "+ Save current view" affordance below is enough. */
@@ -2483,6 +2557,11 @@
       .time-slider::-moz-range-thumb { width: 24px; height: 24px; }
       .dual-range-container { height: 28px; }
       .visit-row { min-height: 44px; }
+      /* The filter panel's two meta toggles are painted at 0.62rem / 1px padding
+         and measured 17.9px tall on every coarse-pointer width (320/360/390/414)
+         — the only sub-24px targets in the mobile scan. Widen the hit area,
+         not the paint. */
+      .filter-meta-btn { min-height: 44px; }
       .lightbox-btn, .nav-arrow { min-width: 44px; min-height: 44px; width: 44px; height: 44px; }
     }
     /* Status panel disclosure rows ("LLM Prompt & Schema", "AI Audit Trail")
@@ -2524,7 +2603,7 @@
             <h1 id="camera-title">Front</h1>
             <p id="camera-subtitle">Front gate</p>
           </div>
-          <button id="btn-switch-feed" class="btn btn-switch cam-chip" title="Switch camera" aria-label="Switch camera">
+          <button id="btn-switch-feed" class="btn btn-switch cam-chip" title="Switch camera" aria-label="Switch camera" aria-haspopup="menu" aria-expanded="false" aria-controls="camera-switch-menu">
             <i data-lucide="arrow-left-right"></i>
             <span id="switch-feed-label">Back</span>
           </button>
@@ -2932,8 +3011,11 @@
         <div class="search-popup-footer">
           <div class="spf-left">
             <span id="nl-search-status" class="nl-search-status" aria-live="polite" title="Natural-language search status"></span>
-            <span><kbd>↑</kbd><kbd>↓</kbd> navigate</span>
-            <span><kbd>Enter</kbd> select</span>
+            <!-- No "↑↓ navigate / Enter select" hints: the palette is a filter
+                 box, not a picker. Typing narrows the gallery in place and
+                 #search-popup-count reports the hit count; there is no
+                 listbox/option list, no aria-activedescendant and no active
+                 option, so the old hints advertised keys that did nothing. -->
             <span><kbd>Esc</kbd> close</span>
           </div>
           <span id="search-popup-count"></span>
@@ -3038,6 +3120,10 @@
       document.getElementById('camera-subtitle').textContent =
         cameraDisplayName(galleryId) + ' camera';
       document.title = `${cameraDisplayName(galleryId)} - CamLog`;
+      // The chip is part of the same identity block: it used to be written once
+      // from cameras().then() and never again, so a client-side switch left the
+      // previous camera's name in the header.
+      syncSwitchChip(galleryId);
       if (route.cameraId && route.cameraId !== servedCameraId()) {
         loadGalleryForCamera(route.cameraId).then(maybeOpenDeepLink);
       } else {
@@ -3052,6 +3138,23 @@
       const m = location.pathname.match(/\/(Webcam21|Webcam22)\//);
       return m ? m[1] : null;
     }
+
+    // === pure:switchChipLabel ===
+    // Header camera-chip text for a camera id. Prefers the registry label from
+    // /api/cameras (settings.json's display name, e.g. "Front - Northside
+    // Driveway and Side Gate (CAM 01)") and falls back to the folder-basename
+    // convention, so the chip can never disagree with the h1/title.
+    //
+    // Pure so the first paint and every client-side route change read the same
+    // string: applyRoute used to leave the chip alone, so after switching
+    // cameras the header kept the PREVIOUS camera's name (h1 "Back", title
+    // "Back - CamLog", chip "Front - Northside Driveway…").
+    function switchChipLabel(cameraId, registryLabel) {
+      const label = String(registryLabel == null ? '' : registryLabel).trim();
+      if (label) return label;
+      return cameraDisplayName(cameraId);
+    }
+    // === /pure:switchChipLabel ===
 
     // Camera registry, fetched from the API rather than hardcoded. The backend
     // derives ids from settings.json watch_dirs — the folder basename — with a
@@ -3082,6 +3185,16 @@
 
     function cameraDisplayName(id) {
       return (camerasCache ? camerasCache.find(c => c.id === id) : null) || { label: id };
+    }
+
+    // Point the header camera chip at `cameraId`. Called from applyRoute on
+    // every route change and once the registry resolves; the registry label
+    // wins when it is known, the folder-basename name otherwise.
+    function syncSwitchChip(cameraId) {
+      const el = document.getElementById('switch-feed-label');
+      if (!el) return;
+      const reg = (camerasCache || []).find((c) => c.id === cameraId);
+      el.textContent = switchChipLabel(cameraId, reg && reg.label);
     }
 
     // System-wide states
@@ -3436,6 +3549,36 @@
     // (visits) empty view. When a filter/search is narrowing it, say exactly that
     // and offer the escape; otherwise explain what a visit is — WITHOUT blaming a
     // specific (possibly-disabled) model, which misreads as "pipeline broken". Pure.
+    // === pure:timelineEmptyDayCopy ===
+    // Which "no visits" copy the Timeline empty state should use, and whether
+    // the "All dates" escape belongs there at all.
+    //
+    // It used to fire on `dates.length > 1`, but `dates` is one entry per
+    // IMAGE (catalogDateStrs pushes a dateStr per filename), so a single-day
+    // archive holding 10 snapshots passed that gate: the button was a dead end,
+    // since clicking it switched the rail to "All Dates" and re-rendered the
+    // identical text. The copy also said "on this day" even when the active
+    // filter was already All Dates. So count DISTINCT real days, and derive
+    // both the wording and the button from the active filter.
+    function timelineEmptyDayCopy(dateStrs, activeDateFilter) {
+      const seen = new Set();
+      (dateStrs || []).forEach((d) => { if (d && d !== 'Unknown') seen.add(d); });
+      const days = seen.size;
+      // Already on All Dates: there is nowhere left to widen to, and "on this
+      // day" would be a lie, so the copy says so and the button is withheld.
+      if (activeDateFilter === 'all') {
+        return { showAllDates: false, message: 'No object visits in the archive.' };
+      }
+      if (days > 1) return { showAllDates: true, message: 'No object visits on this day.' };
+      return {
+        showAllDates: false,
+        message: days === 1
+          ? 'No object visits on the only day in the archive.'
+          : 'No object visits on this day.',
+      };
+    }
+    // === /pure:timelineEmptyDayCopy ===
+
     function timelineEmptyState(filtersActive) {
       if (filtersActive) {
         return { message: 'No object visits match the current filters.', showReset: true };
@@ -3678,6 +3821,11 @@
             error: 'Invalid file format. Scaffold images.json output is corrupted.'
           });
           showEmptyState(k.message, '', k.title);
+          // Equally fatal to the 500/abort path below, which does set the title,
+          // so leaving the header on "Loading snapshots…" made a corrupt
+          // catalog look like a slow one.
+          const label = document.getElementById('stats-label');
+          if (label) label.textContent = k.title;
           return;
         }
 
@@ -4423,6 +4571,39 @@
       return { text: 'Download GIF', disabled: false, busy: false, spinner: false };
     }
     // === /pure:clipButtonState ===
+
+    // === pure:inFlightState ===
+    // In-flight state for a control that awaits POST /api/... before it changes
+    // anything visible (pin/unpin, the Settings switches, the detector select,
+    // the sweep interval). Same contract as clipButtonState: `disabled` is
+    // applied as aria-disabled, never as the `disabled` property, which would
+    // blur a focused button and drop keyboard focus to BODY (issue #75), and
+    // aria-busy tells assistive tech the control is working. Without it a
+    // 2.5s POST left the control completely inert — no spinner, no aria-busy,
+    // no disabled, no toast — so the click looked dead on a slow link. Pure.
+    function inFlightState(busy) {
+      const on = !!busy;
+      return { busy: on, disabled: on };
+    }
+    // === /pure:inFlightState ===
+
+    // Run `fn` with `el` marked in flight, and clear it in a finally so a
+    // rejected POST cannot strand the control disabled. Re-entrant activations
+    // are dropped by the same aria-disabled read clipButtonState uses.
+    function withInFlight(el, fn) {
+      if (!el) return Promise.resolve().then(fn);
+      if (el.getAttribute('aria-disabled') === 'true') return Promise.resolve();
+      const on = inFlightState(true);
+      el.setAttribute('aria-busy', String(on.busy));
+      el.setAttribute('aria-disabled', String(on.disabled));
+      return Promise.resolve()
+        .then(fn)
+        .finally(() => {
+          const off = inFlightState(false);
+          el.setAttribute('aria-busy', String(off.busy));
+          el.setAttribute('aria-disabled', String(off.disabled));
+        });
+    }
 
     // === pure:frameErrorFallbackSrc ===
     // Full-res path for the frame that failed to load (capture index at error
@@ -5655,9 +5836,10 @@
         const kind = emptyStateKind({ filtersActive });
         let msg = es.message;
         let actions = es.showReset ? '<button class="btn" id="empty-reset-tl">Clear all filters</button>' : '';
-        if (!filtersActive && dates.length > 1) {
-          msg = 'No object visits on this day.';
-          actions += '<button class="btn" id="empty-all-dates">All dates</button>';
+        if (!filtersActive) {
+          const dayCopy = timelineEmptyDayCopy(dates, state.activeDateFilter);
+          msg = dayCopy.message;
+          if (dayCopy.showAllDates) actions += '<button class="btn" id="empty-all-dates">All dates</button>';
         }
         if (state.blacklist.length) {
           msg += ` (${state.blacklist.length} label${state.blacklist.length !== 1 ? 's are' : ' is'} hidden via Settings.)`;
@@ -6051,7 +6233,7 @@
           const suffix = st === 'preliminary' ? '?' : '';
 
           detectionsHtml += `
-            <span class="badge badge-ai tag-${escapeHtml(label)} ${cls}" aria-label="${escapeHtml(badgeLabel(label, st))}">
+            <span class="badge badge-ai tag-${escapeHtml(label)} ${cls}" title="${escapeHtml(label)}" aria-label="${escapeHtml(badgeLabel(label, st))}">
               <i data-lucide="${icon}" aria-hidden="true"></i>
               <span style="text-transform: capitalize;" aria-hidden="true">${escapeHtml(label)}${suffix}</span>
             </span>`;
@@ -6066,7 +6248,7 @@
               const name = label.replace(/_/g, ' ');
               return isString ? `${name}: ${value}` : name;
             }).join(' · ');
-            detectionsHtml += `<span class="scene-line">${escapeHtml(scene)}</span>`;
+            detectionsHtml += `<span class="scene-line" title="${escapeHtml(scene)}">${escapeHtml(scene)}</span>`;
           }
         }
         // No CLEAR badge on the still — time + object chips are enough.
@@ -6198,28 +6380,30 @@
     }
 
     async function togglePin(filename, card) {
-      const intent = !state.pins.has(filename);
-      try {
-        const resp = await apiPost('/api/pin', { filename, pinned: intent }, true);
-        // Paint what the server reports, not what was clicked. Unpinning a frame
-        // that only exists in the legacy repo-root pins.json rewrites that shared
-        // file and leaves the camera's own pins.json untouched, so the two can
-        // disagree; the response is the only honest source for the badge.
-        const pinned = pinResponseState(resp, intent);
-        if (pinned) state.pins.add(filename); else state.pins.delete(filename);
-        const pinBtn = card.querySelector('.pin-btn');
-        pinBtn.classList.toggle('pinned', pinned);
-        const pinName = pinned ? 'Unpin (allow auto-delete)' : 'Pin (never auto-delete)';
-        pinBtn.title = pinName;
-        pinBtn.setAttribute('aria-label', pinName);
-        if (pinned === intent) {
-          showToast(pinned ? 'Pinned - excluded from auto-cleanup' : 'Unpinned');
-        } else {
-          showToast(pinned ? 'Already pinned on the server' : 'Server reports this frame is not pinned');
+      const pinBtn = card.querySelector('.pin-btn');
+      await withInFlight(pinBtn, async () => {
+        const intent = !state.pins.has(filename);
+        try {
+          const resp = await apiPost('/api/pin', { filename, pinned: intent }, true);
+          // Paint what the server reports, not what was clicked. Unpinning a frame
+          // that only exists in the legacy repo-root pins.json rewrites that shared
+          // file and leaves the camera's own pins.json untouched, so the two can
+          // disagree; the response is the only honest source for the badge.
+          const pinned = pinResponseState(resp, intent);
+          if (pinned) state.pins.add(filename); else state.pins.delete(filename);
+          pinBtn.classList.toggle('pinned', pinned);
+          const pinName = pinned ? 'Unpin (allow auto-delete)' : 'Pin (never auto-delete)';
+          pinBtn.title = pinName;
+          pinBtn.setAttribute('aria-label', pinName);
+          if (pinned === intent) {
+            showToast(pinned ? 'Pinned - excluded from auto-cleanup' : 'Unpinned');
+          } else {
+            showToast(pinned ? 'Already pinned on the server' : 'Server reports this frame is not pinned');
+          }
+        } catch (e) {
+          showToast('Pin failed - is the API service running?');
         }
-      } catch (e) {
-        showToast('Pin failed - is the API service running?');
-      }
+      });
     }
 
     // Server-side pipeline settings (detector engine, idle backfill,
@@ -6319,55 +6503,66 @@
       } catch (e) { /* API offline/timeout; keep embedded fallback */ }
     })();
     deepPassesToggle.onclick = async () => {
-      try {
-        await apiPost('/api/settings', { deep_passes_enabled: !deepPassesOn });
-        deepPassesOn = !deepPassesOn;
-        renderDeepPassesToggle();
-        showToast(deepPassesOn ? 'Vision deep passes ON' : 'Vision deep passes OFF - detector-only (saves CPU/RAM)');
-      } catch (err) {
-        showToast('Failed to update - is the API service running?');
-      }
+      await withInFlight(deepPassesToggle, async () => {
+        try {
+          await apiPost('/api/settings', { deep_passes_enabled: !deepPassesOn });
+          deepPassesOn = !deepPassesOn;
+          renderDeepPassesToggle();
+          showToast(deepPassesOn ? 'Vision deep passes ON' : 'Vision deep passes OFF - detector-only (saves CPU/RAM)');
+        } catch (err) {
+          showToast('Failed to update - is the API service running?');
+        }
+      });
     };
     sweepIntervalInput.onchange = async (e) => {
       const v = parseInt(e.target.value, 10);
-      try {
-        await apiPost('/api/settings', { idle_sweep_seconds: v });
-        showToast(`Idle sweep every ${v}s (applies next cycle)`);
-      } catch (err) {
-        showToast('Failed to update - is the API service running?');
-      }
+      await withInFlight(sweepIntervalInput, async () => {
+        try {
+          await apiPost('/api/settings', { idle_sweep_seconds: v });
+          showToast(`Idle sweep every ${v}s (applies next cycle)`);
+        } catch (err) {
+          showToast('Failed to update - is the API service running?');
+        }
+      });
     };
     detectorSelect.onchange = async (e) => {
-      try {
-        await apiPost('/api/settings', { fast_pass_engine: e.target.value });
-        showToast(`Detector: ${e.target.value.toUpperCase()} (applies to new images)`);
-      } catch (err) {
-        showToast('Failed to update - is the API service running?');
-      }
+      const engine = e.target.value;
+      await withInFlight(detectorSelect, async () => {
+        try {
+          await apiPost('/api/settings', { fast_pass_engine: engine });
+          showToast(`Detector: ${engine.toUpperCase()} (applies to new images)`);
+        } catch (err) {
+          showToast('Failed to update - is the API service running?');
+        }
+      });
     };
     backfillToggle.onclick = async () => {
-      try {
-        await apiPost('/api/settings', { deep_backfill: !backfillOn });
-        backfillOn = !backfillOn;
-        renderBackfillToggle();
-        showToast(backfillOn
-          ? 'Idle backfill ON. When idle, verify leftover empties and car-only skips (near detections first).'
-          : 'Idle backfill OFF');
-      } catch (err) {
-        showToast('Failed to update - is the API service running?');
-      }
+      await withInFlight(backfillToggle, async () => {
+        try {
+          await apiPost('/api/settings', { deep_backfill: !backfillOn });
+          backfillOn = !backfillOn;
+          renderBackfillToggle();
+          showToast(backfillOn
+            ? 'Idle backfill ON. When idle, verify leftover empties and car-only skips (near detections first).'
+            : 'Idle backfill OFF');
+        } catch (err) {
+          showToast('Failed to update - is the API service running?');
+        }
+      });
     };
     burstSummariesToggle.onclick = async () => {
-      try {
-        await apiPost('/api/settings', { burst_summaries_enabled: !burstSummariesOn });
-        burstSummariesOn = !burstSummariesOn;
-        renderBurstSummariesToggle();
-        showToast(burstSummariesOn
-          ? 'Multi-image summaries ON - the vision model will caption visits'
-          : 'Multi-image summaries OFF');
-      } catch (err) {
-        showToast('Failed to update - is the API service running?');
-      }
+      await withInFlight(burstSummariesToggle, async () => {
+        try {
+          await apiPost('/api/settings', { burst_summaries_enabled: !burstSummariesOn });
+          burstSummariesOn = !burstSummariesOn;
+          renderBurstSummariesToggle();
+          showToast(burstSummariesOn
+            ? 'Multi-image summaries ON - the vision model will caption visits'
+            : 'Multi-image summaries OFF');
+        } catch (err) {
+          showToast('Failed to update - is the API service running?');
+        }
+      });
     };
 
     async function saveIgnoreRegions(next) {
@@ -6402,8 +6597,8 @@
         showToast('Failed to update - is the API service running?');
       }
     }
-    parkedMaskToggle.onclick = () => toggleMask('parked_car');
-    if (porchMaskToggle) porchMaskToggle.onclick = () => toggleMask('porch');
+    parkedMaskToggle.onclick = () => withInFlight(parkedMaskToggle, () => toggleMask('parked_car'));
+    if (porchMaskToggle) porchMaskToggle.onclick = () => withInFlight(porchMaskToggle, () => toggleMask('porch'));
 
     const zoneEditor = document.getElementById('zone-editor');
     const zoneStage = document.getElementById('zone-editor-stage');
@@ -6737,9 +6932,34 @@
         else if (grid.lastChild !== sentinel) grid.appendChild(sentinel);
       }
 
+    // === pure:clampPan ===
+    // Bound a lightbox pan so the zoomed still can never be dragged out of its
+    // viewport. The transform is `scale(s) translate(t/s)`, so the visual
+    // offset is exactly t px; the image is centred, so the slack on each axis
+    // is (scaledSize - viewport) / 2, and there is none once the scaled image
+    // fits inside. Before this, translateX/Y accumulated without limit
+    // (0 -> 400 -> 800 -> 1200 -> 1600) and at 5000 the image sat off-screen
+    // with elementFromPoint returning the empty wrapper. Pure.
+    function clampPan(t, scaledSize, viewSize) {
+      const max = Math.max(0, ((scaledSize || 0) - (viewSize || 0)) / 2);
+      const v = Number(t) || 0;
+      if (v < -max) return -max;
+      if (v > max) return max;
+      return v;
+    }
+    // === /pure:clampPan ===
+
     // Zoom and pan logic inside lightbox
     function updateZoomTransform() {
       const img = document.getElementById('lightbox-image');
+      const view = document.getElementById('image-zoom-container');
+      // Clamp on every paint, not only in the drag handler: pinch, wheel-zoom
+      // and the keyboard/arrow paths all funnel through here. offsetWidth is
+      // the layout width, so it is independent of the transform being written.
+      if (view) {
+        state.translateX = clampPan(state.translateX, img.offsetWidth * state.zoomScale, view.clientWidth);
+        state.translateY = clampPan(state.translateY, img.offsetHeight * state.zoomScale, view.clientHeight);
+      }
       img.style.transform = `scale(${state.zoomScale}) translate(${state.translateX / state.zoomScale}px, ${state.translateY / state.zoomScale}px)`;
       
       const badge = document.getElementById('zoom-badge');
@@ -6934,7 +7154,9 @@
     function closeLightbox() {
       const lightbox = document.getElementById('lightbox');
       lightbox.classList.remove('active');
-      document.body.style.overflow = 'auto';
+      // Restore the stylesheet, not a value: body carries overflow-x:hidden and
+      // writing 'auto' here clobbered it (closeSearchPopup restores '').
+      document.body.style.overflow = '';
       pauseSlideshow();
       resetZoom();
       if (lightboxRelease) { lightboxRelease(); lightboxRelease = null; }
@@ -7287,7 +7509,48 @@
       // Camera selector uses the registry for every route, including the dashboard.
       const btnSwitch = document.getElementById('btn-switch-feed');
       const switchMenu = document.getElementById('camera-switch-menu');
-      const switchLabel = document.getElementById('switch-feed-label');
+      // A role=menu owns the keyboard while it is open: Escape closes and
+      // returns focus to the trigger, Tab is trapped inside, and focus moves to
+      // the first option on open. Before this, Escape did nothing, focus never
+      // entered the menu, and Tab walked out of it into #filter-tabs.
+      const switchOptions = () => [...switchMenu.querySelectorAll('.camera-switch-option')];
+      const setSwitchMenuOpen = (open) => {
+        switchMenu.hidden = !open;
+        btnSwitch.setAttribute('aria-expanded', String(open));
+        document.body.classList.toggle('cam-menu-open', open);
+      };
+      const closeSwitchMenu = (refocus) => {
+        if (switchMenu.hidden) return;
+        setSwitchMenuOpen(false);
+        if (refocus) btnSwitch.focus();
+      };
+      const onSwitchMenuKeydown = (event) => {
+        const options = switchOptions();
+        if (!options.length) return;
+        const at = options.indexOf(document.activeElement);
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          event.stopPropagation();
+          closeSwitchMenu(true);
+        } else if (event.key === 'Tab') {
+          // Trap: a menu is not a tab stop, so wrap at both ends.
+          event.preventDefault();
+          const next = event.shiftKey
+            ? options[(at <= 0 ? options.length : at) - 1]
+            : options[(at + 1) % options.length];
+          next.focus();
+        } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+          event.preventDefault();
+          const delta = event.key === 'ArrowDown' ? 1 : -1;
+          options[(at + delta + options.length) % options.length].focus();
+        } else if (event.key === 'Home') {
+          event.preventDefault();
+          options[0].focus();
+        } else if (event.key === 'End') {
+          event.preventDefault();
+          options[options.length - 1].focus();
+        }
+      };
       const renderCameraMenu = (list) => {
         const current = currentRoute().cameraId || servedCameraId();
         switchMenu.replaceChildren();
@@ -7297,31 +7560,47 @@
           option.type = 'button';
           option.className = 'camera-switch-option';
           option.setAttribute('role', 'menuitem');
+          option.tabIndex = -1;
+          option.title = camera.label || cameraDisplayName(camera.id);
           option.textContent = camera.label || cameraDisplayName(camera.id);
           option.addEventListener('click', () => {
-            switchMenu.hidden = true;
+            closeSwitchMenu(false);
             // pushRoute -> applyRoute owns the load; a second call here raced it.
             pushRoute({ view: ROUTE_GALLERY, cameraId: camera.id });
           });
           switchMenu.appendChild(option);
         });
-        switchMenu.hidden = !switchMenu.childElementCount;
+        const hasOptions = switchMenu.childElementCount > 0;
+        setSwitchMenuOpen(hasOptions);
+        if (hasOptions) switchOptions()[0].focus();
       };
+      switchMenu.addEventListener('keydown', onSwitchMenuKeydown);
       btnSwitch.addEventListener('click', async (event) => {
         event.stopPropagation();
-        const list = await cameras();
-        if (switchMenu.hidden) renderCameraMenu(list);
-        else switchMenu.hidden = true;
+        if (!switchMenu.hidden) { closeSwitchMenu(true); return; }
+        renderCameraMenu(await cameras());
       });
-      document.addEventListener('click', (event) => {
-        if (!switchMenu.contains(event.target) && event.target !== btnSwitch) {
-          switchMenu.hidden = true;
-        }
+      // If focus is still on the trigger while the menu is open, Tab must go
+      // into the menu, not out of it and into #filter-tabs.
+      btnSwitch.addEventListener('keydown', (event) => {
+        if (switchMenu.hidden || event.key !== 'Tab') return;
+        const options = switchOptions();
+        if (!options.length) return;
+        event.preventDefault();
+        (event.shiftKey ? options[options.length - 1] : options[0]).focus();
       });
-      cameras().then((list) => {
+      // pointerdown, not click: the open popover sits on top of the header, so
+      // a click-only closer could not fire for anything it covered (at 390px it
+      // covered its own trigger, so the chip could not be toggled shut).
+      document.addEventListener('pointerdown', (event) => {
+        if (event.target === btnSwitch || switchMenu.contains(event.target)) return;
+        closeSwitchMenu(false);
+      });
+      // applyRoute paints the chip from the folder-basename name; once the
+      // registry resolves, upgrade it to the settings.json display name.
+      cameras().then(() => {
         const current = currentRoute().cameraId || servedCameraId();
-        const currentCamera = (list || []).find(c => c.id === current);
-        switchLabel.textContent = currentCamera ? (currentCamera.label || cameraDisplayName(currentCamera.id)) : profile.switchLabel;
+        if (current) syncSwitchChip(current);
       });
 
       // Back/forward: re-run the router so the right view paints.
