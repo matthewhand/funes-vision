@@ -113,6 +113,13 @@
       --bg-tertiary: #1e293b;
       --text-primary: #f8fafc;
       --text-secondary: #94a3b8;
+      /* Third text step: still visibly quieter than --text-secondary, but a
+         SOLID colour. The dim look used to be an inline `opacity:0.8` on
+         --text-secondary, which the browser composites to #7c8b9f over a
+         --bg-tertiary panel = 4.21:1 and fails WCAG 1.4.3. Baked in, this
+         reads 4.80:1 on --bg-tertiary (the lightest surface it lands on) with
+         no alpha to fold, so the static and composited maths agree. */
+      --text-dim: #8695aa;
       --border-color: rgba(255, 255, 255, 0.06);
       --transition-speed: 0.25s;
       /* Distance from the top of the viewport to the image grid. The grid's
@@ -1901,6 +1908,13 @@
       flex-direction: column;
       gap: 0;
       width: 100%;
+      /* Grid items default to min-width:auto, which floors the track at the
+         nowrap min-content of .visit-meta (~398px). Below ~415px that pushed
+         the row past the grid and .image-grid's overflow-x:hidden sliced the
+         text with no ellipsis, because the element itself was too wide.
+         min-width:0 on the GRID ITEM is the fix — min-width:0 on .visit-row
+         does not help (the track still measures 398px). */
+      min-width: 0;
       grid-column: 1 / -1;
     }
     .visit-row {
@@ -2426,9 +2440,16 @@
     .saved-list:empty { margin-bottom: 0; }
     .saved-chip { display: inline-flex; align-items: center; gap: var(--space-1); padding: var(--space-1) var(--space-15) var(--space-1) var(--space-2);
       border: 1px solid var(--accent-25); border-radius: var(--radius-pill); background: var(--accent-10);
-      font-size: var(--fs-chip); cursor: pointer; color: var(--text-primary); }
+      font-size: var(--fs-chip); cursor: pointer; color: var(--text-primary);
+      /* The name comes from an unbounded prompt(), so it can be wider than the
+         196px sidebar (or a 296px single-column sidebar on a 320px phone).
+         max-width caps the pill at the list; min-width:0 lets it shrink below
+         min-content, so the label can ellipsise instead of spilling into the
+         feed — or, with a name that has no break opportunities, off the page. */
+      max-width: 100%; min-width: 0; }
     .saved-chip:hover { background: var(--accent-15); }
-    .saved-chip .saved-apply { border: none; background: none; color: inherit; font: inherit; cursor: pointer; padding: 0; }
+    .saved-chip .saved-apply { border: none; background: none; color: inherit; font: inherit; cursor: pointer; padding: 0;
+      min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .saved-chip .saved-del { border: none; background: none; color: var(--text-secondary); cursor: pointer;
       font-size: 0.85rem; line-height: 1; padding: 0 1px; }
     .saved-chip .saved-del:hover { color: var(--danger); }
@@ -2464,10 +2485,25 @@
       .visit-row { min-height: 44px; }
       .lightbox-btn, .nav-arrow { min-width: 44px; min-height: 44px; width: 44px; height: 44px; }
     }
+    /* Status panel disclosure rows ("LLM Prompt & Schema", "AI Audit Trail")
+       are real tap targets, but they are painted as bare 0.7rem text and
+       measured 19.67px tall — under the 24px WCAG 2.5.8 (AA) floor. The panel
+       itself is built from inline styles, so the floor is declared here:
+       widen the hit area, not the paint. */
+    #system-status-content > details > summary { min-height: 24px; }
     @media (max-width: 960px) {
       .header-content { flex-wrap: wrap; }
       .header-content .tab-cluster { order: 0; flex: 1 1 auto; min-width: 0; }
       #stats-label { display: none; }
+    }
+    /* Narrowest phones (issue #78): the controls row is nowrap and the search
+       trigger has min-width:0, so it absorbs all the shrink while #live-toggle
+       (flex 0 1 auto, min-width:auto) could not go below 63px — 330px of
+       scrollWidth in a 320px viewport, i.e. a 10px sideways scroll. Collapse
+       the Live pill to its dot, the same icon-only treatment the switch-feed
+       and refresh buttons already get at 768px. */
+    @media (max-width: 360px) {
+      #live-text { display: none; }
     }
   </style>
 </head>
@@ -8235,7 +8271,7 @@ const props = schemaObj.properties || {};
                     html += propEntries.map(([key, spec]) => {
                       const type = spec.type || 'unknown';
                       const desc = spec.description || '';
-                      return `<div style="margin-bottom:4px;"><code style="color:var(--accent-fg);font-size:0.68rem;">${escapeHtml(key)}</code> <span style="color:var(--text-secondary);">(${type})</span>${desc ? `<br><span style="margin-left:2px;opacity:0.8;">${escapeHtml(desc)}</span>` : ''}</div>`;
+                      return `<div style="margin-bottom:4px;"><code style="color:var(--accent-fg);font-size:0.68rem;">${escapeHtml(key)}</code> <span style="color:var(--text-secondary);">(${type})</span>${desc ? `<br><span style="margin-left:2px;color:var(--text-dim);">${escapeHtml(desc)}</span>` : ''}</div>`;
                     }).join('');
 } else {
                     html += '<i>No properties defined</i>';
