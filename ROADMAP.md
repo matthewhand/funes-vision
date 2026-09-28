@@ -74,9 +74,9 @@ just can't hear it yet.
    place that writes `inference_status.json`). Emit at minimum:
    `analysis.started` (image, model, trigger — the current `inference_status.json`
    shape) → `analysis.token`/partial caption chunks if the Ollama call is
-   streamed → `analysis.done` (verdict: verified / disputed, final caption).
+   streamed → `analysis.done` (verdict: verified, final caption).
    UI: live "AI is looking at this…" with the caption typing in, and the
-   detection badge resolving preliminary → verified/disputed in place.
+   detection badge resolving preliminary → verified in place.
 
 ### Acceptance criteria
 
@@ -275,7 +275,8 @@ polish. All fixes are additive, no-dep, vanilla JS/CSS. Built items are checked 
       *(Shipped — UX polish pass.)*
 - [x] **Detection badges encode meaning by colour only** — each badge is now
       `role="img"` with an `aria-label` spelling out the state (pure `badgeLabel`:
-      "person, unconfirmed" / "dog, disputed"); the decorative icon + glyph are
+      a bare `"dog"` once confirmed, `"person, <state>"` while still
+      preliminary); the decorative icon + glyph are
       `aria-hidden`. *(Shipped — feat/badge-a11y.)*
 
 ### P2 — notable UX / a11y / correctness
