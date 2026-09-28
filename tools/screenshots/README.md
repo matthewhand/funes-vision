@@ -1,16 +1,35 @@
 # Screenshot tooling
 
-Captures the gallery for the user guide via Playwright (Chromium).
+Captures the gallery for the user guide via Playwright (Chromium), and audits
+it for accessibility and visual defects.
 **Default source is the synthetic fixture gallery** — never live camera
 footage under `/mnt/models/Webcam21` or `/mnt/models/Webcam22`.
 
-Playwright is **not** a repo dependency — install it into a scratch dir:
+Playwright is **not** a repo runtime dependency — it is a dev-only pin in
+[`requirements-dev.txt`](../../requirements-dev.txt) (as a comment, because it
+is a Node package and this repo has no `package.json`). Install it into a
+scratch dir, or next to the checkout for the CI job:
 
 ```sh
+# scratch dir, for ad-hoc runs
 mkdir -p /tmp/pw && cd /tmp/pw && npm init -y >/dev/null
-npm install playwright@1.61.0
+version=$(grep -oE '^# ?playwright==[0-9.]+' "$OLDPWD/requirements-dev.txt" | sed 's/.*playwright==//')
+npm install "playwright@$version"
 node node_modules/playwright/cli.js install chromium chromium-headless-shell
 ```
+
+Inside the checkout (what CI does) the same two commands work without a
+`package.json`, and `node tools/screenshots/a11y_audit.js` then resolves
+`playwright` from `./node_modules`:
+
+```sh
+version=$(grep -oE '^# ?playwright==[0-9.]+' requirements-dev.txt | sed 's/.*playwright==//')
+npm install --no-save --no-package-lock "playwright@$version"
+npx playwright install --with-deps chromium      # ~170MB, cached by CI
+```
+
+Either way **a browser download is required**; there is no bundled Chromium and
+the script will not fall back to a DOM-only check.
 
 ## Run (fixture-only, safe)
 
@@ -26,6 +45,110 @@ PUBLISH_GUIDE_IMG=1 bash tools/screenshots/run_shots.sh
 The proxy refuses to start if `SCREENSHOT_ROOT` points at a live camera
 directory. `/api` is stubbed from `fixtures/api/` so pin/delete/settings
 cannot mutate the real box.
+
+## The a11y / visual regression gate (`a11y_audit.js`)
+
+```sh
+python3 tools/screenshots/proxy.py &         # stub on :8899
+node tools/screenshots/a11y_audit.js         # exits non-zero on any finding
+echo $?
+```
+
+One navigation, six application states (Timeline, Objects, Motion, the
+lightbox, Settings, System status) plus three views re-measured at eight
+widths and a second context with `prefers-reduced-motion: reduce`. A full run
+takes ~20s. Useful knobs:
+
+| Var / flag | Default | Meaning |
+|------------|---------|---------|
+| `A11Y_AUDIT_URL` / `--url` | `http://127.0.0.1:8899/` | Origin to audit (loopback only) |
+| `A11Y_AUDIT_FIXTURES` / `--fixtures` | `tools/screenshots/fixtures/gallery` | Fixture root; **refuses to run if it resolves under `/mnt/models`** |
+| `A11Y_AUDIT_JSON` | unset | Also write the full report as JSON (CI uploads it) |
+| `A11Y_AUDIT_ALLOW_REMOTE` | unset | Escape hatch for a non-loopback origin |
+| `--selfcheck` | – | Non-vacuity proof (below); no proxy needed |
+
+### What it asserts
+
+| Check | Asserts | Threshold |
+|-------|---------|-----------|
+| `http-clean` | no response ≥ 400, no failed request, no `console.error`, no uncaught exception | – |
+| `target-size` | every rendered interactive target | ≥ 24×24 CSS px (WCAG 2.5.8 AA) |
+| `text-contrast` | every visible text node against its **composited** background | ≥ 4.5:1 body, ≥ 3:1 large (WCAG 1.4.3 AA) |
+| `h-overflow` | no sideways page scroll at 320/360/390/414/768/1024/1280/1440 | 1px tolerance |
+| `reduced-motion` | under `prefers-reduced-motion: reduce`, nothing animates | ≤ 50ms per iteration |
+| `image-alt` | every `<img>`/`input[type=image]` has `alt`; no **visible** image is broken (`complete && naturalWidth === 0`) | – |
+
+Measurement notes, because these are the parts that are easy to get wrong:
+
+- **Contrast** folds the whole ancestor chain: layers composite outermost
+  first, and an `opacity` on any element scales everything painted inside it
+  (its own background included). `index.html` draws some labels with an inline
+  `opacity: 0.8` on a 10.88px `--text-secondary` over `--bg-tertiary`; the
+  static colour pair is 5.7:1, the *painted* pair is 4.21:1, and only the
+  composited number is the one a user sees. A text node whose effective
+  opacity is below 0.1 is treated as not painted (the hidden toast, a
+  crossfaded frame), and text over a `background-image` or an unparseable
+  colour is reported in the per-state `coverage` line as a skip rather than
+  guessed at.
+- **Target size** skips what is not a target: no layout box (`display:none`, a
+  closed `<details>`), `visibility:hidden`, effective opacity 0,
+  `pointer-events:none`, `aria-hidden`, and a link in a run of prose (the
+  WCAG inline exception). A **full-width** control is exempt on the width
+  axis only — a full-width row that is 5px tall still fails. The WCAG
+  *spacing* exception is deliberately not implemented: this repo fixed its
+  5px chart bars by enlarging the target (#70), not by relying on spacing.
+- **Reduced motion** compares the per-iteration duration numerically, so the
+  `animation-duration: 0.001ms !important` override the sheet already ships
+  passes (1e-06s is not motion) while a 700ms spinner does not. It also fails
+  on `scroll-behavior: smooth`. JS-driven motion is out of scope.
+- **Overflow** measures from a known scroll origin and names the widest
+  unclipped element, so the message says *which* element and whether the
+  document scrolls or the surplus is clipped. Content inside a real
+  `overflow-x:auto/scroll` box is not page overflow.
+- Animations are frozen (finite ones moved to their end state, infinite ones
+  left alone) before anything is measured, so a half-faded colour is never
+  what gets read. The reduced-motion check runs in its own context *before*
+  that, against a real animation list.
+
+Every failure prints the selector, the measured value and the threshold.
+
+### Proving it is not vacuous
+
+```sh
+node tools/screenshots/a11y_audit.js --selfcheck
+```
+
+Runs the same collectors and the same checkers in a real browser over inline
+pages and asserts the outcome: a seeded page (6×6 target, 3.45:1 text pair,
+2000px block, `<img>` with no `alt`, a broken image, a refused request, an
+uncaught exception, a 700ms spin under reduced motion) **must** fail, a clean
+page **must** pass, and the 0.001ms reduced-motion override **must** pass. CI
+runs this before the real audit.
+
+`tests/test_a11y_audit_gate.js` (fast, no browser) pins the same contract from
+the other side: the thresholds are the WCAG values, all six checks are
+registered, each check fails on a seeded violation and passes on a compliant
+record, the carve-outs still work, the WCAG formula matches the repo's existing
+static a11y test, and the CI job cannot lose the pin, the self-check, or its
+own ability to fail.
+
+### Adding an assertion
+
+1. Add a collector in the in-page section (a plain function, no closure over
+   module scope) and list it in `inPageBundleSource()`.
+2. Add a **pure** `check*(records) -> failures[]` next to the existing ones,
+   using the `fail(check, state, selector, detail, fix, data)` helper so the
+   message always carries selector + measured value + threshold. Keep the
+   policy in the checker, not in the collector, so the test can drive it
+   without a browser.
+3. Register it in `CHECKS` and map its records in `runAudit`'s check loop.
+4. Add it to the assertion list above, and extend
+   `tests/test_a11y_audit_gate.js` with a seeded-failure and a
+   compliant-pass case. A check that cannot fail a synthetic violation is a
+   check that does not exist.
+5. Prove it end to end with `--selfcheck` (add a seeded element and an
+   expectation), then run the gate against the fixture gallery.
+
 
 ### What the stub serves
 
@@ -106,6 +229,7 @@ the write run prints into `COMMITTED_SHA256`).
 | `SCREENSHOT_API` | `stub` | `stub` (safe) or `live` (`:8190`) |
 | `SCREENSHOT_PORT` | `8899` | Local origin |
 | `SHOTS_URL` / `SHOTS_OUT` | `:8899` / `/tmp/webcam_shots` | Playwright |
+| `A11Y_AUDIT_URL` | `:8899` | a11y gate origin |
 
 Published guide shots **must** use `SCREENSHOT_API=stub` (already the
 default). The stub holds `GET /api/events` open and emits `event: ping`

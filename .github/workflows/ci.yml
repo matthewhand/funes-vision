@@ -44,3 +44,80 @@ jobs:
 
       - name: Node tests
         run: bash tests/run.sh
+
+  # The headless-browser a11y / visual regression gate. Deliberately a SEPARATE
+  # job: it downloads a ~170MB browser and takes ~30s, and a flake here must
+  # never block the fast Python/Node suites above. It runs against the
+  # SYNTHETIC fixture gallery (tools/screenshots/proxy.py); the audit refuses to
+  # start if the fixtures root resolves under /mnt/models, so it can never
+  # touch a live camera path.
+  browser-a11y-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # The Playwright pin lives in requirements-dev.txt (a comment, because it
+      # is a Node package and the repo has no package.json). tests/
+      # test_a11y_audit_gate.js asserts the workflow installs exactly that
+      # version, so the pin cannot drift from the tested one.
+      - name: Resolve the pinned Playwright version
+        id: pw
+        run: |
+          version="$(grep -oE '^# ?playwright==[0-9.]+' requirements-dev.txt | sed 's/.*playwright==//')"
+          test -n "$version" || { echo "::error::no playwright pin in requirements-dev.txt"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      # Chromium is ~170MB; cache it on the version, not on run, so a rerun is
+      # fast. Bump the key when the pin above moves.
+      - name: Cache the Playwright browser
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: pw-${{ runner.os }}-chromium-${{ steps.pw.outputs.version }}
+
+      - name: Install Playwright (pinned) and Chromium
+        run: |
+          npm install --no-save --no-package-lock "playwright@${{ steps.pw.outputs.version }}"
+          npx playwright install --with-deps chromium
+
+      # Proves the gate is not vacuous before it is allowed to gate anything:
+      # a seeded page (6px target, 3.45:1 text, 2000px block, <img> with no alt,
+      # a refused request, an uncaught exception) MUST fail, a clean page MUST
+      # pass, and the 0.001ms reduced-motion override the app ships MUST pass
+      # while a 700ms spin MUST fail.
+      - name: Self-check the audit (non-vacuity proof)
+        run: node tools/screenshots/a11y_audit.js --selfcheck
+
+      - name: Start the fixture stub
+        run: |
+          python3 tools/screenshots/proxy.py &
+          for _ in $(seq 1 40); do
+            if curl -sf http://127.0.0.1:8899/api/health > /dev/null; then echo "stub up"; exit 0; fi
+            sleep 0.5
+          done
+          echo "::error::the fixture stub never came up on :8899"; exit 1
+
+      - name: Audit the fixture gallery
+        env:
+          A11Y_AUDIT_JSON: ${{ github.workspace }}/a11y-report.json
+        run: node tools/screenshots/a11y_audit.js
+
+      - name: Upload the audit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: a11y-audit-report
+          path: a11y-report.json
+          if-no-files-found: ignore
+          retention-days: 14
