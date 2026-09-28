@@ -1466,6 +1466,15 @@
       width: min(360px, calc(100vw - 24px));
     }
 
+    /* The status panel is the tallest thing in the toolbar: Cameras, Queue,
+       Deep analysis, This view, Inference and the HA flag dump run ~705px.
+       70vh capped it at 700px on a 1000px-tall window, so the last section was
+       cut off mid-heading with no scrollbar visible. Give this one panel more
+       of the viewport than the shared .blacklist-dropdown default. */
+    #system-dropdown {
+      max-height: min(calc(100dvh - 5rem), 880px);
+    }
+
     /* On phones, use a viewport-safe sheet instead of anchoring to the
        wrapped toolbar. The sheet owns scrolling, so every setting remains
        reachable without clipping the bottom scrollbar. */
@@ -1483,6 +1492,18 @@
         max-height: none;
         margin: 0;
         overflow-y: auto;
+      }
+
+      /* `top` + `bottom` do NOT stretch this sheet. An ancestor between the
+         dropdown and the viewport establishes a containing block for
+         fixed-position descendants, so the insets resolve against that box
+         instead of the viewport and the sheet collapses to the height of the
+         sticky header (~131px at 390px wide) — showing 5 of ~29 lines and
+         making every camera, disk and queue row unreachable. An explicit
+         height always wins over the inset stretch, so state the size we
+         actually want. */
+      #system-dropdown {
+        height: calc(100dvh - 24px);
       }
     }
 
