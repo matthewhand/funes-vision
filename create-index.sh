@@ -5,6 +5,9 @@ IMAGE_DIR=$1
 # analysis.json, so concurrent instances must never run it in parallel.
 # WEBCAM_LOCK/WEBCAM_MARKER override the paths (mirroring tools/watchdog.sh) so
 # the gate can be driven hermetically in tests without touching real /tmp state.
+# WEBCAM_LOCK is read by analyze_images.py too, so the shell gate and the
+# analyzer's own lock in main() always name the same file; the analyzer re-locks
+# the descriptor it inherits from this subshell rather than a second one (#52).
 LOCKFILE="${WEBCAM_LOCK:-/tmp/webcam_analysis.lock}"
 MARKER="${WEBCAM_MARKER:-/tmp/webcam_analysis.lastrun}"
 BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

@@ -82,7 +82,11 @@ _settings_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "setti
 # Global pipeline lock. Every entry path (full sweep, --retention-only,
 # --rescan-days) serialises on it so retention can never delete a frame out
 # from under a live sweep, and two runs never race the catalog flush (#30).
-PIPELINE_LOCK = "/tmp/webcam_analysis.lock"
+# WEBCAM_LOCK overrides the path. It is the SAME variable create-index.sh and
+# tools/watchdog.sh already honour, so one env var now moves the whole
+# pipeline's lock, not just the shell half -- which is what let every test
+# redirect the callers and still miss the collision (#52).
+PIPELINE_LOCK = os.environ.get("WEBCAM_LOCK") or "/tmp/webcam_analysis.lock"
 # Last settings mapping applied. Kept as a mutable module global because
 # configured_tz_name() and tests read it directly.
 _s = {}
@@ -2081,10 +2085,89 @@ def generate_thumbnails(image_dir, images):
     if made:
         print(f"Generated {made} thumbnails in {thumb_dir}")
 
+class _PipelineLock:
+    """A held pipeline lock, or a borrow of the one the caller already holds.
+
+    ``owned`` records whether this process took the flock itself. Only an owned
+    lock may be explicitly unlocked on release: flock() is per open-file-
+    description, so unlocking a borrowed one would also drop the lock the
+    calling shell is still holding while it finishes its own work.
+    """
+
+    def __init__(self, fd, owned):
+        self.fd = fd
+        self.owned = owned
+
+    def fileno(self):
+        return self.fd
+
+    def close(self):
+        if self.fd is not None:
+            os.close(self.fd)
+            self.fd = None
+
+    def release(self):
+        if self.fd is None:
+            return
+        if self.owned:
+            fcntl.flock(self.fd, fcntl.LOCK_UN)
+        self.close()
+
+
+def _inherited_lock_fd(path):
+    """An already-open descriptor on ``path`` in this process, else None.
+
+    Both production callers take the pipeline lock themselves and then exec us
+    with that descriptor still open (create-index.sh:97, tools/watchdog.sh:157).
+    Because flock() is per open-file-description, our own fresh
+    open()+flock() is refused by the shell that started us -- so since #30 every
+    production sweep was a silent no-op behind a green lastrun marker, and
+    --rescan-days blocked forever (#52). Matching the lock file's device+inode
+    across /proc/self/fd finds the descriptor we arrived through.
+
+    fds 0/1/2 are excluded: a caller that merely redirected a standard stream at
+    the lock file would then be mistaken for a gate, and closing or unlocking it
+    on the caller's behalf would break the caller itself.
+    """
+    try:
+        want = os.stat(path)
+    except OSError:
+        return None  # the lock file does not exist yet, so nothing can hold it
+    try:
+        names = os.listdir("/proc/self/fd")
+    except OSError:
+        return None  # no /proc (non-Linux): fall back to taking the lock ourselves
+    for name in names:
+        try:
+            fd = int(name)
+        except ValueError:
+            continue
+        if fd in (0, 1, 2):
+            continue
+        try:
+            st = os.fstat(fd)
+        except OSError:
+            continue  # the fd closed while we walked the directory
+        if st.st_dev == want.st_dev and st.st_ino == want.st_ino:
+            return fd
+    return None
+
+
 def take_pipeline_lock(blocking=False):
-    """Take the global pipeline lock. Returns the held file, or None if the
-    lock is already held (or cannot be taken) — in which case the caller must
+    """Take the global pipeline lock. Returns a held lock, or None if the lock
+    is held by another run (or cannot be taken) — in which case the caller must
     not touch the watch dirs.
+
+    Two ways in, one authority:
+
+    * A descriptor on the lock file is already open in this process, i.e. the
+      caller holds the lock for us. We flock *that* open-file-description
+      instead of a second one, which is a no-op when the caller already locked
+      it and a real acquisition when the caller only opened the file. Either
+      way the kernel, not a heuristic, decides — we never treat "I have a
+      descriptor" as proof of ownership, so a lost race to a third process is
+      still refused (#52).
+    * Otherwise we open and lock the file ourselves, and we are the authority.
 
     Non-blocking by default on purpose: the cron --retention-only watchdog
     firing while a multi-hour sweep owns the lock must skip and retry on its
@@ -2092,19 +2175,30 @@ def take_pipeline_lock(blocking=False):
     when the lock file cannot be opened, which fails closed: without the lock
     nothing can guarantee we are the only writer, so nothing gets deleted.
     """
+    flags = fcntl.LOCK_EX if blocking else fcntl.LOCK_EX | fcntl.LOCK_NB
+    inherited = _inherited_lock_fd(PIPELINE_LOCK)
+    if inherited is not None:
+        try:
+            fcntl.flock(inherited, flags)
+        except OSError as e:
+            logger.warning("pipeline lock %s is held elsewhere (%s); skipping "
+                           "this run", PIPELINE_LOCK, e)
+            return None
+        # dup() shares the open-file-description (so the lock is the caller's)
+        # while giving us an fd we can close without disturbing the caller.
+        return _PipelineLock(os.dup(inherited), owned=False)
     try:
-        fh = open(PIPELINE_LOCK, "a")
+        fd = os.open(PIPELINE_LOCK, os.O_RDWR | os.O_CREAT | os.O_APPEND, 0o666)
     except OSError as e:
         logger.warning("could not open pipeline lock %s (%s); skipping this run",
                        PIPELINE_LOCK, e)
         return None
-    flags = fcntl.LOCK_EX if blocking else fcntl.LOCK_EX | fcntl.LOCK_NB
     try:
-        fcntl.flock(fh.fileno(), flags)
+        fcntl.flock(fd, flags)
     except OSError:
-        fh.close()
+        os.close(fd)
         return None
-    return fh
+    return _PipelineLock(fd, owned=True)
 
 
 # Exit codes. 0 = the sweep ran, or was a clean skip (busy lock, nothing
@@ -2129,6 +2223,12 @@ def main(retention_only=False, rescan_days=None, settings_path=None):
     sweep was mid-cv2.imread on them, and the shared 1s-debounced catalog flush
     made the last writer win (#30). --rescan-days keeps its old blocking wait;
     every other path skips instead of deleting under a concurrent run.
+
+    Taking the lock inside main() is not the same as owning it: both production
+    callers already hold the very same lock and exec us inside their flock
+    subshell, so the descriptor is inherited and main() must lock *that* one
+    (see take_pipeline_lock) rather than a fresh fd, which its own parent would
+    refuse and which --rescan-days would block on forever (#52).
     """
     # Re-read settings.json so /api/settings changes land this sweep. An explicit
     # settings_path aims the sweep at a specific file (tests, one-off tooling);
@@ -2156,8 +2256,7 @@ def main(retention_only=False, rescan_days=None, settings_path=None):
         return _run_sweep(cfg, retention_only=retention_only,
                           rescan_days=rescan_days)
     finally:
-        fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
-        lock.close()
+        lock.release()
 
 
 def _run_sweep(cfg, retention_only=False, rescan_days=None):
