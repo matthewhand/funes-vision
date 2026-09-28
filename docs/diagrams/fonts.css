@@ -1,0 +1,52 @@
+/* Vendored webfonts for the funes-vision diagram set.
+ *
+ * Self-hosted on purpose: diagrams used to <link> the Google Fonts /css2
+ * endpoint, which leaked a Google + gstatic.com request to every reader and
+ * broke the repo's own no-remote-CDN contract (tests/test_no_remote_cdn.js,
+ * issue #44). These @font-face rules point at the woff2 files next door, so a
+ * diagram opened from disk, over a LAN, or behind an egress block renders
+ * exactly as designed with no third-party host involved.
+ *
+ * One file, shared by all 13 diagrams plus _template.html: the faces cannot
+ * drift between diagrams because there is only one place to change them.
+ * Do NOT inline these rules into a diagram's <style> — the diagram-design
+ * self_check.py linter rejects any non-fragment CSS url(), so the fonts have
+ * to live in a sibling stylesheet. See fonts/README.md for provenance,
+ * checksums and the OFL 1.1 license texts.
+ *
+ * font-display: swap matches what display=swap did on the Google Fonts link, so
+ * a slow (or blocked) load still paints text immediately in the fallback
+ * stack declared by --font-sans / --font-serif / --font-mono in each diagram.
+ */
+
+@font-face {
+  font-family: 'Geist';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('fonts/Geist-Variable.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Geist Mono';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('fonts/GeistMono-Variable.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Instrument Serif';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('fonts/InstrumentSerif-Regular.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Instrument Serif';
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url('fonts/InstrumentSerif-Italic.woff2') format('woff2');
+}

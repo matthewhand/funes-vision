@@ -2,8 +2,8 @@
 
 A coherent visual documentation set for **funes-vision**, a local-first two-stage
 computer-vision sentry for camera motion stills. Every diagram is derived from the
-repository (source refs in each footer) and rendered as a single self-contained HTML
-file with inline SVG.
+repository (source refs in each footer) and rendered as one HTML file with inline
+SVG, plus the shared local `fonts.css` — no build step, no network, no CDN.
 
 Skin: the `diagram-design` skill, project profile **`funes-vision`** (dark, matched to
 the app UI). The profile is selected by the `.diagram-design` marker at the repo root
@@ -34,23 +34,78 @@ connector rules. Neither is a deliverable in itself.
 
 ---
 
+## Fonts
+
+The three faces the set uses — **Instrument Serif** (page titles), **Geist**
+(node names) and **Geist Mono** (technical sublabels) — are **vendored in this
+repo**, not loaded from a font CDN:
+
+```
+docs/diagrams/
+├── fonts.css                              # the only @font-face declarations
+├── fonts/
+│   ├── Geist-Variable.woff2               #  69,760 B  wght 100–900
+│   ├── GeistMono-Variable.woff2           #  71,596 B  wght 100–900
+│   ├── InstrumentSerif-Regular.woff2      #  27,316 B
+│   ├── InstrumentSerif-Italic.woff2       #  28,012 B
+│   ├── OFL-Geist.txt                      # SIL OFL 1.1, both Geist files
+│   ├── OFL-InstrumentSerif.txt            # SIL OFL 1.1, both Instrument Serif files
+│   └── README.md                          # provenance, checksums, license
+└── <diagram>.html                         # <link href="fonts.css" rel="stylesheet">
+```
+
+Every diagram loads that one stylesheet with a **relative** path, so opening a
+diagram from disk, over a LAN, or on an air-gapped host makes **zero third-party
+requests**. Both families are SIL Open Font License 1.1, which permits
+redistribution provided the license travels with the files — the `OFL-*.txt`
+files are part of the vendored set and must not be deleted.
+
+This replaced a `<link>` to `https://fonts.googleapis.com/css2` that every
+diagram carried, which contradicted the project's own no-remote-CDN rule (see
+[issue #44](https://github.com/matthewhand/funes-vision/issues/44)). A system
+font stack was considered first and rejected: it would have made headings render
+in whatever serif the reader happens to have, so the 13 diagrams would stop
+looking like a set. Self-hosting is a one-time ~192 KB and keeps the design
+byte-for-byte identical to the CDN rendering.
+
+**To add or change a face:** put the woff2 in `fonts/`, declare it in
+`fonts.css`, and record its provenance, byte count, `sha256` and OFL text in
+[`fonts/README.md`](fonts/README.md). Do not inline `@font-face` into a
+diagram's `<style>` — `self_check.py` rejects non-fragment `url()`, so the
+faces have to stay in the sibling stylesheet.
+
+`tests/test_no_remote_cdn.js` fails the build if a diagram or `fonts.css` gains
+a remote host, if a diagram stops linking `fonts.css`, if a referenced woff2 is
+missing or empty, or if an `OFL-*.txt` is removed.
+
+---
+
 ## How to edit or regenerate
 
 1. Read `_conventions.md` and copy `_template.html`.
 2. Keep the connector rules: right-angle elbows only, masked arrow labels with a 6–10px
    gap, zones → arrows → nodes draw order, one legend strip at the bottom.
 3. Replace the `[diagram-slug]` token in the `<title>`/`<desc>` IDs and fill both.
-4. Validate:
+4. Keep `<link href="fonts.css" rel="stylesheet">` in `<head>`. Do not swap it for
+   a remote stylesheet, and do not inline `@font-face` (see **Fonts** above).
+5. Add a row to the **Diagram index** table, and any assumption the diagram bakes in
+   to **Assumptions and limitations** below.
+6. Validate:
 
    ```bash
    python3 ~/.claude/skills/diagram-design/scripts/self_check.py docs/diagrams/<file>.html
+   bash tests/run.sh
    ```
 
-Render/preview by opening the HTML file in any modern browser. There is no build step;
-raster exports, if ever needed, should be produced from the inline SVG, not hand-made.
+Render/preview by opening the HTML file in any modern browser — the diagrams are
+plain local files, so this works with no network at all. There is no build step;
+raster exports, if ever needed, should be produced from the inline SVG, not
+hand-made.
 
 To re-skin the whole set, edit the profile at
-`~/.diagram-design/profiles/funes-vision.md` (or change the `.diagram-design` marker).
+`~/.diagram-design/profiles/funes-vision.md` (or change the `.diagram-design`
+marker). If that changes the *typeface*, update `fonts.css` and `fonts/` too —
+the profile's font names are only a wish until a woff2 backs them.
 
 ---
 
