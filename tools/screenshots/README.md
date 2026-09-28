@@ -27,6 +27,29 @@ The proxy refuses to start if `SCREENSHOT_ROOT` points at a live camera
 directory. `/api` is stubbed from `fixtures/api/` so pin/delete/settings
 cannot mutate the real box.
 
+### What the stub serves
+
+`GET /api/*` answers from the synthetic fixtures, not a hardcoded route table
+that can fall behind the SPA:
+
+| Route | Source |
+|-------|--------|
+| `/api/cameras` | derived from the fixture stills by their leading IP (`tools/screenshots/fixture_api.py`) |
+| `/api/taxonomy` | the app's own `taxonomy.py` `payload()`, imported |
+| `/api/catalogs` | `images.json` / `analysis.json` / `bursts.json` / `pins.json` grouped per camera |
+| `/api/settings`, `/api/status`, `/api/inference_log`, `/api/integrations`, `/api/llm-schema` | `fixtures/api/*.json` |
+| `/api/pins` | `fixtures/gallery/pins.json` |
+| `/api/health` | literal `{"status":"ok","fixture":true}` |
+| `/api/events` | held open, `event: ping` every `SSE_STUB_INTERVAL` |
+| every `POST /api/*` | `{"ok":true,"fixture":true}` — never mutates disk |
+
+`fixture_api.py` is shared with `tools/demo/build_demo.py`, so the screenshot
+stub and the published demo bundle cannot disagree about the API surface.
+`tests/test_stub_api_coverage.py` derives the list of `/api/*` routes from
+`index.html` and asserts the stub, the live allowlist, and the demo bundle all
+cover it — a new SPA endpoint fails CI instead of silently 404ing behind the
+SPA's offline fallback (issue #66).
+
 ## Optimize the guide PNGs
 
 Playwright captures are 24-bit RGB PNGs (~0.5-1 MB each). Before committing,

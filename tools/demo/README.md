@@ -30,6 +30,23 @@ Timeline / Objects / All, lightbox, visits, and Live (canned SSE pings) work.
 Pin, delete, and settings POSTs toast *Demo: change won't persist* and do not
 write disk.
 
+## The mocked API
+
+`fixtures/network.json` answers every `GET /api/*` the SPA makes, so a visitor
+exercises the real endpoint path rather than the SPA's offline fallback:
+
+| Route | Body |
+|-------|------|
+| `/api/cameras`, `/api/catalogs`, `/api/catalogs?camera=<id>` | derived from the fixture stills by their leading IP |
+| `/api/taxonomy` | the app's own `taxonomy.py` `payload()` |
+| `/api/status`, `/api/settings`, `/api/integrations`, `/api/inference_log`, `/api/llm-schema`, `/api/pins`, `/api/health` | `fixtures/api/*.json` |
+
+The camera registry and taxonomy come from
+`tools/screenshots/fixture_api.py`, shared with the screenshot stub, so the
+bundle cannot drift from the app. `tests/test_stub_api_coverage.py` re-derives
+the SPA's route list from `index.html` and fails the build if a new endpoint
+lands without a fixture body.
+
 ## Host
 
 Drop `dist/demo/` on any static host (GitHub Pages, Netlify, nginx `alias`).
