@@ -24,16 +24,25 @@ tests drive the real script in a sandbox to keep that gate load-bearing:
 * a valid settings.json points at an empty camera dir, so the real sweep has
   nothing to analyse and finishes in a second.
 
+That stub also ends the script's *session leader*, while the `idle_sweep &` it
+backgrounded keeps looping forever. The PGID is therefore captured at spawn and
+the whole group is killed and asserted gone: reaping by `proc.pid` leaked one
+live loop per test -- hundreds of them, each re-invoking analyze_images.py and
+contending for the global pipeline lock.
+
 Run from the repo root:  python3 -m unittest discover -s tests
 """
 import json
 import os
 import shutil
-import signal
 import subprocess
+import sys
 import tempfile
 import time
 import unittest
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import hermetic
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CREATE_INDEX = os.path.join(REPO_ROOT, "create-index.sh")
@@ -50,6 +59,25 @@ MODULES = ("analyze_images.py", "log_config.py", "scans.py", "taxonomy.py",
 CORRUPT = '{"watch_dirs": ["/mnt/models/Webcam21"'
 # The exit code analyze_images.EXIT_SETTINGS_ERROR uses for this fault.
 EXIT_SETTINGS_ERROR = 3
+
+
+def _no_leaked_groups():
+    """Session-scoped backstop: no create-index.sh group outlives this module.
+
+    The per-test _reap already asserts its own group died. This exists so a test
+    that is edited later -- one that raises inside setUp, or adds a spawn path
+    that never reaches _reap -- cannot quietly reintroduce a permanent orphan
+    loop. A leak shows up as an error attributed to the last test in the module
+    rather than as a box slowly filling with idle_sweep loops nobody can
+    attribute.
+    """
+    survivors = hermetic.reap_all()
+    assert not survivors, (
+        f"create-index.sh process groups {survivors} outlived "
+        f"test_create_index_settings_marker -- backgrounded idle_sweep loops leaked")
+
+
+unittest.addModuleCleanup(_no_leaked_groups)
 
 
 class CreateIndexMarkerGateTest(unittest.TestCase):
@@ -101,7 +129,15 @@ class CreateIndexMarkerGateTest(unittest.TestCase):
                                 stdout=log, stderr=subprocess.STDOUT, text=True,
                                 start_new_session=True)
         log.close()
-        self.addCleanup(self._reap, proc)
+        # Read the PGID now, while the session leader is still alive. With
+        # start_new_session the group id IS the leader's pid, and the stubbed
+        # inotifywait ends the leader a moment later -- after which
+        # os.getpgid(proc.pid) raises ProcessLookupError and the backgrounded
+        # `idle_sweep &` loop, which is the thing still running, is unreachable
+        # by that route. That is where the per-test leak came from.
+        pgid = os.getpgid(proc.pid)
+        hermetic.record_group(proc, pgid)
+        self.addCleanup(self._reap, proc, pgid)
         return proc
 
     def _run(self, timeout=180):
@@ -112,13 +148,28 @@ class CreateIndexMarkerGateTest(unittest.TestCase):
             self.fail(f"create-index.sh did not finish\n{self._log()}")
         return self._log()
 
-    def _reap(self, proc):
+    def _reap(self, proc, pgid):
+        """Kill the whole session group and prove it is gone.
+
+        The leader has usually already exited (that is the point of the stub),
+        so the group -- one `idle_sweep &` loop per spawn, still running
+        analyze_images.py and contending for the global pipeline lock -- is
+        killed by the PGID captured at spawn rather than looked up from the
+        dead leader.
+        """
+        hermetic.kill_group(pgid)
         if proc.poll() is None:
             try:
-                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-            except (ProcessLookupError, PermissionError):
+                proc.wait(timeout=30)
+            except subprocess.TimeoutExpired:
                 pass
-            proc.wait(timeout=30)
+        deadline = time.time() + 15
+        while time.time() < deadline and hermetic.group_alive(pgid):
+            time.sleep(0.05)
+        self.assertFalse(
+            hermetic.group_alive(pgid),
+            f"create-index.sh process group {pgid} survived teardown: the "
+            f"backgrounded idle_sweep loop leaked.\n{self._log()}")
 
     def _log(self):
         try:

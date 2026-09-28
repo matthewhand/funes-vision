@@ -19,6 +19,11 @@ The contract these tests pin down:
 Each test runs the real `analyze_images.main(retention_only=True, ...)` on a
 throwaway tree rather than poking `apply_retention` directly: the bug lived in
 which file main() chose, and only main() can catch a regression there.
+
+Two machine-global knobs are pinned in setUp so the result is the same on a
+deployed box as in CI, where this suite used to go red (401s from a real
+api_token) or pass for the wrong reason (a busy global pipeline lock turning
+the sweep into a no-op) -- see tests/hermetic.py.
 """
 import io
 import json
@@ -32,6 +37,9 @@ from contextlib import redirect_stdout
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import hermetic
+
 import analyze_images
 import api_server
 
@@ -90,9 +98,18 @@ class PinsContractTest(unittest.TestCase):
         analyze_images.RETENTION_LOG = os.path.join(self.repo, "retention_log.json")
         analyze_images.PERSIST_BUDGET_PCT = 20.0
         analyze_images.GATE_IGNORE_LABELS = ["car"]
+        # main() takes the machine-global /tmp/webcam_analysis.lock
+        # non-blocking and returns a benign exit 0 when it is busy, so a real
+        # sweep on this box would turn every _sweep() below into a silent
+        # no-op -- the frame would survive for the wrong reason (#30/#53).
+        hermetic.pin_private_lock(self, analyze_images, self.root)
         api_server.WATCH_DIRS = list(self.cams.values())
         api_server.BASE_DIR = self.repo
         api_server.PINS_FILE = os.path.join(self.repo, "pins.json")
+        # api_token() falls back to the settings.json next to the script, so a
+        # deployed one carrying a real api_token made every _pin() below return
+        # 401 instead of 200. Same guard as #39's fix in test_api_cameras.py.
+        hermetic.pin_api_auth_off(self, api_server, self.root)
         patcher = mock.patch.object(analyze_images, "ollama_available",
                                     return_value=False)
         patcher.start()
@@ -146,8 +163,12 @@ class PinsContractTest(unittest.TestCase):
                "max_age_days": 1, "max_dir_gb": 100, **cfg}
         with open(self.settings_path, "w") as f:
             json.dump(cfg, f)
-        with redirect_stdout(io.StringIO()):
+        out = io.StringIO()
+        with redirect_stdout(out):
             analyze_images.main(retention_only=True, settings_path=self.settings_path)
+        # A skipped sweep still exits 0, so without this a frame surviving the
+        # sweep would be evidence of nothing at all.
+        hermetic.assert_sweep_ran(self, out.getvalue())
 
     # --- the defect -------------------------------------------------------
     def test_api_pin_survives_a_retention_sweep(self):
