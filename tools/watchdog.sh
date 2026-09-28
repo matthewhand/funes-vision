@@ -19,6 +19,9 @@
 #   WATCHDOG_STALE_S      restart pipelines if lastrun older than this (7200)
 #   WATCHDOG_BUDGET_PCT   kick retention when any camera >= this (90)
 #   WATCHDOG_LOG          log file path
+#   WEBCAM_LOCK           pipeline lock, shared with create-index.sh and
+#                         analyze_images.py (default /tmp/webcam_analysis.lock)
+#   WATCHDOG_LOCK         legacy alias for WEBCAM_LOCK
 
 set -euo pipefail
 
@@ -26,7 +29,11 @@ BASE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 API="${WATCHDOG_API:-http://127.0.0.1:8190}"
 STALE_RESTART_S="${WATCHDOG_STALE_S:-7200}"
 BUDGET_KICK_PCT="${WATCHDOG_BUDGET_PCT:-90}"
-LOCK="${WATCHDOG_LOCK:-/tmp/webcam_analysis.lock}"
+# WEBCAM_LOCK is the same variable create-index.sh and analyze_images.py honour,
+# so one env var moves the lock for the WHOLE pipeline (shell gate + the
+# analyzer's own lock in main()). WATCHDOG_LOCK is kept as a backwards-
+# compatible alias for existing deployments and tests; WEBCAM_LOCK wins.
+LOCK="${WEBCAM_LOCK:-${WATCHDOG_LOCK:-/tmp/webcam_analysis.lock}}"
 MARKER="${WATCHDOG_MARKER:-/tmp/webcam_analysis.lastrun}"
 RESTART_STATE="${WATCHDOG_RESTART_STATE:-/tmp/webcam_watchdog_last_restart}"
 LOG="${WATCHDOG_LOG:-$BASE/watchdog.log}"

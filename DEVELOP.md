@@ -52,6 +52,12 @@ Watcher + orchestrator, one instance per camera (`webcam-pipeline@.service`).
 - **Global lock** `/tmp/webcam_analysis.lock` (flock, 1h timeout): the
   Python script scans BOTH camera dirs and writes shared JSON, so two
   instances must never run it concurrently. Do not make this per-camera.
+  The shell takes the lock and then execs `analyze_images.py` inside the
+  flock subshell, so the analyzer **inherits** the locked descriptor;
+  `main()` re-locks that descriptor rather than opening a second one
+  (flock is per open-file-description — a fresh fd is refused by the very
+  shell that started us, which silently turned every sweep into a no-op,
+  #52). `WEBCAM_LOCK` overrides the path for all three processes.
 - **Success marker** `/tmp/webcam_analysis.lastrun` is touched only when
   `analyze_images.py` exits 0. A failed Python run still attempts web-root
   sync (so a recovered catalog can propagate) but does **not** advance
@@ -295,15 +301,20 @@ Log: `watchdog.log` in the app dir (gitignored `*.log`) and syslog tag
 
 #### What `retention` does
 
-1. If `/tmp/webcam_analysis.lock` is held (usually a long analyze), stop
-   in-flight `analyze_images.py` and free lock holders with `fuser -k` on
-   the lock file (**from outside** any open fd on that path — killing from
-   inside the flock subshell would kill the watchdog itself).
-2. Acquire the same global flock, run
-   `python3 analyze_images.py --retention-only`.
-3. On success: touch `/tmp/webcam_analysis.lastrun`, copy
-   `analysis.json` / `bursts.json` / `pins.json` into each `watch_dirs` web
-   root.
+1. Probe `/tmp/webcam_analysis.lock` with `flock -n`. If it is held (usually a
+   long analyze), log it and **skip this cycle** — never `pkill`/`fuser -k`.
+   A multi-hour sweep holds the lock by design, so a busy lock is the normal
+   case, and killing the holder threw away a vision call and reset the deep-pass
+   budget once an hour. The next `:05` tick tries again.
+2. Acquire the same global flock and run
+   `python3 analyze_images.py --retention-only` **inside** that flock. The
+   analyzer inherits the locked descriptor and re-locks it instead of opening a
+   second one, so the outer gate stays the authority it has always been
+   (#52).
+3. On success: touch `/tmp/webcam_analysis.lastrun`, copy `analysis.json` and
+   `bursts.json` into each `watch_dirs` web root. **Not** `pins.json` — that is
+   owned per camera by the API, and syncing a repo-root copy over it deleted
+   every pin the user had made in the UI.
 
 This uses **only** the app’s retention rules (pins, age, budget) — never a
 raw `find` wipe.
@@ -329,7 +340,9 @@ needed” runs.
 | `WATCHDOG_STALE_S` | `7200` | Restart pipelines if lastrun older than this (seconds) |
 | `WATCHDOG_BUDGET_PCT` | `90` | `auto` retention kick threshold |
 | `WATCHDOG_LOG` | `$BASE/watchdog.log` | Log path |
-| `WATCHDOG_LOCK` / `WATCHDOG_MARKER` | `/tmp/webcam_analysis.{lock,lastrun}` | Flock + success marker |
+| `WEBCAM_LOCK` | `/tmp/webcam_analysis.lock` | Pipeline lock, read by `watchdog.sh`, `create-index.sh` **and** `analyze_images.py`, so one variable moves the whole pipeline's lock. Set it to run a hermetic copy of the pipeline against a throwaway lock |
+| `WATCHDOG_LOCK` | — | Legacy alias for `WEBCAM_LOCK`; kept so existing deployments/tests keep working. `WEBCAM_LOCK` wins if both are set |
+| `WATCHDOG_MARKER` | `/tmp/webcam_analysis.lastrun` | Success marker |
 | `WATCHDOG_RESTART_STATE` | `/tmp/webcam_watchdog_last_restart` | Restart-loop backoff stamp; the `Restarting` troubleshooting entry below is the symptom of a full one |
 
 #### Operational notes

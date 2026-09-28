@@ -5,8 +5,25 @@ The flock was taken only in the --rescan-days branch, so the cron
 was mid-cv2.imread on them, and the shared 1s-debounced catalog flush made the
 last writer win. The lock now lives in main(), so every caller is serialised.
 
-flock() is per open-file-description, so holding it in this process on its own
-fd is a faithful stand-in for "another process holds it".
+Taking the lock in main() is not the same as owning it, and #52 was what made
+the difference bite. Both production callers (create-index.sh:97,
+tools/watchdog.sh:157) take this very lock and then exec the analyzer inside
+their flock subshell, so the descriptor is INHERITED. flock() is per
+open-file-description, so a fresh open()+flock() in the child is refused by its
+own parent: every production sweep became a silent no-op behind a green lastrun
+marker, and --rescan-days blocked forever. take_pipeline_lock() now flocks the
+inherited descriptor instead of a second one.
+
+So the two states that used to be conflated — and that this file used to assert
+as one — are now distinct and each has a test:
+
+* another PROCESS holds the lock -> take the lock -> None, sweep skipped;
+* WE hold it through a descriptor already open in this process -> proceed.
+
+An earlier version of this file held the lock on its own fd and asserted
+take_pipeline_lock returned None. That asserted the #52 bug as correct: the
+test process was in exactly the inherited-descriptor position, and the answer
+was "skip", so no sweep could ever run under either real caller.
 
 Run from the repo root:  python3 -m unittest discover -s tests
 """
@@ -14,6 +31,7 @@ import fcntl
 import io
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import time
@@ -24,6 +42,40 @@ from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import analyze_images
+
+# A real second process: open the lock, flock it, say so, then wait. Used to
+# stand in for "a live sweep is running" without this process holding anything.
+HOLDER = (
+    "import fcntl, os, sys, time\n"
+    "fd = os.open(sys.argv[1], os.O_RDWR | os.O_CREAT | os.O_APPEND, 0o666)\n"
+    "fcntl.flock(fd, fcntl.LOCK_EX)\n"
+    "open(sys.argv[2], 'w').close()\n"
+    "time.sleep(float(sys.argv[3]))\n"
+)
+
+
+def _resolve_lock(env_overrides):
+    """PIPELINE_LOCK as a child process resolves it, given env overrides.
+
+    The value goes to a FILE, not stdout: importing analyze_images prints a
+    warning on a box without OpenCV ("Haar cascades unavailable ..."), and the
+    CI runner is exactly such a box, so a stdout comparison picks that up.
+    """
+    with tempfile.TemporaryDirectory(prefix="lockpath_") as td:
+        out = os.path.join(td, "resolved")
+        env = {k: v for k, v in os.environ.items() if k not in env_overrides}
+        env.update(env_overrides)
+        result = subprocess.run(
+            [sys.executable, "-c",
+             "import analyze_images, sys\n"
+             "open(sys.argv[1], 'w').write(analyze_images.PIPELINE_LOCK)\n",
+             out],
+            cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            env=env, capture_output=True, text=True)
+        if result.returncode != 0:
+            raise AssertionError(f"resolving PIPELINE_LOCK failed: {result.stderr}")
+        with open(out) as f:
+            return f.read().strip()
 
 
 class TestPipelineLock(unittest.TestCase):
@@ -69,12 +121,55 @@ class TestPipelineLock(unittest.TestCase):
         self.td.cleanup()
 
     def _hold_lock(self):
-        fh = open(self.lock_path, "a")
-        fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
-        self.addCleanup(lambda: (fcntl.flock(fh.fileno(), fcntl.LOCK_UN), fh.close()))
-        return fh
+        """A real OTHER PROCESS holds the lock, so this sweep must skip.
 
-    def test_retention_only_does_nothing_while_locked(self):
+        Not a descriptor in this process: take_pipeline_lock() treats an
+        open descriptor on the lock file as "the caller already holds it" and
+        proceeds, which is the production shape (an exec'd caller) and the
+        whole point of #52. Excluding the lock here therefore has to be done
+        with a genuine second process, or the test would be asserting the bug.
+        """
+        held = os.path.join(self.root, "lock_held")
+        proc = subprocess.Popen(
+            [sys.executable, "-c", HOLDER, self.lock_path, held, "120"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        self.addCleanup(self._stop, proc)
+        deadline = time.time() + 20
+        while not os.path.exists(held) and time.time() < deadline:
+            time.sleep(0.02)
+        self.assertTrue(os.path.exists(held), "the lock holder never started")
+        return proc
+
+    def _stop(self, proc):
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait(timeout=20)
+
+    def _hold_lock_inherited(self):
+        """This process already holds the lock on a descriptor it was given.
+
+        The production shape is a shell that flocks fd 200 and then execs us, so
+        the analyzer arrives with a descriptor on the lock file that already
+        holds it (flock is per open-file-description). take_pipeline_lock() must
+        re-lock THAT descriptor and let the sweep run -- taking a second one is
+        refused by this very process, which is what made every sweep a no-op.
+        """
+        fd = os.open(self.lock_path, os.O_RDWR | os.O_CREAT | os.O_APPEND, 0o666)
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        self.addCleanup(self._drop, fd)
+        return fd
+
+    def _drop(self, fd):
+        try:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        except OSError:
+            pass
+        try:
+            os.close(fd)
+        except OSError:
+            pass  # already dropped by the test itself
+
+    def test_retention_only_does_nothing_while_another_process_holds_the_lock(self):
         self._hold_lock()
         out = io.StringIO()
         with redirect_stdout(out):
@@ -87,12 +182,80 @@ class TestPipelineLock(unittest.TestCase):
         # The whole point: the frame a live sweep might be reading survives.
         self.assertTrue(os.path.exists(self.victim))
 
-    def test_full_sweep_does_nothing_while_locked(self):
+    def test_full_sweep_does_nothing_while_another_process_holds_the_lock(self):
         self._hold_lock()
         out = io.StringIO()
         with redirect_stdout(out):
             analyze_images.main(settings_path=analyze_images._settings_path)
         self.assertIn("Pipeline lock", out.getvalue())
+        self.assertTrue(os.path.exists(self.victim))
+
+    def test_sweep_runs_when_the_caller_already_holds_the_lock_for_us(self):
+        """#52: both production callers exec us holding this same lock.
+
+        Refusing here made every sweep a no-op: nothing analysed, deleted,
+        pruned or alerted, while the lastrun marker still went green.
+        """
+        self._hold_lock_inherited()
+        out = io.StringIO()
+        with redirect_stdout(out):
+            analyze_images.main(retention_only=True, settings_path=analyze_images._settings_path)
+        log = out.getvalue()
+        self.assertNotIn("Pipeline lock", log)
+        self.assertIn("Retention:", log)
+        self.assertFalse(os.path.exists(self.victim),
+                         "a sweep inside a caller-held lock did no retention")
+
+    def test_full_sweep_runs_when_the_caller_already_holds_the_lock_for_us(self):
+        self._hold_lock_inherited()
+        out = io.StringIO()
+        with redirect_stdout(out):
+            analyze_images.main(settings_path=analyze_images._settings_path)
+        self.assertNotIn("Pipeline lock", out.getvalue())
+        self.assertIn("Scanning", out.getvalue())
+
+    def test_borrowed_lock_is_not_released_while_the_caller_still_holds_it(self):
+        """release() must not LOCK_UN a descriptor the caller lent us.
+
+        Unlocking a borrowed open-file-description drops the caller's lock too:
+        in tools/watchdog.sh that would free /tmp/webcam_analysis.lock before
+        run_retention() finished touching the marker and syncing the web roots,
+        letting a live sweep start on top of a half-finished retention pass.
+        """
+        fd = self._hold_lock_inherited()
+        handle = analyze_images.take_pipeline_lock(blocking=False)
+        self.assertIsNotNone(handle)
+        self.assertFalse(handle.owned)
+        handle.release()
+        # The caller's lock is intact: another process is still excluded.
+        other = subprocess.run(
+            ["flock", "-n", "-x", self.lock_path, "-c", "true"],
+            capture_output=True)
+        self.assertNotEqual(other.returncode, 0,
+                            "releasing the borrowed lock let a second run in")
+        # ...and once the caller itself lets go, it is free again.
+        self._drop(fd)
+        again = subprocess.run(
+            ["flock", "-n", "-x", self.lock_path, "-c", "true"],
+            capture_output=True)
+        self.assertEqual(again.returncode, 0)
+
+    def test_inherited_descriptor_on_the_lock_file_that_is_barely_open_still_excludes(self):
+        """A descriptor on the lock file is NOT taken as proof of ownership.
+
+        If a caller opened the file without flocking it, we must actually
+        acquire the lock on that descriptor -- so a third process holding it
+        still shuts this run out. Otherwise the fix would be a hole in exactly
+        the mutual exclusion #30 was for.
+        """
+        fd = os.open(self.lock_path, os.O_RDWR | os.O_CREAT | os.O_APPEND, 0o666)
+        self.addCleanup(os.close, fd)  # opened, never flocked
+        self._hold_lock()
+        self.assertIsNone(analyze_images.take_pipeline_lock(blocking=False))
+        out = io.StringIO()
+        with redirect_stdout(out):
+            analyze_images.main(retention_only=True, settings_path=analyze_images._settings_path)
+        self.assertIn("held by another run", out.getvalue())
         self.assertTrue(os.path.exists(self.victim))
 
     def test_sweep_runs_and_deletes_when_lock_is_free(self):
@@ -119,9 +282,18 @@ class TestPipelineLock(unittest.TestCase):
             analyze_images.main(retention_only=True, settings_path=analyze_images._settings_path)
         self.assertNotIn("Pipeline lock", out.getvalue())
 
-    def test_take_lock_returns_none_when_held(self):
+    def test_take_lock_returns_none_when_another_process_holds_it(self):
         self._hold_lock()
         self.assertIsNone(analyze_images.take_pipeline_lock(blocking=False))
+
+    def test_take_lock_joins_a_lock_the_caller_already_holds(self):
+        """The inherited-descriptor case: we return a usable handle, not None."""
+        self._hold_lock_inherited()
+        handle = analyze_images.take_pipeline_lock(blocking=False)
+        self.assertIsNotNone(handle,
+                             "a lock held for us on an inherited descriptor "
+                             "read as 'busy', which is #52")
+        handle.release()
 
     def test_take_lock_returns_handle_when_free(self):
         handle = analyze_images.take_pipeline_lock(blocking=False)
@@ -136,11 +308,49 @@ class TestPipelineLock(unittest.TestCase):
         fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
         handle.close()
 
+    def test_take_lock_borrows_rather_than_creates_a_second_descriptor(self):
+        fd = self._hold_lock_inherited()
+        handle = analyze_images.take_pipeline_lock(blocking=False)
+        self.assertNotEqual(handle.fileno(), fd,
+                            "the lock was taken on a second descriptor, which "
+                            "its own process then refuses (#52)")
+        handle.close()
+        # Closing the handle must not close the descriptor the caller lent us.
+        os.fstat(fd)
+
     def test_default_lock_path_is_the_documented_one(self):
         # The CLI (systemd timer / cron) shares one lock with the live sweep.
         # setUp points PIPELINE_LOCK at the throwaway tree, so compare against
         # the module default captured before that override.
-        self.assertEqual(self._saved["PIPELINE_LOCK"], "/tmp/webcam_analysis.lock")
+        self.assertEqual(self._saved["PIPELINE_LOCK"],
+                         os.environ.get("WEBCAM_LOCK") or "/tmp/webcam_analysis.lock")
+
+    def test_default_lock_path_is_unaffected_by_the_env_override(self):
+        """Operators' /tmp/webcam_analysis.lock stays the default. Guarded in a
+        child process so the module import happens with WEBCAM_LOCK cleared."""
+        self.assertEqual(_resolve_lock({"WEBCAM_LOCK": ""}),
+                         "/tmp/webcam_analysis.lock")
+
+
+class TestLockPathOverride(unittest.TestCase):
+    """WEBCAM_LOCK must move the WHOLE pipeline's lock, not just the shell half.
+
+    Pre-fix the analyzer hardcoded /tmp/webcam_analysis.lock, so every test that
+    redirected the callers' WEBCAM_LOCK still had the analyzer grabbing the real
+    global lock, and the two never collided -- which is how #52 shipped behind a
+    green suite (tests/test_create_index_settings_marker.py).
+
+    The collision itself is the thing to pin: run the real analyzer with
+    WEBCAM_LOCK set and confirm it never touches the default path.
+    """
+
+    def test_analyzer_honours_the_weblocam_lock_env_var(self):
+        target = "/tmp/does-not-exist-webcam-test.lock"
+        self.assertEqual(_resolve_lock({"WEBCAM_LOCK": target}), target)
+
+    def test_empty_weblocam_lock_falls_back_to_the_default(self):
+        self.assertEqual(_resolve_lock({"WEBCAM_LOCK": ""}),
+                         "/tmp/webcam_analysis.lock")
 
 
 if __name__ == "__main__":
