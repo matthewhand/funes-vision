@@ -35,6 +35,8 @@
        showSearchClear isActivateKey
   D. DOM binding + catalog load bindActivatable / bindSwitch / parseFilename /
      catalogTag / drainBody / afterPaint / loadData
+     sentinels: resolveGalleryCameraId pinnedSetFor pinSetsEqual pinResponseState
+     also: galleryCameraId / fetchPinsFor / galleryLoadSeq
   E. Dashboard view (/cameras/) loadDashboardCatalogs / renderDashboard /
      loadGalleryForCamera
   F. Rendering — date rail + charts
@@ -3395,8 +3397,10 @@
     };
 
     // Catalog HTTP tag (ETag / Last-Modified). Same tag => skip JSON.parse and
-    // skip a full re-render on the 30s reconcile poll.
-    const catalogTags = { images: '', analysis: '', bursts: '', pins: '' };
+    // skip a full re-render on the 30s reconcile poll. Pins are absent on
+    // purpose: they come from /api/pins, which sets no tag, and a pin changed
+    // outside this tab has to show up on the next poll.
+    const catalogTags = { images: '', analysis: '', bursts: '' };
     function catalogTag(res) {
       if (!res || !res.headers) return '';
       return res.headers.get('ETag') || res.headers.get('Last-Modified') || '';
@@ -3411,6 +3415,86 @@
       else requestAnimationFrame(fn);
     }
 
+    // === pure:resolveGalleryCameraId ===
+    // Which camera this gallery view is showing. The route id wins (a
+    // /cameras/<id>/ deep link, or a client-side switch that pushState'd one),
+    // then the web root that served the page, then the folder-basename default.
+    // A page served from a camera root has no route id, which is why the
+    // fallback exists; deriving this from the path alone instead (as
+    // currentCameraId used to) silently answered "Webcam21" for every
+    // /cameras/<id>/ route, so a pin or delete landed on the wrong camera.
+    function resolveGalleryCameraId(cameraId, servedId) {
+      return cameraId || servedId || 'Webcam21';
+    }
+    // === /pure:resolveGalleryCameraId ===
+
+    // === pure:pinnedSetFor ===
+    // The frames pinned for `cameraId`, from a GET /api/pins?camera=<id> body.
+    // The API is the only source that unions <camera_dir>/pins.json with the
+    // legacy repo-root pins.json, so an upgraded install still reads its old
+    // pins as pinned — retention (analyze_images.retention_pins) protects
+    // exactly that union, and the view has to agree with it.
+    // A missing camera id, or a body that is not a list of filenames, is read
+    // as "nothing pinned" rather than poisoning the set with junk that would
+    // render as a permanent pin badge on an arbitrary card.
+    function pinnedSetFor(cameraId, payload) {
+      if (!cameraId) return new Set();
+      if (!Array.isArray(payload)) return new Set();
+      return new Set(payload.filter(f => typeof f === 'string' && f));
+    }
+    // === /pure:pinnedSetFor ===
+
+    // === pure:pinSetsEqual ===
+    // Membership test for the 30s reconcile poll: an unchanged pin set must
+    // not force a full grid re-render, because /api/pins is re-read every poll
+    // (it carries no ETag) and the gallery can hold thousands of cards.
+    function pinSetsEqual(a, b) {
+      if (a === b) return true;
+      if (!a || !b) return false;
+      if (a.size !== b.size) return false;
+      for (const f of a) if (!b.has(f)) return false;
+      return true;
+    }
+    // === /pure:pinSetsEqual ===
+
+    // === pure:pinResponseState ===
+    // The badge state to paint after POST /api/pin. The server decides, not the
+    // click: unpinning a frame that lives only in the legacy repo-root file
+    // rewrites that shared file and the camera's own pins.json is untouched, so
+    // the requested transition and the real one are not always the same. A
+    // malformed response falls back to the intent rather than asserting a
+    // state the server never confirmed.
+    function pinResponseState(response, intent) {
+      if (response && typeof response === 'object' && typeof response.pinned === 'boolean') {
+        return response.pinned;
+      }
+      return !!intent;
+    }
+    // === /pure:pinResponseState ===
+
+    // The camera the gallery is currently showing. Kept as a function (not a
+    // constant) because a client-side camera switch changes the answer without
+    // reloading the page.
+    function galleryCameraId() {
+      return resolveGalleryCameraId(currentRoute().cameraId, servedCameraId());
+    }
+
+    // Pins for one camera, always via the API and always with that camera named
+    // explicitly — never withCamera(), which answers "whatever the path matches"
+    // and would ask about a different camera than the one on screen.
+    async function fetchPinsFor(cameraId) {
+      if (!cameraId) return new Set();
+      const payload = await apiFetch(
+        `/api/pins?camera=${encodeURIComponent(cameraId)}`, {}, false);
+      return pinnedSetFor(cameraId, payload);
+    }
+
+    // Gallery loads race: a camera switch can land while the previous camera's
+    // catalog fetch is still in flight, and the 30s poll runs against the served
+    // camera throughout. Bumping this on every load lets a stale response bail
+    // instead of repainting the new camera's gallery with the old one's pins.
+    let galleryLoadSeq = 0;
+
     // Load data from images.json and analysis.json
     async function loadData(silent = false) {
       if (!silent) {
@@ -3421,16 +3505,25 @@
           showEmptyState(k.message, '', k.title);
         }
       }
-      
+
+      // A camera switch bumps this; a poll that is still in flight must not
+      // repaint the gallery with the previous camera's catalog and pins.
+      const seq = ++galleryLoadSeq;
       try {
         // Start extras in parallel, but paint the date rail as soon as the
         // (smaller) images.json arrives — don't wait on analysis.json parse.
+        // analysis/bursts are per-camera static files, so the relative fetch is
+        // right for them. Pins are not: <camera_dir>/pins.json is canonical but
+        // omits the legacy repo-root pins that retention still protects, so a
+        // relative fetch('pins.json') rendered those frames unpinned. /api/pins
+        // unions them in, which is what makes the view agree with retention.
         const extrasP = Promise.all([
           fetch('analysis.json', { cache: 'no-cache' }).catch(() => null),
           fetch('bursts.json', { cache: 'no-cache' }).catch(() => null),
-          fetch('pins.json', { cache: 'no-cache' }).catch(() => null),
+          fetchPinsFor(galleryCameraId()).catch(() => null),
         ]);
         const imgResponse = await fetchWithTimeout('images.json', { cache: 'no-cache' });
+        if (seq !== galleryLoadSeq) return;
         if (!imgResponse.ok) throw new Error('Network error loading images catalog');
 
         const imgTag = catalogTag(imgResponse);
@@ -3464,6 +3557,7 @@
         if (!silent) renderDateSidebar();
 
         const [analysisResp, burstResp, pinsResp] = await extrasP;
+        if (seq !== galleryLoadSeq) return;
 
         if (analysisResp && analysisResp.ok) {
           const tag = catalogTag(analysisResp);
@@ -3485,15 +3579,12 @@
           }
           if (tag) catalogTags.bursts = tag;
         }
-        if (pinsResp && pinsResp.ok) {
-          const tag = catalogTag(pinsResp);
-          if (tag && tag === catalogTags.pins) {
-            drainBody(pinsResp);
-          } else {
-            state.pins = new Set(await pinsResp.json());
-            analysisChanged = true;
-          }
-          if (tag) catalogTags.pins = tag;
+        // No ETag on /api/pins, so it is re-read every poll. Keep the previous
+        // set on a failed read (the API being down must not blank every pin
+        // badge) and only mark the load changed when membership actually moved.
+        if (pinsResp && !pinSetsEqual(state.pins, pinsResp)) {
+          state.pins = pinsResp;
+          analysisChanged = true;
         }
 
         if (silent && imagesUnchanged && !analysisChanged) return;
@@ -3575,8 +3666,11 @@
         card.href = routeHref({ view: ROUTE_GALLERY, cameraId: c.id });
         card.addEventListener('click', (e) => {
           e.preventDefault();
+          // pushRoute -> applyRoute already runs loadGalleryForCamera for this
+          // camera. Calling it again here started a second, racing load: the two
+          // responses could land out of order and the stale one repainted the
+          // new camera's gallery with the old one's frames and pins.
           pushRoute({ view: ROUTE_GALLERY, cameraId: c.id });
-          loadGalleryForCamera(c.id);
         });
         const thumb = document.createElement('div');
         thumb.className = 'dashboard-thumb';
@@ -3627,12 +3721,28 @@
         return;
       }
       setWorkspaceMode('gallery');
+      // Drop the outgoing camera's pins up front. A slow or failed switch must
+      // leave no pins on screen, never the previous camera's.
+      state.pins = new Set();
+      const seq = ++galleryLoadSeq;
       try {
-        const cat = await apiFetch(`/api/catalogs?camera=${cameraId}`, {}, true);
+        // /api/catalogs' `pins` key is the camera's raw pins.json, read off
+        // disk, so it omits the legacy repo-root pins retention still protects.
+        // /api/pins is the endpoint that unions them in. Asking for both means
+        // a switch re-reads pins for the camera being switched to, rather than
+        // inheriting whatever the previous one had cached.
+        const [cat, pins] = await Promise.all([
+          // scope=false: the camera is already named in the path, and letting
+          // withCamera() append a second ?camera= left the right answer resting
+          // on the server picking the first of the two.
+          apiFetch(`/api/catalogs?camera=${encodeURIComponent(cameraId)}`, {}, false),
+          fetchPinsFor(cameraId).catch(() => null),
+        ]);
+        if (seq !== galleryLoadSeq) return;
         state.allImages = Array.isArray(cat.images) ? cat.images : [];
         state.analysis = cat.analysis || {};
         state.bursts = cat.bursts || {};
-        state.pins = new Set(cat.pins || []);
+        if (pins) state.pins = pins;
         if (!state.dateUserSet) {
           const dates = state.allImages.map(f => parseFilenameFields(f).dateStr);
           state.activeDateFilter = homeDateFilter(todayDateStr(new Date(), DISPLAY_TZ), dates);
@@ -5596,18 +5706,21 @@
       ? `${location.protocol}//${location.hostname}:8190`
       : '';
 
-    // Which camera this page is showing. The catalog loads are scoped by
-    // which web root served them; the write API needs the same scoping, so
-    // derive it from the path. The id is the folder basename — the API now
-    // resolves ?camera=<id> against those, not against front/back.
+    // Which camera this page is showing. The write API needs the same scoping
+    // the catalog load just used, or a pin made while looking at one camera
+    // lands on another. Resolved from the route first, then the web root that
+    // served the page: matching the path against the two legacy roots answered
+    // "Webcam21" for every /cameras/<id>/ route (including a client-side
+    // switch, which pushStates the URL), so those calls went to the wrong
+    // camera. The id is the folder basename — the API resolves ?camera=<id>
+    // against those, not against front/back.
     function currentCameraId() {
-      const m = location.pathname.match(/\/(Webcam21|Webcam22)\//);
-      return m ? m[1] : 'Webcam21';
+      return galleryCameraId();
     }
 
     function withCamera(path) {
       const sep = path.includes('?') ? '&' : '?';
-      return `${path}${sep}camera=${currentCameraId()}`;
+      return `${path}${sep}camera=${encodeURIComponent(currentCameraId())}`;
     }
 
     // All write-API calls go through here: a hard timeout (via AbortController)
@@ -5635,11 +5748,12 @@
       return resp.json();
     }
 
-    // Catalog loads (images.json / analysis.json / bursts.json / pins.json) go
-    // through here so an unreachable camera service fails fast instead of
-    // hanging the grid on "Loading snapshots…" indefinitely. Rejects with the
-    // AbortError after LOAD_TIMEOUT_MS; the loadData catch maps it to a
-    // friendly unreachable state (retry happens on the next poll).
+    // Catalog loads (images.json / analysis.json / bursts.json) go through here
+    // so an unreachable camera service fails fast instead of hanging the grid on
+    // "Loading snapshots…" indefinitely. Rejects with the AbortError after
+    // LOAD_TIMEOUT_MS; the loadData catch maps it to a friendly unreachable
+    // state (retry happens on the next poll). Pins go through apiFetch instead —
+    // they need the API's camera-scoped, legacy-inclusive read.
     const LOAD_TIMEOUT_MS = 10000;
     async function fetchWithTimeout(url, options = {}, ms = LOAD_TIMEOUT_MS) {
       const ctrl = new AbortController();
@@ -5660,16 +5774,25 @@
     }
 
     async function togglePin(filename, card) {
-      const pinned = !state.pins.has(filename);
+      const intent = !state.pins.has(filename);
       try {
-        await apiPost('/api/pin', { filename, pinned }, true);
+        const resp = await apiPost('/api/pin', { filename, pinned: intent }, true);
+        // Paint what the server reports, not what was clicked. Unpinning a frame
+        // that only exists in the legacy repo-root pins.json rewrites that shared
+        // file and leaves the camera's own pins.json untouched, so the two can
+        // disagree; the response is the only honest source for the badge.
+        const pinned = pinResponseState(resp, intent);
         if (pinned) state.pins.add(filename); else state.pins.delete(filename);
         const pinBtn = card.querySelector('.pin-btn');
         pinBtn.classList.toggle('pinned', pinned);
         const pinName = pinned ? 'Unpin (allow auto-delete)' : 'Pin (never auto-delete)';
         pinBtn.title = pinName;
         pinBtn.setAttribute('aria-label', pinName);
-        showToast(pinned ? 'Pinned - excluded from auto-cleanup' : 'Unpinned');
+        if (pinned === intent) {
+          showToast(pinned ? 'Pinned - excluded from auto-cleanup' : 'Unpinned');
+        } else {
+          showToast(pinned ? 'Already pinned on the server' : 'Server reports this frame is not pinned');
+        }
       } catch (e) {
         showToast('Pin failed - is the API service running?');
       }
@@ -6688,8 +6811,8 @@
           option.textContent = camera.label || cameraDisplayName(camera.id);
           option.addEventListener('click', () => {
             switchMenu.hidden = true;
+            // pushRoute -> applyRoute owns the load; a second call here raced it.
             pushRoute({ view: ROUTE_GALLERY, cameraId: camera.id });
-            loadGalleryForCamera(camera.id);
           });
           switchMenu.appendChild(option);
         });
