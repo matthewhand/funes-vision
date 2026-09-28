@@ -1,8 +1,12 @@
 # Runtime dependencies for funes-vision.
 # Only third-party imports actually used by the pipeline are listed; the
 # rest of the code is standard library. Lower bounds are minimum supported
-# versions, upper bounds only where a major bump is known-breaking.
+# versions, upper bounds only where a major bump is known-breaking. The one
+# exact pin is Pillow -- see the note on its line.
 requests>=2.31,<3        # analyze_images.py (Ollama/OpenRouter HTTP), integrations/ntfy.py, integrations/slack.py
 opencv-python>=4.8       # analyze_images.py (YOLOv4-tiny DNN + legacy Haar fast pass), tools/screenshots
 numpy>=1.24              # analyze_images.py (detector post-processing), tools/screenshots/make_fixtures.py
-Pillow>=10               # integrations/media.py (JPEG -> GIF/MP4 burst clips)
+# Pinned exactly, not ">=": the showcase GIFs committed under docs/guide/img/
+# and tools/demo/ are byte-compared against a sha256 manifest by
+# `make_gifs.py --check`, so the encoder has to stay put under the tree (#43).
+Pillow==11.3.0           # integrations/media.py (JPEG -> GIF/MP4 burst clips)

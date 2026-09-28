@@ -25,10 +25,16 @@ Outputs (all under ``--out``; the demo GIF's default home is ``tools/demo``):
   docs/guide/img/timeline-flipbook.gif   every still, oldest first
   docs/guide/img/visit-player.gif        person + dog visit frames
   tools/demo/demo.gif                    lightweight demo-bundle animation
+
+``--check`` byte-compares the committed GIFs against ``COMMITTED_SHA256``, so
+regenerating them means updating that manifest (the write run prints the new
+digests). The comparison is only meaningful with Pillow pinned to one version;
+see requirements.txt.
 """
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -51,6 +57,18 @@ DEMO_WIDTH = 320
 FLIPBOOK_MS = FRAME_MS
 # Keep the committed binaries cheap to load from the docs pages.
 MAX_GIF_BYTES = 1_500_000
+
+# sha256 of the committed GIFs, keyed by repo-relative path. The bytes are a
+# function of the Pillow encoder, so a drifted digest means "regenerate and
+# update this table", not "a binary got corrupted" (#43).
+COMMITTED_SHA256 = {
+    "docs/guide/img/timeline-flipbook.gif":
+        "0ec710fbf4a194b595e91ca93c366a80a750e102fe713c2989254fd407b54322",
+    "docs/guide/img/visit-player.gif":
+        "c8219f21dce23cb37f8e7527ef68e4182668acb423732efeadb9d0d575959f4b",
+    "tools/demo/demo.gif":
+        "b4b18099c29acce88029e53f5ead9645184eaeeb7ed2729c4a05258568d0551d",
+}
 
 
 def _load_json(name, fallback):
@@ -127,6 +145,39 @@ def _durations(path):
     return out
 
 
+def sha256(path):
+    """Digest of ``path``'s bytes, read in chunks so a big GIF never lands in
+    memory whole. Read-only, so ``--check`` stays free of side effects."""
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _committed_key(path):
+    """``path`` as a repo-relative POSIX string, or ``None`` if outside the repo."""
+    try:
+        return path.resolve().relative_to(REPO).as_posix()
+    except ValueError:
+        return None
+
+
+def expected_hashes(paths):
+    """``{path: sha256}`` for whichever of ``paths`` are committed assets.
+
+    A scratch ``--out`` dir has no committed counterpart, so it is left out of
+    the comparison instead of being checked against someone else's bytes; those
+    runs still get the structural checks in ``_verify``.
+    """
+    out = {}
+    for path in paths:
+        want = COMMITTED_SHA256.get(_committed_key(path))
+        if want:
+            out[path] = want
+    return out
+
+
 def demo_path(out_dir=GUIDE_IMG):
     """``--out`` redirects the demo GIF too; the default keeps it in tools/demo."""
     out_dir = Path(out_dir)
@@ -152,9 +203,11 @@ def generate(out_dir=GUIDE_IMG, demo=True):
     return made
 
 
-def report(paths, verify=False):
-    """Print frames/delays/sizes; ``verify`` also enforces the invariants the
-    committed GIFs must keep (animated, one hold, under budget)."""
+def report(paths, verify=False, expected=None):
+    """Print frames/delays/sizes/digests; ``verify`` also enforces the
+    invariants the committed GIFs must keep (animated, one hold, under budget,
+    byte-identical to the manifest)."""
+    expected = expected or {}
     total = 0
     for path in paths:
         if not path.is_file():
@@ -163,15 +216,23 @@ def report(paths, verify=False):
         total += size
         frames = _frame_count(path)
         delays = _durations(path)
+        digest = sha256(path)
         try:
             shown = path.relative_to(REPO)
         except ValueError:
             shown = path
-        print(f"{shown}: {frames} frames, {size:,} bytes, delays={delays}")
+        print(f"{shown}: {frames} frames, {size:,} bytes, "
+              f"sha256={digest[:12]}, delays={delays}")
         if frames < 2:
             raise SystemExit(f"{path} is not animated (frame count {frames})")
         if verify:
             _verify(path, size, delays)
+            want = expected.get(path)
+            if want and digest != want:
+                raise SystemExit(
+                    f"{path} is {digest}, expected {want} -- the encoder moved. "
+                    f"Regenerate it and update make_gifs.COMMITTED_SHA256, or "
+                    f"check the Pillow pin in requirements.txt (#43)")
     print(f"total: {total:,} bytes")
     return total
 
@@ -189,9 +250,15 @@ def _verify(path, size, delays):
             f"{path} is {size:,} bytes (budget {MAX_GIF_BYTES:,})")
 
 
-def check(paths):
-    """Read-only validation of already-committed GIFs (used by ``--check``)."""
-    return report(paths, verify=True)
+def check(paths, expected=None):
+    """Read-only validation of already-committed GIFs (used by ``--check``).
+
+    ``expected`` defaults to the committed manifest for the paths in ``REPO``;
+    tests pass it explicitly to check a byte-tampered copy in a scratch dir.
+    """
+    if expected is None:
+        expected = expected_hashes(paths)
+    return report(paths, verify=True, expected=expected)
 
 
 def main(argv=None):

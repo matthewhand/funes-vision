@@ -1,9 +1,11 @@
 """The showcase GIF tool must stay reproducible (#34).
 
 ``tools/screenshots/make_gifs.py`` builds the GIFs committed under
-``docs/guide/img/`` and ``tools/demo/``. Two properties are asserted here:
-the frames are ordered oldest-first (so the capture gaps are positive) and the
-holds are the uniform flipbook rate (never the ``MIN_FRAME_MS`` strobe).
+``docs/guide/img/`` and ``tools/demo/``. Three properties are asserted here:
+the frames are ordered oldest-first (so the capture gaps are positive), the
+holds are the uniform flipbook rate (never the ``MIN_FRAME_MS`` strobe), and
+the committed bytes still match the sha256 manifest that backs ``--check``
+(#43) under the Pillow pin in requirements.txt.
 """
 import os
 import shutil
@@ -121,6 +123,64 @@ class TestCommittedGifs(unittest.TestCase):
         _restrobe(target, MIN_FRAME_MS)
         with self.assertRaises(SystemExit):
             make_gifs.check([target])
+
+
+@unittest.skipUnless(HAS_PIL, "Pillow not installed")
+class TestCommittedBytes(unittest.TestCase):
+    """``--check`` byte-compares the committed GIFs (#43).
+
+    The manifest is only trustworthy while Pillow is pinned to one version, so
+    this also asserts the pin is still exact -- otherwise the digests below are
+    comparing against an encoder that may already have moved.
+    """
+
+    def test_pillow_is_pinned_exactly(self):
+        req = (ROOT / "requirements.txt").read_text().splitlines()
+        pins = [ln for ln in req
+                if ln.strip().startswith("Pillow") and not ln.lstrip().startswith("#")]
+        self.assertEqual(len(pins), 1, pins)
+        spec = pins[0].split("#", 1)[0].strip()
+        self.assertRegex(spec, r"^Pillow==\d+\.\d+\.\d+$")
+
+    def test_every_committed_asset_has_a_manifest_entry(self):
+        # Nothing committed may lack a digest, and no digest may go stale.
+        keys = {make_gifs._committed_key(p)
+                for p in make_gifs.expected_paths()}
+        self.assertEqual(keys, set(make_gifs.COMMITTED_SHA256))
+
+    def test_committed_gifs_match_the_manifest(self):
+        for path, want in make_gifs.expected_hashes(
+                make_gifs.expected_paths()).items():
+            with self.subTest(path=path.name):
+                self.assertEqual(make_gifs.sha256(path), want)
+
+    def test_check_fails_on_a_wrong_digest(self):
+        # A wrong-but-well-formed digest must fail even though every structural
+        # invariant (animated, uniform hold, size) still holds -- that is the
+        # whole point of adding the byte comparison.
+        target = make_gifs.DEMO_GIF
+        with self.assertRaises(SystemExit):
+            make_gifs.check([target], expected={target: "0" * 64})
+
+    def test_check_rejects_a_tampered_gif(self):
+        out = Path(tempfile.mkdtemp(prefix="webcam_gifs_tamper_"))
+        self.addCleanup(shutil.rmtree, out, ignore_errors=True)
+        target = out / "demo.gif"
+        original = make_gifs.DEMO_GIF.read_bytes()
+        # Flip one trailer byte: same length, same frames, different bytes.
+        target.write_bytes(original[:-1] + bytes([original[-1] ^ 0x01]))
+        with self.assertRaises(SystemExit):
+            make_gifs.check([target],
+                            expected={target: make_gifs.sha256(make_gifs.DEMO_GIF)})
+
+    def test_check_reads_only_the_bytes(self):
+        before = {p: (p.stat().st_size, p.stat().st_mtime_ns)
+                  for p in make_gifs.expected_paths()}
+        make_gifs.check(make_gifs.expected_paths())
+        self.assertEqual(
+            before,
+            {p: (p.stat().st_size, p.stat().st_mtime_ns)
+             for p in make_gifs.expected_paths()})
 
 
 def _restrobe(path, hold_ms):
