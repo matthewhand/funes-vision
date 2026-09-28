@@ -139,6 +139,29 @@ def load_settings(path=None, strict=False):
     return cfg
 
 
+def _coerce_int(raw):
+    """``int()`` that also accepts an exactly-integral float (``"5.0"`` -> 5).
+
+    Deliberate asymmetry with the float keys, which already coerce "5.0": a
+    settings file written by a float-typed field, or hand-edited with a
+    trailing ``.0``, was rejected outright by ``int()``, so setting_num logged
+    "ignoring invalid" and silently kept the previous value while the
+    operator's edit looked like it had applied. Truncating 5.5 to 5 would be
+    worse than refusing it, so only exact integers are accepted and anything
+    else raises (the guard then keeps *current*) (#58).
+    """
+    if isinstance(raw, str):
+        val = float(raw)                # ValueError -> the guard keeps current
+        if not val.is_integer():
+            raise ValueError("not a whole number")
+        return int(val)
+    if isinstance(raw, float):
+        if not raw.is_integer():
+            raise ValueError("not a whole number")
+        return int(raw)
+    return int(raw)
+
+
 def setting_num(cfg, key, current, cast=float, lo=None, hi=None):
     """Coerce one numeric settings.json key. Never raises.
 
@@ -151,8 +174,20 @@ def setting_num(cfg, key, current, cast=float, lo=None, hi=None):
 
     Mirrors the max_scans_per_image guard: log the bad value and keep the
     previous one. An absent key keeps *current* too, so a reload never
-    clobbers a value the file does not mention. ``lo``/``hi`` clamp the
-    result. bools are rejected -- True is not a disk budget.
+    clobbers a value the file does not mention. bools are rejected -- True is
+    not a disk budget.
+
+    ``lo``/``hi`` CLAMP, which is only safe when the bound itself is a
+    harmless value. A knob whose *low* end is destructive must not be
+    clamped to it: ``lo=0.0`` on max_age_days meant one mistyped minus sign
+    (``-1``) silently became "expire everything not persistable, right now",
+    and on persist_budget_pct "cap the persist archive at nothing" -- both
+    logged a reassuring ``is below 0.0; clamping`` while deleting verified
+    frames (#54). Those knobs now floor at 1 (the smallest budget that is not
+    self-defeating); knobs where the low end is safe or inert -- max_dir_gb
+    (0 disables the budget passes), burst_threshold_seconds,
+    min_mem_for_local_gb, max_scans_per_image, the multi-image windows --
+    keep clamping.
     """
     if key not in cfg:
         return current
@@ -174,6 +209,55 @@ def setting_num(cfg, key, current, cast=float, lo=None, hi=None):
         logger.warning("%s=%r is above %r; clamping", key, raw, hi)
         val = hi
     return val
+
+
+def setting_list(cfg, key, current):
+    """Coerce one list-valued settings.json key. Never raises.
+
+    The numeric guard's sibling for watch_dirs / cameras / gate_ignore_labels /
+    ignore_regions. Those keys were read with a bare ``cfg.get(key, default)``,
+    so a typo produced a value the pipeline then misread: ``gate_ignore_labels:
+    "car"`` became ``set("car")`` == {"c", "a", "r"} (the letters of the word),
+    and a bare string for watch_dirs/cameras iterated per character. That fails
+    closed by luck rather than by design, and it costs disk, so route the keys
+    through one guard that logs and keeps the previous list (#58).
+
+    Accepted: a list/tuple (copied, so settings.json cannot mutate our
+    runtime list in place), or a single bare string, which is the obvious
+    intent and is wrapped rather than exploded per character. An explicit null
+    or [] clears the list, matching the ``or []`` semantics the callers already
+    had. Everything else (numbers, dicts, bools) is rejected with the prior
+    value kept: wrapping ``7`` into ``[7]`` would be a different kind of typo
+    to debug, not a fix.
+    """
+    if key not in cfg:
+        return current
+    raw = cfg[key]
+    if raw is None or raw == []:
+        return []
+    if isinstance(raw, (list, tuple)):
+        return list(raw)
+    if isinstance(raw, str):
+        logger.warning("coercing scalar %s=%r to a single-element list", key, raw)
+        return [raw]
+    logger.warning("ignoring invalid %s=%r (not a list); keeping %r", key, raw, current)
+    return current
+
+
+def setting_str(cfg, key, current):
+    """Coerce one string-valued settings.json key. Never raises.
+
+    ollama_url is a scalar, not a list, so setting_list() does not apply: a
+    list/dict there used to flow straight into request building and fail later,
+    far from the setting that caused it (#58). Keep the prior URL and log.
+    """
+    if key not in cfg:
+        return current
+    raw = cfg[key]
+    if isinstance(raw, str) and raw.strip():
+        return raw
+    logger.warning("ignoring invalid %s=%r; keeping %r", key, raw, current)
+    return current
 
 
 def apply_settings(cfg=None):
@@ -202,21 +286,33 @@ def apply_settings(cfg=None):
 
     BURST_THRESHOLD_SECONDS = setting_num(cfg, "burst_threshold_seconds",
                                          BURST_THRESHOLD_SECONDS, lo=0.0)
-    MAX_AGE_DAYS = setting_num(cfg, "max_age_days", MAX_AGE_DAYS, lo=0.0)
+    # Floored at 1, not 0: 0 means "every non-persistable frame is expired",
+    # so clamping a mistyped -1 to it deleted the whole negative archive in one
+    # sweep (#54). 1 is the smallest budget that is not self-defeating.
+    MAX_AGE_DAYS = setting_num(cfg, "max_age_days", MAX_AGE_DAYS, lo=1.0)
     # Clamped to >= 0. A negative budget is read as "over budget" by every
     # retention pass, and every category is evictable, so one sweep emptied
     # the camera dir (#22). 0 now means "no disk budget" (eviction skipped),
     # never "delete until empty".
     MAX_DIR_GB = setting_num(cfg, "max_dir_gb", MAX_DIR_GB, lo=0.0)
+    # Floored at 1 for the same reason as max_age_days: 0 caps the persist
+    # archive at zero bytes, i.e. "delete every age-expired LLM timeline
+    # frame" (#54). 100 stays the ceiling.
     PERSIST_BUDGET_PCT = setting_num(cfg, "persist_budget_pct", PERSIST_BUDGET_PCT,
-                                    lo=0.0, hi=100.0)
+                                    lo=1.0, hi=100.0)
     MIN_MEM_FOR_LOCAL_GB = setting_num(cfg, "min_mem_for_local_gb",
                                        MIN_MEM_FOR_LOCAL_GB, lo=0.0)
     ALLOW_CLOUD = cfg.get("allow_cloud", ALLOW_CLOUD)
-    OLLAMA_URL = cfg.get("ollama_url", OLLAMA_URL)
+    OLLAMA_URL = setting_str(cfg, "ollama_url", OLLAMA_URL)
     OLLAMA_KEEP_ALIVE = str(cfg.get("ollama_keep_alive", OLLAMA_KEEP_ALIVE) or "24h")
-    MAX_DEEP_PASSES = setting_num(cfg, "max_deep_passes", MAX_DEEP_PASSES, cast=int, lo=0)
-    DEEP_CONCURRENCY = setting_num(cfg, "deep_concurrency", DEEP_CONCURRENCY, cast=int, lo=0)
+    # Floored at 1: 0 makes `deep_pass_count >= max_deep_passes` true before
+    # the first frame, so a sweep catalogued exactly one row per camera and
+    # the backlog never drained (#54). deep_concurrency 0 additionally raised
+    # ValueError inside ThreadPoolExecutor.
+    MAX_DEEP_PASSES = setting_num(cfg, "max_deep_passes", MAX_DEEP_PASSES,
+                                 cast=_coerce_int, lo=1)
+    DEEP_CONCURRENCY = setting_num(cfg, "deep_concurrency", DEEP_CONCURRENCY,
+                                   cast=_coerce_int, lo=1)
     MODEL_LOCAL = cfg.get("model_local", MODEL_LOCAL)
     MODEL_PRIMARY = cfg.get("model_primary", MODEL_LOCAL)  # default to model_local
     MODEL_FALLBACK = cfg.get("model_fallback", "")
@@ -227,21 +323,17 @@ def apply_settings(cfg=None):
     MULTI_IMAGE_ENABLED = cfg.get("multi_image_enabled", MULTI_IMAGE_ENABLED)
     MULTI_IMAGE_2H = setting_num(cfg, "multi_image_2h_minutes", MULTI_IMAGE_2H, lo=0.0)
     MULTI_IMAGE_3H = setting_num(cfg, "multi_image_3h_minutes", MULTI_IMAGE_3H, lo=0.0)
-    GATE_IGNORE_LABELS = cfg.get("gate_ignore_labels", GATE_IGNORE_LABELS)
-    # `or []` semantics: preserve the empty default and let an explicit
-    # null/[] in settings.json clear the list, but never clobber a value on
-    # reload merely because the key was omitted.
-    if "ignore_regions" in cfg:
-        IGNORE_REGIONS = cfg.get("ignore_regions") or []
-    WATCH_DIRS = cfg.get("watch_dirs", WATCH_DIRS)
-    if "cameras" in cfg:
-        CAMERAS = cfg.get("cameras") or []
+    GATE_IGNORE_LABELS = setting_list(cfg, "gate_ignore_labels", GATE_IGNORE_LABELS)
+    IGNORE_REGIONS = setting_list(cfg, "ignore_regions", IGNORE_REGIONS)
+    WATCH_DIRS = setting_list(cfg, "watch_dirs", WATCH_DIRS)
+    CAMERAS = setting_list(cfg, "cameras", CAMERAS)
     YOLO_DIR = cfg.get("yolo_dir", YOLO_DIR)
 
     try:
         import scans as _scans_mod
         _scans_mod.MAX_SCANS_PER_IMAGE = setting_num(
-            cfg, "max_scans_per_image", _scans_mod.MAX_SCANS_PER_IMAGE, cast=int, lo=0)
+            cfg, "max_scans_per_image", _scans_mod.MAX_SCANS_PER_IMAGE,
+            cast=_coerce_int, lo=0)
     except ImportError as e:
         logger.warning("could not apply max_scans_per_image: %s", e)
 
@@ -931,10 +1023,19 @@ def _atomic_write_json(path, data, indent=None, mode=0o644):
     pipeline writes as its own user — a 0o600 analysis.json 403s the whole
     AI layer of the gallery. Callers that hold secrets (integrations.json)
     should pass mode=0o600.
+
+    The temp file is *created* with that mode (os.open, not open("w")): a
+    plain open() makes it 0666 & ~umask, so a secret sat on disk
+    world-readable from the first byte until the chmod below, and a kill
+    inside that window left a `*.tmp.<pid>.<tid>` holding the token at 0644
+    forever — nothing ever reaps those (#57). The chmod is still needed
+    after the write: the create mode is masked by umask, and a pre-existing
+    temp file (crash residue) keeps whatever mode it already had.
     """
     tmp = f"{path}.tmp.{os.getpid()}.{threading.get_ident()}"
     try:
-        with open(tmp, "w") as f:
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
+        with os.fdopen(fd, "w") as f:
             json.dump(data, f, indent=indent)
             f.flush()
             os.fsync(f.fileno())
@@ -948,18 +1049,81 @@ def _atomic_write_json(path, data, indent=None, mode=0o644):
         raise
 
 
-# Catalog paths whose last load recovered only a *prefix* of a truncated file
-# (see load_json_file). Rows past the cut are gone, so the frames they
-# described look like unanalysed backlog and stop being persistable — the age
-# and disk-budget passes then delete real LLM-verified evidence (#29). While a
-# catalog is partial, retention exempts uncatalogued frames. Module-level (not
-# a return value) so load_json_file keeps a single return type.
-_PARTIAL_CATALOGS = set()
+# Catalog paths whose last load could not account for every row on disk (see
+# load_json_file). Rows are missing, so the frames they described look like
+# unanalysed backlog and stop being persistable — the age and disk-budget
+# passes then delete real LLM-verified evidence (#29). While a catalog is
+# partial, retention exempts uncatalogued frames. Module-level (not a return
+# value) so load_json_file keeps a single return type.
+_PARTIAL_CATALOGS = {}
 
 
 def catalog_is_partial(path=None):
     """True when a catalog is a partial recovery — *path* if given, else any."""
     return bool(_PARTIAL_CATALOGS) if path is None else path in _PARTIAL_CATALOGS
+
+
+def catalog_partial_reason(path):
+    """Why *path* is marked partial, for the operator-facing warning."""
+    return _PARTIAL_CATALOGS.get(path, "")
+
+
+# Mark reasons that mean the bytes on disk still hold a tail we failed to
+# parse. Rewriting the file in place then destroys the only copy of the rows
+# past the cut, so those catalogs are never committed over (#29). The other
+# reasons -- missing, blank, clean but incomplete -- have no tail to preserve,
+# and refusing to commit there would stall the repair forever, so they commit
+# normally and the file is repaired in place.
+_UNPARSEABLE_CATALOGS = frozenset({"partially recovered", "corrupt, nothing recovered"})
+
+
+def catalog_has_unparsed_tail(path):
+    """True when *path* on disk still holds bytes we could not parse."""
+    return _PARTIAL_CATALOGS.get(path) in _UNPARSEABLE_CATALOGS
+
+
+# Frames a catalog is expected to have a row for.
+_IMAGE_SUFFIXES = (".jpg", ".jpeg", ".png", ".gif")
+
+
+def stale_uncatalogued(rows, path):
+    """Frames on disk with no row in *rows* that the catalog should already
+    have described -- i.e. frames whose row was *lost*, not merely absent.
+
+    The distinction is the mtime comparison. An uncatalogued frame is only
+    evidence of a lost row if it predates the catalog itself; anything newer
+    than the last catalog write simply arrived after the last sweep and is the
+    ordinary transient backlog a live camera always has. Without it, every
+    sweep of a working installation would arm the #56 protection (a frame
+    always lands between sweeps) and unanalysed frames would never age out
+    again -- data loss traded for an unbounded disk.
+
+    A catalog that is missing or unreadable has no mtime to compare against,
+    so every uncatalogued frame counts.
+    """
+    if not isinstance(rows, dict):
+        return []
+    try:
+        cut = os.path.getmtime(path)
+    except OSError:
+        cut = None
+    stale = []
+    for d in WATCH_DIRS:
+        try:
+            names = os.listdir(d)
+        except OSError:
+            continue
+        for n in names:
+            if not n.lower().endswith(_IMAGE_SUFFIXES) or n in rows:
+                continue
+            if cut is not None:
+                try:
+                    if os.path.getmtime(os.path.join(d, n)) >= cut:
+                        continue          # arrived after the last catalog write
+                except OSError:
+                    continue
+            stale.append(n)
+    return stale
 
 
 def _recover_truncated_json(text, default):
@@ -1001,39 +1165,72 @@ def _recover_truncated_json(text, default):
     return default
 
 
-def load_json_file(path, default=None, catalog=False):
+def load_json_file(path, default=None, catalog=False, disk_backlog=True):
     """Load JSON from disk. On corruption (e.g. truncated mid-write), attempt
-    recovery. A *catalog* (analysis.json / bursts.json) that was only
-    partially recovered is never written back over the original: the tail past
-    the cut still holds the only record that the frames it described were
-    LLM-verified, and replacing the file with the recovered prefix made those
-    frames uncatalogued — after which retention deleted real verified
-    evidence (#29). The prefix is parked in a ``<path>.recovered`` sidecar, the
-    original bytes are kept, and the path is marked partial so retention
-    exempts uncatalogued frames until a full sweep rebuilds their rows.
+    recovery. A *catalog* (analysis.json / bursts.json) that could not
+    account for every row on disk is marked partial so retention exempts
+    uncatalogued frames: those frames were LLM-verified, and with no row they
+    are not persistable, so the age/budget passes delete real evidence (#29).
     ``catalog=True`` is set by the image catalogs only, so a corrupt
-    retention_log.json cannot arm the protection. Returns a fresh empty
-    dict/list when the file is missing or unrecoverable — never raises for
-    parse errors."""
+    retention_log.json cannot arm the protection. ``disk_backlog`` must be
+    False for a catalog that is not keyed by frame filename (bursts.json):
+    every frame would otherwise read as backlog, which costs one stat per
+    frame per sweep. Returns a fresh empty dict/list when the file is missing
+    or unrecoverable — never raises for parse errors.
+
+    The mark is armed by *every* state that can have lost rows, not only a
+    parse failure, and it is released only when the catalog parses cleanly AND
+    nothing on disk is uncatalogued any more:
+
+    * MISSING, blank, empty (``{}``) and unreadable used to return early
+      *before* the mark was armed, so an archive with no rows read as a
+      legitimately empty catalog: every frame was unanalysed backlog and pass
+      1 deleted the lot before the analysis queue was even built (#56 Gap A).
+      Those are exactly the states the #40 risk section tells operators to
+      create ("delete analysis.json to force a rebuild") and the residue #23
+      leaves behind.
+    * The mark used to be cleared the moment the file parsed, which happens
+      when *this* sweep's own flush completes the JSON — not when the lost
+      rows are back. With a backlog larger than one sweep's deep-pass budget
+      the second sweep therefore deleted the frames the first one had merely
+      re-catalogued a few of (#56 Gap B). Releasing is now conditioned on
+      the backlog actually being empty, so the protection survives until the
+      rows are genuinely rebuilt, and retention resumes by itself afterwards.
+    """
     if default is None:
         default = {}
     empty = {} if isinstance(default, dict) else ([] if isinstance(default, list) else default)
     if not os.path.exists(path):
+        if catalog:
+            _PARTIAL_CATALOGS[path] = "missing"
         return empty
     try:
         with open(path, "r", encoding="utf-8") as f:
             raw = f.read()
     except OSError as e:
         print(f"Warning: could not read {path} ({e}); using empty default")
+        if catalog:
+            _PARTIAL_CATALOGS[path] = "unreadable"
         return empty
     if not raw.strip():
+        if catalog:
+            _PARTIAL_CATALOGS[path] = "blank"
         return empty
     if catalog:
-        _PARTIAL_CATALOGS.discard(path)
-    try:
-        return json.loads(raw)
-    except (ValueError, TypeError) as e:
-        print(f"Warning: {path} is corrupt ({e}); attempting recovery")
+        try:
+            parsed = json.loads(raw)
+        except (ValueError, TypeError) as e:
+            print(f"Warning: {path} is corrupt ({e}); attempting recovery")
+        else:
+            # A clean parse only means the bytes are valid JSON, not that they
+            # are complete. Hold the mark only while frames the catalog should
+            # already describe have no row; release as soon as they do.
+            lost = stale_uncatalogued(parsed, path) if disk_backlog else []
+            if lost:
+                _PARTIAL_CATALOGS[path] = f"no row for {len(lost)} frame(s) on disk"
+            else:
+                _PARTIAL_CATALOGS.pop(path, None)
+            return parsed
     recovered = _recover_truncated_json(raw, empty)
     # Sentinel: recovery failed when we got back the empty default object we
     # passed in *and* the file clearly had substantial content we couldn't parse.
@@ -1043,19 +1240,28 @@ def load_json_file(path, default=None, catalog=False):
         # partial anyway: every row is missing, so every frame looks
         # unanalysed and the age/budget passes would delete the lot.
         if catalog:
-            _PARTIAL_CATALOGS.add(path)
-        print(f"Could not recover {path}; starting from empty"
-              + ("" if catalog else " — uncatalogued frames are protected from retention"))
+            _PARTIAL_CATALOGS[path] = "corrupt, nothing recovered"
+            print(f"Could not recover {path}; starting from empty")
+        else:
+            print(f"Could not recover {path}; starting from empty — it will be "
+                  f"rebuilt from scratch on the next write")
         return empty
     if catalog:
-        _PARTIAL_CATALOGS.add(path)
-    sidecar = f"{path}.recovered"
-    try:
-        _atomic_write_json(sidecar, recovered, indent=2)
-    except OSError as we:
-        print(f"Warning: could not write recovered sidecar {sidecar}: {we}")
-    print(f"Recovered prefix of {path}: retained {n} entries; original left "
-          f"intact, prefix saved to {sidecar}")
+        _PARTIAL_CATALOGS[path] = "partially recovered"
+        sidecar = f"{path}.recovered"
+        try:
+            _atomic_write_json(sidecar, recovered, indent=2)
+        except OSError as we:
+            print(f"Warning: could not write recovered sidecar {sidecar}: {we}")
+        print(f"Recovered prefix of {path}: retained {n} entries; original left "
+              f"intact, prefix saved to {sidecar}")
+    else:
+        # A non-catalog state file (retention_log / alert_state / pins) is
+        # rewritten whole by its own writer, so parking a .recovered sidecar
+        # beside it was litter that only ever confused the next reader, and
+        # "original left intact" was a lie: the very next append replaces it.
+        print(f"Recovered {n} of the entries in {path}; the file is rebuilt "
+              f"from scratch on the next write")
     return recovered
 
 
@@ -1899,8 +2105,11 @@ def apply_retention(image_dir, analysis_data, pins, protect_unanalyzed=None):
     negatives (including car-only), then YOLO-only detections, then
     persistable, then unanalyzed. Pins remain sacred. A non-positive
     max_dir_gb disables passes 2 and 3 rather than emptying the dir (#22), and
-    while a catalog is only a partial recovery uncatalogued frames are exempt
-    too — a lost row must never read as "delete this verified frame" (#29).
+    while a catalog cannot account for every frame on disk, uncatalogued
+    frames are exempt from the *age* pass too — a lost row must never read as
+    "delete this verified frame" (#29, #56). They remain the last thing pass 3
+    evicts, and only when the budget is genuinely blown, so a pipeline that
+    cannot catalogue its backlog still cannot fill the disk.
     Returns the set of deleted filenames."""
     now = time.time()
     deleted = set()
@@ -1947,20 +2156,21 @@ def apply_retention(image_dir, analysis_data, pins, protect_unanalyzed=None):
                 and not retention_is_persistable(analysis_data[f]))
 
     # A frame with no row at all is "unanalysed backlog" — normally evictable.
-    # But when analysis.json was only partially recovered from a truncated
-    # file, the missing rows are lost data, not absent analysis: the frames
-    # they described were LLM-verified and age/budget passes were deleting
-    # real evidence (#29). Protect them until a full sweep rebuilds the rows.
+    # But when analysis.json cannot account for every frame on disk (a partial
+    # recovery from a truncated file, or a missing/blank/empty catalog), the
+    # missing rows are lost data, not absent analysis: the frames they
+    # described were LLM-verified and age/budget passes were deleting real
+    # evidence (#29, #56). Protect them until the backlog is rebuilt.
     def is_uncatalogued(f):
         return protect_unanalyzed and f not in analysis_data
 
     if protect_unanalyzed:
         n_hidden = sum(1 for f in os.listdir(image_dir)
-                       if f.lower().endswith(('.jpg', '.jpeg', '.png', '.gif'))
+                       if f.lower().endswith(_IMAGE_SUFFIXES)
                        and f not in analysis_data)
         if n_hidden:
             print(f"Retention: {n_hidden} uncatalogued frame(s) in {image_dir} are "
-                  f"protected — the catalog is a partial recovery")
+                  f"protected — the catalog cannot account for every frame on disk")
 
     cutoff = now - MAX_AGE_DAYS * 86400
     # A budget of 0 (or, before the clamp in apply_settings, a negative one)
@@ -2013,7 +2223,13 @@ def apply_retention(image_dir, analysis_data, pins, protect_unanalyzed=None):
                            key=lambda e: e[1])
         persistable = sorted((e for e in remaining if is_persistable(e[0])),
                              key=lambda e: e[1])
-        unanalyzed = [] if protect_unanalyzed else sorted(
+        # Unknown frames stay evictable here as the LAST resort, even while the
+        # catalog is partial. Exempting them outright (#29) meant a pipeline
+        # that could not catalogue its backlog filled the disk for ever, which
+        # is its own data loss; this branch is only reached once the budget is
+        # genuinely exceeded and every catalogued category is already gone, it
+        # still evicts oldest-unknown-first behind pins, and it says so.
+        unanalyzed = sorted(
             (e for e in remaining
              if e[0] not in pins and e[0] not in analysis_data),
             key=lambda e: e[1])
@@ -2025,8 +2241,16 @@ def apply_retention(image_dir, analysis_data, pins, protect_unanalyzed=None):
             delete(f)
             total -= size
         if total > budget and unanalyzed:
-            print(f"Retention: still over budget after analyzed frames; "
-                  f"evicting oldest unanalyzed from {image_dir}")
+            if protect_unanalyzed:
+                # Never reached silently: evicting a frame whose row was lost
+                # is the one thing the #56 protection exists to prevent, so the
+                # operator gets told this happened because the disk forced it.
+                print(f"Retention: over budget with {len(unanalyzed)} unanalyzed "
+                      f"frame(s) left in {image_dir} and no catalogued frame "
+                      f"left to evict; reclaiming the oldest as a last resort")
+            else:
+                print(f"Retention: still over budget after analyzed frames; "
+                      f"evicting oldest unanalyzed from {image_dir}")
             for f, mtime, size in unanalyzed:
                 if total <= budget:
                     break
@@ -2257,6 +2481,11 @@ def main(retention_only=False, rescan_days=None, settings_path=None):
                           rescan_days=rescan_days)
     finally:
         lock.release()
+        # The partial-catalog marks record what *this* sweep's catalog load
+        # found; they are re-derived on every load. Clearing them on the way
+        # out keeps a verdict about one tree from leaking into the next sweep
+        # in the same process (#56).
+        _PARTIAL_CATALOGS.clear()
 
 
 def _run_sweep(cfg, retention_only=False, rescan_days=None):
@@ -2279,15 +2508,18 @@ def _run_sweep(cfg, retention_only=False, rescan_days=None):
     analysis_data = load_json_file(analysis_file, {}, catalog=True)
     if not isinstance(analysis_data, dict):
         analysis_data = {}
-    # A partial recovery means rows are missing, not that frames are
-    # unanalysed: exempt uncatalogued frames from retention for this sweep
-    # instead of deleting evidence whose row was lost (#29).
+    # Rows are missing, not that frames are unanalysed: exempt uncatalogued
+    # frames from retention for this sweep instead of deleting evidence whose
+    # row was lost (#29). load_json_file arms this for a missing/blank/empty
+    # catalog too, and holds it until the backlog is genuinely empty (#56).
     protect_unanalyzed = catalog_is_partial(analysis_file)
     if protect_unanalyzed:
-        print(f"WARNING: {os.path.basename(analysis_file)} is a partial recovery "
-              f"(recovered prefix only). Frames with no row are protected from "
-              f"deletion until a full sweep re-analyses them.")
-    burst_data = load_json_file(burst_file, {}, catalog=True)
+        print(f"WARNING: {os.path.basename(analysis_file)} is incomplete "
+              f"({catalog_partial_reason(analysis_file)}). Frames with no row "
+              f"are protected from deletion until a full sweep re-analyses them.")
+    # Keyed by burst id, not by frame filename: no disk backlog check (see
+    # load_json_file's disk_backlog).
+    burst_data = load_json_file(burst_file, {}, catalog=True, disk_backlog=False)
     if not isinstance(burst_data, dict):
         burst_data = {}
     # Legacy repo-wide pins, read-only. The canonical per-camera pins.json is
@@ -2674,19 +2906,21 @@ def _run_sweep(cfg, retention_only=False, rescan_days=None):
     for d in watch_dirs:
         if os.path.exists(d):
             existing.update(os.listdir(d))
-    catalog_partial = catalog_is_partial(analysis_file)
     stale = [] if absent_dirs else [k for k in analysis_data if k not in existing]
     if stale:
         for k in stale:
             del analysis_data[k]
-        if catalog_partial:
-            # Only ever commit a fully parsed catalog: rewriting a partially
-            # recovered one in place discards the truncated tail for good
-            # (#29). A full sweep re-analyses the affected frames and commits
-            # the repaired catalog.
-            print(f"Pruned {len(stale)} stale rows in memory only; the partially "
-                  f"recovered {os.path.basename(analysis_file)} was not rewritten.")
+        if catalog_has_unparsed_tail(analysis_file):
+            # Never commit a catalog whose on-disk bytes still hold a tail we
+            # could not parse: rewriting it in place discards the truncated
+            # rows for good (#29). A full sweep re-analyses the affected frames
+            # and commits the repaired catalog.
+            print(f"Pruned {len(stale)} stale rows in memory only; the "
+                  f"unparsable {os.path.basename(analysis_file)} was not rewritten.")
         else:
+            # Includes a catalog that parsed cleanly but was missing rows for
+            # frames on disk (#56): there is no tail to preserve, and refusing
+            # to commit would keep the catalog incomplete for ever.
             try:
                 _atomic_write_json(analysis_file, analysis_data, indent=2)
                 print(f"Pruned {len(stale)} stale analysis entries.")
@@ -2715,10 +2949,9 @@ def _run_sweep(cfg, retention_only=False, rescan_days=None):
     if bad_bursts:
         for k in bad_bursts:
             del burst_data[k]
-        if catalog_is_partial(burst_file):
+        if catalog_has_unparsed_tail(burst_file):
             print(f"Pruned {len(bad_bursts)} burst rows in memory only; the "
-                  f"partially recovered {os.path.basename(burst_file)} was not "
-                  f"rewritten.")
+                  f"unparsable {os.path.basename(burst_file)} was not rewritten.")
         else:
             try:
                 _atomic_write_json(burst_file, burst_data, indent=2)

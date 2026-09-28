@@ -13,6 +13,7 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -367,6 +368,73 @@ class TestAtomicIO(unittest.TestCase):
             p = os.path.join(d, "secret.json")
             ai._atomic_write_json(p, {"token": "x"}, mode=0o600)
             self.assertEqual(stat.S_IMODE(os.stat(p).st_mode), 0o600)
+
+    def test_secret_temp_file_is_never_world_readable(self):
+        """#57: the temp file used to be created by open(tmp, "w"), i.e. 0666 &
+        ~umask, and only chmod'ed 0600 afterwards. The whole secret sat on disk
+        world-readable from the first byte until that chmod, and a kill in the
+        window left a `*.tmp.<pid>.<tid>` at 0644 for ever.
+
+        The mode must be set AT CREATION, so the check has to happen while the
+        write is still in flight -- inspecting the file at os.replace() time
+        would only prove the chmod already ran.
+        """
+        ai = analyze_images
+        seen = []
+
+        def peek(_fd):
+            # os.fsync: the bytes are in the page cache, the file still exists
+            # under its temp name, and the chmod has not been reached.
+            tmp = [f for f in os.listdir(peek.dir) if ".tmp." in f]
+            seen.append(stat.S_IMODE(os.stat(os.path.join(peek.dir, tmp[0])).st_mode))
+
+        with tempfile.TemporaryDirectory() as d:
+            peek.dir = d
+            p = os.path.join(d, "integrations.json")
+            with mock.patch.object(ai.os, "fsync", peek):
+                ai._atomic_write_json(p, {"slack": {"bot_token": "xoxb-SECRET"}},
+                                      mode=0o600)
+            self.assertEqual(seen, [0o600],
+                             "the secret was readable by other users mid-write")
+            self.assertEqual(stat.S_IMODE(os.stat(p).st_mode), 0o600)
+
+    def test_secret_temp_file_mode_at_swap_in(self):
+        """Same window seen from the other end: whatever os.replace is handed
+        is already 0600, so there is no post-create tightening left to race."""
+        ai = analyze_images
+        seen = {}
+        real = os.replace
+
+        def peek(src, dst):
+            seen["mode"] = stat.S_IMODE(os.stat(src).st_mode)
+            return real(src, dst)
+
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "integrations.json")
+            with mock.patch.object(ai.os, "replace", peek):
+                ai._atomic_write_json(p, {"token": "x"}, mode=0o600)
+        self.assertEqual(seen["mode"], 0o600)
+
+    def test_kill_during_a_secret_write_leaves_nothing_readable(self):
+        """A crash that bypasses the `except Exception` cleanup (a SIGKILL or a
+        power cut) must not leave a readable copy of the token behind. A
+        BaseException is used as the stand-in precisely because the handler
+        catches only Exception, so the temp file survives -- like a hard kill
+        does -- and its mode is what matters."""
+        ai = analyze_images
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "integrations.json")
+            with mock.patch.object(ai.os, "fsync",
+                                   mock.Mock(side_effect=KeyboardInterrupt)):
+                with self.assertRaises(KeyboardInterrupt):
+                    ai._atomic_write_json(p, {"slack": {"bot_token": "xoxb-SECRET"}},
+                                          mode=0o600)
+            leftovers = [f for f in os.listdir(d) if ".tmp." in f]
+            self.assertEqual(len(leftovers), 1, "expected exactly one crash remnant")
+            mode = stat.S_IMODE(os.stat(os.path.join(d, leftovers[0])).st_mode)
+            self.assertEqual(mode, 0o600,
+                             f"crash remnant {leftovers[0]} is world-readable")
+            self.assertEqual(mode & (stat.S_IRGRP | stat.S_IROTH), 0)
 
     def test_concurrent_status_writes_always_valid(self):
         ai = analyze_images
