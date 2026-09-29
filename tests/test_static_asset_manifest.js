@@ -29,17 +29,16 @@ const TARGETS = [
   { file: 'tools/screenshots/proxy.py', label: 'tools/screenshots/proxy.py (fixture stub)' },
 ];
 
-// tools/demo/build_demo.py copies lucide.min.js / favicon.ico / icon.svg /
-// manifest.json and nothing else, so the SPA's Help button
-// (<a id="btn-help" href="USER-GUIDE.html">) 404s in the published demo -- the
-// demo shim sets window.__IS_DEMO__ but the SPA never reads it, so the link is
-// live. Pre-existing, and tools/ is not this phase's to change, so the
-// deviation is recorded here instead of being dropped silently: the assertion
-// below fails if the entry ever goes stale, and any asset NOT in this map has
-// to be added to all four lists.
-const KNOWN_GAPS = [
-  { target: 'tools/demo/build_demo.py', asset: 'USER-GUIDE.html', why: 'the demo bundle ships no walkthrough' },
-];
+// A deviation from "every target ships every asset" may be RECORDED here rather
+// than fixed in the target's own phase -- but only as a debt with a reason, and
+// only until someone closes it: an entry whose target has since started shipping
+// the asset fails the suite below, so a recorded gap can never quietly outlive
+// its own reason. Empty at the moment. The one entry that lived here
+// (USER-GUIDE.html missing from the published demo) is closed: build_demo.py
+// now copies docs/USER-GUIDE.html and its guide/img/ screenshots, and
+// tests/test_demo_build.py asserts it against the real built bundle rather than
+// against a textual scan, which is the check this test cannot make.
+const KNOWN_GAPS = [];
 
 // ---- the assets index.html asks the browser for ---------------------------
 

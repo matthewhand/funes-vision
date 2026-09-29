@@ -118,6 +118,27 @@ def build(out: Path = OUT) -> Path:
         if src.is_file():
             shutil.copy2(src, out / name)
 
+    # Help walkthrough. index.html's #btn-help targets USER-GUIDE.html at the web
+    # root, so the published bundle has to carry it or the button 404s. Copied
+    # unconditionally (not best-effort like the PWA icons above) because it is a
+    # hard link target in the page, not an optional extra.
+    #
+    # The guide is NOT self-contained: it pulls ~14 screenshots from guide/img/
+    # relative to itself, and those live under docs/ too. The other three
+    # deployment targets already ship both (create-index.sh and
+    # tools/deploy-webroot.sh cp both; tools/screenshots/proxy.py serves
+    # /guide/img/ the same way) -- the demo was the odd one out, which is why the
+    # Help button 404ed there and nowhere else.
+    #
+    # Fixture shots only: the PNGs are Grok-generated screenshots of the synthetic
+    # gallery, never live camera frames. tests/test_demo_build.py re-derives the
+    # guide's own image list from the copied HTML and fails if one is missing.
+    shutil.copy2(ROOT / "docs" / "USER-GUIDE.html", out / "USER-GUIDE.html")
+    guide_out = out / "guide" / "img"
+    guide_out.mkdir(parents=True)
+    for png in (ROOT / "docs" / "guide" / "img").glob("*.png"):
+        shutil.copy2(png, guide_out / png.name)
+
     for jpg in FIXTURE_GALLERY.glob("*.jpg"):
         shutil.copy2(jpg, out / jpg.name)
     thumbs = FIXTURE_GALLERY / "thumbs"
