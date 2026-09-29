@@ -90,7 +90,7 @@ welcome via [CONTRIBUTING.md](CONTRIBUTING.md).
 - **[docs/USER-GUIDE.md](docs/USER-GUIDE.md)** — how to use the gallery
 - **[docs/INSTALL.md](docs/INSTALL.md)** — full install (systemd, YOLO, Ollama)
 - **[DEPLOYMENT.md](DEPLOYMENT.md)** — how *this* host runs it (units, ports, cron)
-- **[docs/diagrams/](docs/diagrams/README.md)** — 13 self-contained HTML/SVG diagrams (architecture, sequences, data model, timeline)
+- **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** · **[docs/diagrams/](docs/diagrams/README.md)** — 16 self-contained HTML/SVG diagrams (architecture, `index.html` internals, test gates, deployment, sequences, data model)
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** · **[API.md](API.md)** · **[DEVELOP.md](DEVELOP.md)** · **[ROADMAP.md](ROADMAP.md)**
 - **[CONTRIBUTING.md](CONTRIBUTING.md)** (dev setup, tests, PRs) · **[SECURITY.md](SECURITY.md)** · **[CHANGELOG.md](CHANGELOG.md)**
 - **[LICENSE](LICENSE)** (MIT) · **[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)**
