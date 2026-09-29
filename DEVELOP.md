@@ -427,7 +427,12 @@ localStorage: `webcam_ai_blacklist` (hidden labels) and
   **does not write that field** — it writes HA flags instead (shown as
   badges / ℹ schema). Old catalog rows may still have a caption.
 - Charts: day-planner (per-day 24h timelines, red marks at match
-  time-of-day) + hourly histogram (red overlay = matching share).
+  time-of-day) + hourly histogram (red overlay = matching share). Both live in
+  a `Trends` `<details open>` panel in the content column, above the grid — not
+  a rail section, because the rail is collapsed away below 992px — behind a
+  **By day / By hour / Both** toggle. It ships **open** because
+  `renderActivityChart()` returns early while its `<details>` is closed, so a
+  folded host draws nothing.
 - Grid (and Timeline visit thumbs) lazy-load `thumbs/<file>` via
   IntersectionObserver. A missing thumb shows the unavailable glyph —
   it does **not** pull the full JPEG into the grid. Lightbox / download
@@ -471,8 +476,9 @@ localStorage: `webcam_ai_blacklist` (hidden labels) and
 No build step: the SPA is one file with one inline `<script>` at the end of
 `<body>` (`lucide.min.js` is the only external script). The inline logic is
 split into banner-delimited sections — router, state, pure helpers, rendering,
-live/SSE, bootstrap/events — summarised in the **section map** at the top of
-`index.html` (an HTML comment block, so it costs nothing at runtime).
+live/SSE, bootstrap/events — listed **A–S** in file order in the **section map**
+at the top of `index.html` (an HTML comment block, so it costs nothing at
+runtime).
 
 **Sentinel contract.** Pure, side-effect-free helpers are wrapped in a marker
 pair:
@@ -830,7 +836,7 @@ one-line entry point that puts the loader self-test into that count.
   `smoothFlicker`, `formatDuration`, `formatSeconds`, `backfillProgress`,
   `bucketByHour`, `labelCounts`, `busiestHour`, `filterSnapshot`,
   `upsertSearch`, `removeSearch`, `mergeNewImage`, `detectionEntry`,
-  `escapeHtml`, `isRecent`, `clearedFilters`, `matchesSearch`, `cardAriaLabel`, `badgeLabel`, `visitDateLabel`, `visitsSummary`, `formatCount`, `tabWrap`, `streamStatusText`.
+  `escapeHtml`, `isRecent`, `clearedFilters`, `matchesSearch`, `cardAriaLabel`, `badgeLabel`, `visitDateLabel`, `visitsSummary`, `formatCount`, `tabWrap`, `streamStatusText`, `timeStampLabel`.
 - **Regression guard** (`tests/test_dom_refs.js`): cross-checks every
   `getElementById('x')` the SPA relies on against an `id="x"` in the markup
   (minus a tiny allowlist of runtime-created elements), catching a broken/renamed
@@ -842,9 +848,12 @@ one-line entry point that puts the loader self-test into that count.
   four places that decide what ships — `create-index.sh`,
   `tools/deploy-webroot.sh`, `tools/demo/build_demo.py` and
   `tools/screenshots/proxy.py`. Add a `js/` or `css/` file to the page and this
-  is what stops it 404ing in one deployment target only. (Known pre-existing
-  deviation: the demo bundle ships no `USER-GUIDE.html`, so Help 404s there; it
-  is a named entry in that test, and the entry fails if it ever goes stale.)
+  is what stops it 404ing in one deployment target only. All four now ship
+  `USER-GUIDE.html` with its `guide/img/*.png`, so the Help link resolves in
+  every target. The test's `KNOWN_GAPS` list is the escape hatch for a
+  deviation that cannot be closed yet; it is empty, and a recorded entry fails
+  as soon as its target starts shipping the asset. `tests/test_demo_build.py`
+  proves the demo half against the real built bundle, not a scan of the script.
 - **Inline JS sanity:** extract each `<script>` body and `node --check` it
   before deploying (catches syntax errors the single-file SPA would otherwise
   only reveal in a browser).
