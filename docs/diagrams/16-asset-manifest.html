@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Which files ship, and who decides · funes-vision</title>
+  <link href="fonts.css" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --color-paper:       #080c14;
+      --color-paper-2:     #0f172a;
+      --color-ink:         #f8fafc;
+      --color-muted:       #94a3b8;
+      --color-soft:        #64748b;
+      --color-rule:        rgba(248,250,252,0.12);
+      --color-rule-solid:  rgba(148,163,184,0.30);
+      --color-accent:      #3b82f6;
+      --color-accent-tint: rgba(59,130,246,0.12);
+      --color-link:        #60a5fa;
+      --font-sans:   'Geist', system-ui, sans-serif;
+      --font-serif:  'Instrument Serif', 'Times New Roman', serif;
+      --font-mono:   'Geist Mono', ui-monospace, Menlo, monospace;
+    }
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      color: var(--color-ink);
+      min-height: 100vh;
+      padding: 3rem 2rem;
+    }
+    .container { max-width: 1200px; margin: 0 auto; }
+    .header { margin-bottom: 2.5rem; }
+    .header-eyebrow {
+      font-family: var(--font-mono); font-size: 0.66rem; font-weight: 500;
+      letter-spacing: 0.18em; text-transform: uppercase; color: var(--color-muted);
+      margin-bottom: 0.75rem;
+    }
+    h1 {
+      font-family: var(--font-serif); font-size: clamp(1.75rem, 3vw + 1rem, 2.5rem);
+      font-weight: 400; letter-spacing: -0.02em; line-height: 1.1;
+      color: var(--color-ink); margin-bottom: 0.5rem;
+    }
+    .subtitle {
+      font-size: 1rem; line-height: 1.55; color: var(--color-muted); max-width: 60ch;
+    }
+    .diagram-container { background: transparent; border: none; padding: 0; overflow-x: auto; }
+    svg { width: 100%; min-width: 900px; display: block; }
+    .cards { display: grid; grid-template-columns: 1.1fr 1fr 0.9fr; gap: 1rem; margin-top: 1.5rem; }
+    @media (max-width: 900px) { .cards { grid-template-columns: 1fr; } }
+    .card {
+      background: var(--color-paper-2);
+      border: 1px solid var(--color-rule);
+      border-radius: 6px;
+      padding: 1.25rem;
+    }
+    .card-header {
+      display: flex; align-items: center; gap: 0.6rem;
+      margin-bottom: 0.875rem; padding-bottom: 0.875rem;
+      border-bottom: 1px solid var(--color-rule);
+    }
+    .card-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .card-dot.ink   { background: var(--color-ink); }
+    .card-dot.muted { background: var(--color-muted); }
+    .card-dot.coral { background: var(--color-accent); }
+    .card-dot.link  { background: var(--color-link); }
+    .card-dot.soft  { background: var(--color-soft); }
+    .card h3 { font-size: 0.875rem; font-weight: 600; color: var(--color-ink); }
+    .card ul { list-style: none; color: var(--color-muted); font-size: 0.8125rem; line-height: 1.55; }
+    .card li { margin-bottom: 0.3rem; padding-left: 0.875rem; position: relative; }
+    .card li::before { content: '—'; position: absolute; left: 0; color: var(--color-soft); font-size: 0.75rem; }
+    .footer {
+      margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid var(--color-rule);
+      font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.06em;
+      color: var(--color-soft); display: flex; justify-content: space-between;
+      flex-wrap: wrap; gap: 0.5rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <p class="header-eyebrow">Data flow · funes-vision</p>
+      <h1>Which files ship, and who decides</h1>
+      <p class="subtitle">One page asks for its static assets by name. Four unrelated places decide what actually gets copied to a web root, a demo bundle or a test stub. Miss one and the page still works in the other three, so nothing complains — which is why one test exists purely to diff them.</p>
+    </div>
+
+    <div class="diagram-container">
+      <svg viewBox="0 0 1104 620" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="16-asset-manifest-title 16-asset-manifest-desc">
+        <title id="16-asset-manifest-title">Which files ship, and who decides</title>
+        <desc id="16-asset-manifest-desc">The local asset references inside index.html fan out to four independent shipping targets — the inotify web-root sweep, the explicit webroot sync script, the published demo bundle and the fixture stub server — with a single test suite re-deriving the asset list from index.html and asserting all four targets enumerate it.</desc>
+        <defs>
+          <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#94a3b8"/>
+          </marker>
+          <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#3b82f6"/>
+          </marker>
+        </defs>
+
+        <rect width="100%" height="100%" fill="#080c14"/>
+
+        <!-- ARROWS (drawn before nodes) -->
+        <path d="M 288,44 H 352 Q 360,44 360,52 V 62 Q 360,70 352,70 H 436" fill="none" stroke="#94a3b8" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <path d="M 288,60 H 340 Q 348,60 348,68 V 182 Q 348,190 340,190 H 436" fill="none" stroke="#94a3b8" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <path d="M 288,76 H 328 Q 336,76 336,84 V 302 Q 336,310 328,310 H 436" fill="none" stroke="#94a3b8" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <path d="M 288,92 H 316 Q 324,92 324,100 V 422 Q 324,430 316,430 H 436" fill="none" stroke="#94a3b8" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <line x1="168" y1="108" x2="168" y2="440" stroke="#3b82f6" stroke-width="1.2" marker-end="url(#arrow-accent)"/>
+
+        <!-- ARROW LABEL (opaque mask, 8px gap to the stroke) -->
+        <rect x="176" y="264" width="116" height="12" rx="2" fill="#080c14"/>
+        <text x="234" y="273" fill="#3b82f6" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">DERIVES THE LIST</text>
+
+        <!-- SOURCE (focal) -->
+        <rect x="24" y="32" width="264" height="76" rx="6" fill="#080c14"/>
+        <rect x="24" y="32" width="264" height="76" rx="6" fill="rgba(59,130,246,0.12)" stroke="#3b82f6" stroke-width="1.2"/>
+        <rect x="32" y="38" width="48" height="12" rx="2" fill="transparent" stroke="rgba(59,130,246,0.60)" stroke-width="0.8"/>
+        <text x="56" y="47" fill="#3b82f6" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">SOURCE</text>
+        <text x="32" y="66" fill="#f8fafc" font-size="12" font-weight="600" font-family="'Geist', sans-serif">index.html</text>
+        <text x="32" y="84" fill="#94a3b8" font-size="9" font-family="'Geist Mono', monospace">every local src= and href=</text>
+        <text x="32" y="100" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace">regex-derived, never hardcoded</text>
+
+        <!-- TARGET 1 -->
+        <rect x="436" y="32" width="620" height="76" rx="6" fill="#080c14"/>
+        <rect x="436" y="32" width="620" height="76" rx="6" fill="#0f172a" stroke="rgba(248,250,252,0.30)" stroke-width="1"/>
+        <rect x="444" y="38" width="40" height="12" rx="2" fill="transparent" stroke="rgba(148,163,184,0.40)" stroke-width="0.8"/>
+        <text x="464" y="47" fill="rgba(148,163,184,0.80)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">SWEEP</text>
+        <text x="444" y="66" fill="#f8fafc" font-size="12" font-weight="600" font-family="'Geist', sans-serif">The inotify sweep that copies into the served camera root</text>
+        <text x="444" y="84" fill="#94a3b8" font-size="9" font-family="'Geist Mono', monospace">create-index.sh:50-58 · only fires on a new JPEG or the 60 s idle sweep, behind a flock</text>
+        <text x="444" y="100" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace">the five, plus docs/USER-GUIDE.html rewritten flat as USER-GUIDE.html</text>
+
+        <!-- TARGET 2 -->
+        <rect x="436" y="152" width="620" height="76" rx="6" fill="#080c14"/>
+        <rect x="436" y="152" width="620" height="76" rx="6" fill="#0f172a" stroke="rgba(248,250,252,0.30)" stroke-width="1"/>
+        <rect x="444" y="158" width="32" height="12" rx="2" fill="transparent" stroke="rgba(148,163,184,0.40)" stroke-width="0.8"/>
+        <text x="460" y="167" fill="rgba(148,163,184,0.80)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">SYNC</text>
+        <text x="444" y="186" fill="#f8fafc" font-size="12" font-weight="600" font-family="'Geist', sans-serif">The explicit sync that also fails on drift from HEAD</text>
+        <text x="444" y="204" fill="#94a3b8" font-size="9" font-family="'Geist Mono', monospace">tools/deploy-webroot.sh:26-37,59 · two arrays: ASSETS[] and OPTIONAL_ASSETS[]</text>
+        <text x="444" y="220" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace">basename() flattens docs/USER-GUIDE.html to the image root; a UI-only edit triggers no sweep</text>
+
+        <!-- TARGET 3 -->
+        <rect x="436" y="272" width="620" height="76" rx="6" fill="#080c14"/>
+        <rect x="436" y="272" width="620" height="76" rx="6" fill="#0f172a" stroke="rgba(248,250,252,0.30)" stroke-width="1"/>
+        <rect x="444" y="278" width="32" height="12" rx="2" fill="transparent" stroke="rgba(148,163,184,0.40)" stroke-width="0.8"/>
+        <text x="460" y="287" fill="rgba(148,163,184,0.80)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">DEMO</text>
+        <text x="444" y="306" fill="#f8fafc" font-size="12" font-weight="600" font-family="'Geist', sans-serif">The published static demo bundle</text>
+        <text x="444" y="324" fill="#94a3b8" font-size="9" font-family="'Geist Mono', monospace">tools/demo/build_demo.py:94-118 · injects ./static/demo-shim.js, then copies four files</text>
+        <text x="444" y="340" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace">lucide.min.js · favicon.ico · icon.svg · manifest.json — no USER-GUIDE.html, so Help 404s there</text>
+
+        <!-- TARGET 4 -->
+        <rect x="436" y="392" width="620" height="76" rx="6" fill="#080c14"/>
+        <rect x="436" y="392" width="620" height="76" rx="6" fill="#0f172a" stroke="rgba(248,250,252,0.30)" stroke-width="1"/>
+        <rect x="444" y="398" width="32" height="12" rx="2" fill="transparent" stroke="rgba(148,163,184,0.40)" stroke-width="0.8"/>
+        <text x="460" y="407" fill="rgba(148,163,184,0.80)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">STUB</text>
+        <text x="444" y="426" fill="#f8fafc" font-size="12" font-weight="600" font-family="'Geist', sans-serif">The fixture stub behind the screenshot and a11y gate</text>
+        <text x="444" y="444" fill="#94a3b8" font-size="9" font-family="'Geist Mono', monospace">tools/screenshots/proxy.py:229-243 · a sibling test re-derives its /api/* allowlist the same way</text>
+        <text x="444" y="460" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace">manifest.json · icon.svg · favicon.ico · lucide.min.js</text>
+
+        <!-- GUARD (focal) -->
+        <rect x="24" y="440" width="264" height="92" rx="6" fill="#080c14"/>
+        <rect x="24" y="440" width="264" height="92" rx="6" fill="rgba(59,130,246,0.12)" stroke="#3b82f6" stroke-width="1.2"/>
+        <rect x="32" y="446" width="40" height="12" rx="2" fill="transparent" stroke="rgba(59,130,246,0.60)" stroke-width="0.8"/>
+        <text x="52" y="455" fill="#3b82f6" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">GUARD</text>
+        <text x="32" y="476" fill="#f8fafc" font-size="12" font-weight="600" font-family="'Geist', sans-serif">test_static_asset_manifest.js</text>
+        <text x="32" y="496" fill="#94a3b8" font-size="9" font-family="'Geist Mono', monospace">asserts all four lists agree</text>
+        <text x="32" y="512" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace">one known deviation is allowed</text>
+        <text x="32" y="526" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace">and fails once it goes stale</text>
+
+        <!-- LEGEND -->
+        <line x1="30" y1="572" x2="1074" y2="572" stroke="rgba(248,250,252,0.12)" stroke-width="0.8"/>
+        <text x="32" y="596" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">LEGEND</text>
+        <rect x="136" y="586" width="12" height="12" rx="2" fill="rgba(59,130,246,0.12)" stroke="#3b82f6" stroke-width="1"/>
+        <text x="154" y="596" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace">SOURCE OF TRUTH / ITS GUARD</text>
+        <rect x="452" y="586" width="12" height="12" rx="2" fill="#0f172a" stroke="rgba(148,163,184,0.30)" stroke-width="1"/>
+        <text x="470" y="596" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace">SHIPPING TARGET · FOUR INDEPENDENT COPIES OF ONE LIST</text>
+      </svg>
+    </div>
+
+    <div class="cards">
+      <div class="card">
+        <div class="card-header"><span class="card-dot coral"></span><h3>Why this bites during the split</h3></div>
+        <ul>
+          <li>Moving markup into <code>js/*.js</code> and <code>css/*.css</code> adds new <code>src</code>/<code>href</code> values, so the asset set grows.</li>
+          <li>Each new file has to be added to all four lists in the same commit. Three out of four still looks fine on screen.</li>
+          <li>The failure is silent by construction: a missing file 404s in exactly one target and nowhere else, so no other test sees it.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-dot muted"></span><h3>The one deviation on record</h3></div>
+        <ul>
+          <li><code>tools/demo/build_demo.py</code> ships no <code>USER-GUIDE.html</code>, so the gallery's Help link 404s in the published demo. The demo sets <code>window.__IS_DEMO__</code> but the SPA never reads it, so the link stays live.</li>
+          <li>It is recorded as a named <code>KNOWN_GAPS</code> entry rather than dropped, so the assertion fails if the entry ever goes stale.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-dot link"></span><h3>Two lists, not one</h3></div>
+        <ul>
+          <li><code>tools/deploy-webroot.sh</code> keeps <code>ASSETS[]</code> and <code>OPTIONAL_ASSETS[]</code> apart and copies with <code>basename()</code>, which is what flattens <code>docs/USER-GUIDE.html</code> to the image root.</li>
+          <li>Any asset not in the manifest map has to reach all four lists; anything in it must match exactly.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="footer">
+      <span>funes-vision · docs/diagrams</span>
+      <span>Source: tests/test_static_asset_manifest.js:1-60 · create-index.sh:48-58 · tools/deploy-webroot.sh:24-37,59-62 · tools/demo/build_demo.py:33-38,94-118 · tools/screenshots/proxy.py:30-42,229-243 · DEVELOP.md:840-847</span>
+    </div>
+  </div>
+</body>
+</html>

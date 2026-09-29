@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>index.html internals · funes-vision</title>
+  <link href="fonts.css" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --color-paper:       #080c14;
+      --color-paper-2:     #0f172a;
+      --color-ink:         #f8fafc;
+      --color-muted:       #94a3b8;
+      --color-soft:        #64748b;
+      --color-rule:        rgba(248,250,252,0.12);
+      --color-rule-solid:  rgba(148,163,184,0.30);
+      --color-accent:      #3b82f6;
+      --color-accent-tint: rgba(59,130,246,0.12);
+      --color-link:        #60a5fa;
+      --font-sans:   'Geist', system-ui, sans-serif;
+      --font-serif:  'Instrument Serif', 'Times New Roman', serif;
+      --font-mono:   'Geist Mono', ui-monospace, Menlo, monospace;
+    }
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      color: var(--color-ink);
+      min-height: 100vh;
+      padding: 3rem 2rem;
+    }
+    .container { max-width: 1200px; margin: 0 auto; }
+    .header { margin-bottom: 2.5rem; }
+    .header-eyebrow {
+      font-family: var(--font-mono); font-size: 0.66rem; font-weight: 500;
+      letter-spacing: 0.18em; text-transform: uppercase; color: var(--color-muted);
+      margin-bottom: 0.75rem;
+    }
+    h1 {
+      font-family: var(--font-serif); font-size: clamp(1.75rem, 3vw + 1rem, 2.5rem);
+      font-weight: 400; letter-spacing: -0.02em; line-height: 1.1;
+      color: var(--color-ink); margin-bottom: 0.5rem;
+    }
+    .subtitle {
+      font-size: 1rem; line-height: 1.55; color: var(--color-muted); max-width: 60ch;
+    }
+    .diagram-container { background: transparent; border: none; padding: 0; overflow-x: auto; }
+    svg { width: 100%; min-width: 900px; display: block; }
+    .cards { display: grid; grid-template-columns: 1.1fr 1fr 0.9fr; gap: 1rem; margin-top: 1.5rem; }
+    @media (max-width: 900px) { .cards { grid-template-columns: 1fr; } }
+    .card {
+      background: var(--color-paper-2);
+      border: 1px solid var(--color-rule);
+      border-radius: 6px;
+      padding: 1.25rem;
+    }
+    .card-header {
+      display: flex; align-items: center; gap: 0.6rem;
+      margin-bottom: 0.875rem; padding-bottom: 0.875rem;
+      border-bottom: 1px solid var(--color-rule);
+    }
+    .card-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .card-dot.ink   { background: var(--color-ink); }
+    .card-dot.muted { background: var(--color-muted); }
+    .card-dot.coral { background: var(--color-accent); }
+    .card-dot.link  { background: var(--color-link); }
+    .card-dot.soft  { background: var(--color-soft); }
+    .card h3 { font-size: 0.875rem; font-weight: 600; color: var(--color-ink); }
+    .card ul { list-style: none; color: var(--color-muted); font-size: 0.8125rem; line-height: 1.55; }
+    .card li { margin-bottom: 0.3rem; padding-left: 0.875rem; position: relative; }
+    .card li::before { content: '—'; position: absolute; left: 0; color: var(--color-soft); font-size: 0.75rem; }
+    .footer {
+      margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid var(--color-rule);
+      font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.06em;
+      color: var(--color-soft); display: flex; justify-content: space-between;
+      flex-wrap: wrap; gap: 0.5rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <p class="header-eyebrow">Architecture · funes-vision</p>
+      <h1>Inside <code>index.html</code>: the A–S section map</h1>
+      <p class="subtitle">The SPA is one inline classic <code>&lt;script&gt;</code> (lines 3126–8944, 281,628 bytes, 197 <code>function</code> declarations). The hand-maintained comment block at the top of the file names it A–S; this diagram groups those 19 letters by concern so you know which group to open before you start editing.</p>
+    </div>
+
+    <div class="diagram-container">
+      <svg viewBox="0 0 1104 700" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="14-frontend-internals-title 14-frontend-internals-desc">
+        <title id="14-frontend-internals-title">Inside index.html: the A–S section map</title>
+        <desc id="14-frontend-internals-desc">The single inline script of the gallery SPA divided into eight concern groups — routing, state, filtering, rendering, pure helpers, API access, live updates and bootstrap — with the 95 sentinel-wrapped pure helpers feeding the Node test suites and the API-access and live-update groups talking to the api_server process over fetch and Server-Sent Events.</desc>
+        <defs>
+          <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#94a3b8"/>
+          </marker>
+          <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#3b82f6"/>
+          </marker>
+          <marker id="arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#60a5fa"/>
+          </marker>
+        </defs>
+
+        <rect width="100%" height="100%" fill="#080c14"/>
+
+        <!-- ZONES (drawn first) -->
+        <rect x="24" y="24" width="1056" height="420" rx="8" fill="rgba(248,250,252,0.02)" stroke="rgba(248,250,252,0.10)" stroke-width="0.8"/>
+        <rect x="396" y="28" width="312" height="12" rx="2" fill="#080c14"/>
+        <text x="552" y="37" fill="rgba(148,163,184,0.55)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.14em">ONE INLINE &lt;SCRIPT&gt; · index.html:3126–8944</text>
+
+        <rect x="24" y="480" width="1056" height="132" rx="8" fill="rgba(248,250,252,0.02)" stroke="rgba(248,250,252,0.10)" stroke-width="0.8"/>
+        <rect x="468" y="484" width="168" height="12" rx="2" fill="#080c14"/>
+        <text x="552" y="493" fill="rgba(148,163,184,0.55)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.14em">OUTSIDE THE PAGE</text>
+
+        <!-- ARROWS (drawn before nodes) -->
+        <line x1="166" y1="416" x2="166" y2="508" stroke="#3b82f6" stroke-width="1.2" marker-end="url(#arrow-accent)"/>
+        <line x1="422" y1="416" x2="422" y2="508" stroke="#60a5fa" stroke-width="1.2" marker-end="url(#arrow-link)"/>
+        <line x1="678" y1="416" x2="678" y2="508" stroke="#60a5fa" stroke-width="1.2" marker-end="url(#arrow-link)"/>
+
+        <!-- ARROW LABELS (opaque masks, 8px gap to the stroke) -->
+        <rect x="174" y="452" width="72" height="12" rx="2" fill="#080c14"/>
+        <text x="210" y="461" fill="#3b82f6" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">EVALS PAIRS</text>
+
+        <rect x="430" y="452" width="108" height="12" rx="2" fill="#080c14"/>
+        <text x="484" y="461" fill="#60a5fa" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">POST /api/pin</text>
+
+        <rect x="686" y="452" width="112" height="12" rx="2" fill="#080c14"/>
+        <text x="742" y="461" fill="#60a5fa" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">GET /api/events</text>
+
+        <!-- NODES · row 1 -->
+        <!-- ROUTING -->
+        <rect x="48" y="72" width="236" height="160" rx="6" fill="#080c14"/>
+        <rect x="48" y="72" width="236" height="160" rx="6" fill="#0f172a" stroke="rgba(248,250,252,0.30)" stroke-width="1"/>
+        <rect x="56" y="78" width="48" height="12" rx="2" fill="transparent" stroke="rgba(148,163,184,0.40)" stroke-width="0.8"/>
+        <text x="80" y="87" fill="rgba(148,163,184,0.80)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">ROUTE</text>
+        <text x="56" y="104" fill="#f8fafc" font-size="12" font-weight="600" font-family="'Geist', sans-serif">Routing</text>
+        <rect x="56" y="123" width="16" height="12" rx="2" fill="transparent" stroke="rgba(148,163,184,0.40)" stroke-width="0.8"/>
+        <text x="64" y="132" fill="rgba(148,163,184,0.80)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle">A</text>
+        <text x="78" y="132" fill="#94a3b8" font-size="9" font-family="'Geist Mono', monospace">router + camera registry</text>
+        <rect x="56" y="143" width="16" height="12" rx="2" fill="transparent" stroke="rgba(148,163,184,0.40)" stroke-width="0.8"/>
+        <text x="64" y="152" fill="rgba(148,163,184,0.80)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle">E</text>
+        <text x="78" y="152" fill="#94a3b8" font-size="9" font-family="'Geist Mono', monospace">dashboard view /cameras/</text>
+        <text x="56" y="216" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace">timeline · objects · all</text>
+
+        <!-- STATE -->
+        <rect x="304" y="72" width="236" height="160" rx="6" fill="#080c14"/>
+        <rect x="304" y="72" width="236" height="160" rx="6" fill="#0f172a" stroke="rgba(248,250,252,0.30)" stroke-width="1"/>
+        <rect x="312" y="78" width="40" height="12" rx="2" fill="transparent" stroke="rgba(148,163,184,0.40)" stroke-width="0.8"/>
+        <text x="332" y="87" fill="rgba(148,163,184,0.80)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">STATE</text>
+        <text x="312" y="104" fill="#f8fafc" font-size="12" font-weight="600" font-family="'Geist', sans-serif">State</text>
+        <rect x="312" y="123" width="16" height="12" rx="2" fill="transparent" stroke="rgba(148,163,184,0.40)" stroke-width="0.8"/>
+        <text x="320" y="132" fill="rgba(148,163,184,0.80)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle">B</text>
+        <text x="334" y="132" fill="#94a3b8" font-size="9" font-family="'Geist Mono', monospace">const state — the one store</text>
+        <text x="312" y="216" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace">filters · tabs · lightbox · zoom · sse</text>
+
+        <!-- FILTER -->
+        <rect x="560" y="72" width="236" height="160" rx="6" fill="#080c14"/>
+        <rect x="560" y="72" width="236" height="160" rx="6" fill="#0f172a" stroke="rgba(248,250,252,0.30)" stroke-width="1"/>
+        <rect x="568" y="78" width="44" height="12" rx="2" fill="transparent" stroke="rgba(148,163,184,0.40)" stroke-width="0.8"/>
+        <text x="590" y="87" fill="rgba(148,163,184,0.80)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">FILTER</text>
+        <text x="568" y="104" fill="#f8fafc" font-size="12" font-weight="600" font-family="'Geist', sans-serif">Filtering</text>
+        <rect x="568" y="123" width="16" height="12" rx="2" fill="transparent" stroke="rgba(148,163,184,0.40)" stroke-width="0.8"/>
+        <text x="576" y="132" fill="rgba(148,163,184,0.80)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle">I</text>
+        <text x="590" y="132" fill="#94a3b8" font-size="9" font-family="'Geist Mono', monospace">object filters + blacklist</text>
+        <rect x="568" y="143" width="16" height="12" rx="2" fill="transparent" stroke="rgba(148,163,184,0.40)" stroke-width="0.8"/>
+        <text x="576" y="152" fill="rgba(148,163,184,0.80)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle">J</text>
+        <text x="590" y="152" fill="#94a3b8" font-size="9" font-family="'Geist Mono', monospace">filter + NL search pipeline</text>
+        <text x="568" y="216" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace">writes state.filteredImages</text>
+
+        <!-- RENDER -->
+        <rect x="816" y="72" width="236" height="160" rx="6" fill="#080c14"/>
+        <rect x="816" y="72" width="236" height="160" rx="6" fill="#0f172a" stroke="rgba(248,250,252,0.30)" stroke-width="1"/>
+        <rect x="824" y="78" width="48" height="12" rx="2" fill="transparent" stroke="rgba(148,163,184,0.40)" stroke-width="0.8"/>
+        <text x="848" y="87" fill="rgba(148,163,184,0.80)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">RENDER</text>
+        <text x="824" y="104" fill="#f8fafc" font-size="12" font-weight="600" font-family="'Geist', sans-serif">Rendering</text>
+        <rect x="824" y="123" width="16" height="12" rx="2" fill="transparent" stroke="rgba(148,163,184,0.40)" stroke-width="0.8"/>
+        <text x="832" y="132" fill="rgba(148,163,184,0.80)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle">F</text>
+        <text x="846" y="132" fill="#94a3b8" font-size="9" font-family="'Geist Mono', monospace">date rail + activity chart</text>
+        <rect x="824" y="143" width="16" height="12" rx="2" fill="transparent" stroke="rgba(148,163,184,0.40)" stroke-width="0.8"/>
+        <text x="832" y="152" fill="rgba(148,163,184,0.80)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle">L</text>
+        <text x="846" y="152" fill="#94a3b8" font-size="9" font-family="'Geist Mono', monospace">timeline + visit cards</text>
+        <rect x="824" y="163" width="16" height="12" rx="2" fill="transparent" stroke="rgba(148,163,184,0.40)" stroke-width="0.8"/>
+        <text x="832" y="172" fill="rgba(148,163,184,0.80)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle">N</text>
+        <text x="846" y="172" fill="#94a3b8" font-size="9" font-family="'Geist Mono', monospace">grid + pagination sentinel</text>
+        <rect x="824" y="183" width="16" height="12" rx="2" fill="transparent" stroke="rgba(148,163,184,0.40)" stroke-width="0.8"/>
+        <text x="832" y="192" fill="rgba(148,163,184,0.80)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle">O</text>
+        <text x="846" y="192" fill="#94a3b8" font-size="9" font-family="'Geist Mono', monospace">lightbox zoom + slideshow</text>
+        <text x="824" y="216" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace">four views, one render path</text>
+
+        <!-- NODES · row 2 -->
+        <!-- PURE (focal) -->
+        <rect x="48" y="256" width="236" height="160" rx="6" fill="#080c14"/>
+        <rect x="48" y="256" width="236" height="160" rx="6" fill="rgba(59,130,246,0.12)" stroke="#3b82f6" stroke-width="1.2"/>
+        <rect x="56" y="262" width="36" height="12" rx="2" fill="transparent" stroke="rgba(59,130,246,0.60)" stroke-width="0.8"/>
+        <text x="74" y="271" fill="#3b82f6" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">PURE</text>
+        <text x="56" y="288" fill="#f8fafc" font-size="12" font-weight="600" font-family="'Geist', sans-serif">Pure helpers</text>
+        <rect x="56" y="307" width="16" height="12" rx="2" fill="transparent" stroke="rgba(59,130,246,0.60)" stroke-width="0.8"/>
+        <text x="64" y="316" fill="#3b82f6" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle">C</text>
+        <text x="78" y="316" fill="#94a3b8" font-size="9" font-family="'Geist Mono', monospace">cameras · taxonomy · time</text>
+        <rect x="56" y="327" width="16" height="12" rx="2" fill="transparent" stroke="rgba(59,130,246,0.60)" stroke-width="0.8"/>
+        <text x="64" y="336" fill="#3b82f6" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle">G</text>
+        <text x="78" y="336" fill="#94a3b8" font-size="9" font-family="'Geist Mono', monospace">labels · badges · counts</text>
+        <rect x="56" y="347" width="16" height="12" rx="2" fill="transparent" stroke="rgba(59,130,246,0.60)" stroke-width="0.8"/>
+        <text x="64" y="356" fill="#3b82f6" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle">K</text>
+        <text x="78" y="356" fill="#94a3b8" font-size="9" font-family="'Geist Mono', monospace">dates · visits · duration</text>
+        <text x="56" y="400" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace">95 pure:NAME sentinel pairs</text>
+
+        <!-- API -->
+        <rect x="304" y="256" width="236" height="160" rx="6" fill="#080c14"/>
+        <rect x="304" y="256" width="236" height="160" rx="6" fill="#0f172a" stroke="rgba(248,250,252,0.30)" stroke-width="1"/>
+        <rect x="312" y="262" width="28" height="12" rx="2" fill="transparent" stroke="rgba(148,163,184,0.40)" stroke-width="0.8"/>
+        <text x="326" y="271" fill="rgba(148,163,184,0.80)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">API</text>
+        <text x="312" y="288" fill="#f8fafc" font-size="12" font-weight="600" font-family="'Geist', sans-serif">Write API</text>
+        <rect x="312" y="307" width="16" height="12" rx="2" fill="transparent" stroke="rgba(148,163,184,0.40)" stroke-width="0.8"/>
+        <text x="320" y="316" fill="rgba(148,163,184,0.80)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle">M</text>
+        <text x="334" y="316" fill="#94a3b8" font-size="9" font-family="'Geist Mono', monospace">pin · delete · settings</text>
+        <text x="312" y="400" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace">+ mask and zone editors</text>
+
+        <!-- LIVE -->
+        <rect x="560" y="256" width="236" height="160" rx="6" fill="#080c14"/>
+        <rect x="560" y="256" width="236" height="160" rx="6" fill="#0f172a" stroke="rgba(248,250,252,0.30)" stroke-width="1"/>
+        <rect x="568" y="262" width="32" height="12" rx="2" fill="transparent" stroke="rgba(148,163,184,0.40)" stroke-width="0.8"/>
+        <text x="584" y="271" fill="rgba(148,163,184,0.80)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">LIVE</text>
+        <text x="568" y="288" fill="#f8fafc" font-size="12" font-weight="600" font-family="'Geist', sans-serif">Live updates</text>
+        <rect x="568" y="307" width="16" height="12" rx="2" fill="transparent" stroke="rgba(148,163,184,0.40)" stroke-width="0.8"/>
+        <text x="576" y="316" fill="rgba(148,163,184,0.80)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle">H</text>
+        <text x="590" y="316" fill="#94a3b8" font-size="9" font-family="'Geist Mono', monospace">SSE merge + saved searches</text>
+        <rect x="568" y="327" width="16" height="12" rx="2" fill="transparent" stroke="rgba(148,163,184,0.40)" stroke-width="0.8"/>
+        <text x="576" y="336" fill="rgba(148,163,184,0.80)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle">P</text>
+        <text x="590" y="336" fill="#94a3b8" font-size="9" font-family="'Geist Mono', monospace">EventSource + poll fallback</text>
+        <text x="568" y="400" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace">6 s poll when the stream drops</text>
+
+        <!-- BOOT -->
+        <rect x="816" y="256" width="236" height="160" rx="6" fill="#080c14"/>
+        <rect x="816" y="256" width="236" height="160" rx="6" fill="#0f172a" stroke="rgba(248,250,252,0.30)" stroke-width="1"/>
+        <rect x="824" y="262" width="32" height="12" rx="2" fill="transparent" stroke="rgba(148,163,184,0.40)" stroke-width="0.8"/>
+        <text x="840" y="271" fill="rgba(148,163,184,0.80)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">BOOT</text>
+        <text x="824" y="288" fill="#f8fafc" font-size="12" font-weight="600" font-family="'Geist', sans-serif">Bootstrap</text>
+        <rect x="824" y="307" width="16" height="12" rx="2" fill="transparent" stroke="rgba(148,163,184,0.40)" stroke-width="0.8"/>
+        <text x="832" y="316" fill="rgba(148,163,184,0.80)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle">D</text>
+        <text x="846" y="316" fill="#94a3b8" font-size="9" font-family="'Geist Mono', monospace">DOM binding + catalog load</text>
+        <rect x="824" y="327" width="16" height="12" rx="2" fill="transparent" stroke="rgba(148,163,184,0.40)" stroke-width="0.8"/>
+        <text x="832" y="336" fill="rgba(148,163,184,0.80)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle">Q</text>
+        <text x="846" y="336" fill="#94a3b8" font-size="9" font-family="'Geist Mono', monospace">DOMContentLoaded 1/3</text>
+        <rect x="824" y="347" width="16" height="12" rx="2" fill="transparent" stroke="rgba(148,163,184,0.40)" stroke-width="0.8"/>
+        <text x="832" y="356" fill="rgba(148,163,184,0.80)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle">R</text>
+        <text x="846" y="356" fill="#94a3b8" font-size="9" font-family="'Geist Mono', monospace">2/3 status + AI polling</text>
+        <rect x="824" y="367" width="16" height="12" rx="2" fill="transparent" stroke="rgba(148,163,184,0.40)" stroke-width="0.8"/>
+        <text x="832" y="376" fill="rgba(148,163,184,0.80)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle">S</text>
+        <text x="846" y="376" fill="#94a3b8" font-size="9" font-family="'Geist Mono', monospace">3/3 gestures + keys</text>
+        <text x="824" y="400" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace">one listener, three map slices</text>
+
+        <!-- NODES · outside the page -->
+        <rect x="48" y="508" width="236" height="72" rx="6" fill="#080c14"/>
+        <rect x="48" y="508" width="236" height="72" rx="6" fill="#0f172a" stroke="rgba(248,250,252,0.30)" stroke-width="1"/>
+        <rect x="56" y="514" width="40" height="12" rx="2" fill="transparent" stroke="rgba(148,163,184,0.40)" stroke-width="0.8"/>
+        <text x="76" y="523" fill="rgba(148,163,184,0.80)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">TESTS</text>
+        <text x="56" y="540" fill="#f8fafc" font-size="12" font-weight="600" font-family="'Geist', sans-serif">tests/*.js</text>
+        <text x="56" y="558" fill="#94a3b8" font-size="9" font-family="'Geist Mono', monospace">94 zero-dep CJS suites</text>
+        <text x="56" y="572" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace">loadSentinel() extracts and evals</text>
+
+        <rect x="304" y="508" width="492" height="72" rx="6" fill="#080c14"/>
+        <rect x="304" y="508" width="492" height="72" rx="6" fill="#0f172a" stroke="rgba(248,250,252,0.30)" stroke-width="1"/>
+        <rect x="312" y="514" width="28" height="12" rx="2" fill="transparent" stroke="rgba(148,163,184,0.40)" stroke-width="0.8"/>
+        <text x="326" y="523" fill="rgba(148,163,184,0.80)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">API</text>
+        <text x="312" y="540" fill="#f8fafc" font-size="12" font-weight="600" font-family="'Geist', sans-serif">api_server.py :8190 — a stdlib ThreadingHTTPServer, a separate process</text>
+        <text x="312" y="558" fill="#94a3b8" font-size="9" font-family="'Geist Mono', monospace">GET /api/catalogs · /api/taxonomy · /api/status · /api/inference_log · /api/events</text>
+        <text x="312" y="572" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace">POST /api/pin · /api/delete · /api/settings · /api/clip — same-origin via nginx</text>
+
+        <!-- LEGEND -->
+        <line x1="30" y1="648" x2="1074" y2="648" stroke="rgba(248,250,252,0.12)" stroke-width="0.8"/>
+        <text x="32" y="672" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">LEGEND</text>
+        <rect x="136" y="662" width="12" height="12" rx="2" fill="rgba(59,130,246,0.12)" stroke="#3b82f6" stroke-width="1"/>
+        <text x="154" y="672" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace">FOCAL · THE SENTINEL-WRAPPED HELPERS</text>
+        <rect x="512" y="662" width="12" height="12" rx="2" fill="#0f172a" stroke="rgba(148,163,184,0.30)" stroke-width="1"/>
+        <text x="530" y="672" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace">CONCERN GROUP</text>
+        <line x1="712" y1="668" x2="744" y2="668" stroke="#60a5fa" stroke-width="1.2" marker-end="url(#arrow-link)"/>
+        <text x="754" y="672" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace">FETCH / SSE TO THE API</text>
+      </svg>
+    </div>
+
+    <div class="cards">
+      <div class="card">
+        <div class="card-header"><span class="card-dot coral"></span><h3>Start here: the pure helpers</h3></div>
+        <ul>
+          <li>Sections C, G and K are the only ones whose functions are pure, and each is wrapped in a <code>// === pure:NAME ===</code> … <code>// === /pure:NAME ===</code> pair — 95 pairs today.</li>
+          <li>A suite pulls the exact block out of <code>index.html</code> and <code>eval</code>s it, so the page and the unit test share one copy of the function.</li>
+          <li>That contract is why the planned <code>js/*.js</code> split is tractable: a pure helper is already a self-contained unit with a test attached.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-dot muted"></span><h3>Three kinds of section, not two</h3></div>
+        <ul>
+          <li><strong>Pure</strong> — sentinel-wrapped, no <code>state</code>, no DOM. Unit-tested without a browser.</li>
+          <li><strong>Impure</strong> — the map flags these explicitly (the <code>labelStates</code> currying helpers, the focus-trap and popover machinery, <code>computeVisits</code>). They read state or the DOM, so they have no sentinel and are covered by text assertions instead.</li>
+          <li><strong>Bootstrap</strong> — D plus Q/R/S. Q, R and S are three slices of <em>one</em> <code>DOMContentLoaded</code> arrow function, not three scopes.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-dot link"></span><h3>What this diagram leaves out</h3></div>
+        <ul>
+          <li>The ~85 KB <code>&lt;style&gt;</code> block (lines 139–2674) — CSS, not client logic.</li>
+          <li>Individual function names. The map in <code>index.html:2–121</code> has them; listing 197 here would be a table, not a diagram.</li>
+          <li><code>js/</code> does not exist yet. This is today's file, not the target layout.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="footer">
+      <span>funes-vision · docs/diagrams</span>
+      <span>Source: index.html:2-121 (section map), 139-2674 (style), 3126-8944 (inline script), 3229+ (sentinels), 6403 (API_BASE), 7378-7385 (6 s poll), 7445 (EventSource) · api_server.py:1509-1561,1877-2034 (routes) · DEVELOP.md:469-497</span>
+    </div>
+  </div>
+</body>
+</html>
