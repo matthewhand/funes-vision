@@ -384,8 +384,16 @@
       display: none !important;
     }
     .logo-text p { display: none; }
+    /* The count has to read end to end. It was capped at 14ch and ellipsised
+       inside a nowrap flex row, so at 1440px it rendered "Showing 10 of ..." and
+       at 1024px the cap had squeezed it to a 12px sliver -- the row never
+       wrapped, so the cap was all the user got. Let it wrap instead of being
+       truncated, and give it its own row under the tabs when the bar is too
+       narrow for one (see the max-width: 1359px block further down). */
     #stats-label.stats-info {
-      max-width: 14ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      min-width: 0;
+      line-height: 1.25;
+      text-align: right;
     }
     aside details.sidebar-section > summary {
       cursor: pointer; list-style: none; display: flex; align-items: center;
@@ -837,6 +845,12 @@
       max-height: calc(100vh - 120px);
       overflow-y: auto;
     }
+    /* The panel is viewport-capped but its three sections are content-sized, so
+       on a short date list the content stopped at 477px of an 880px panel and
+       the 32px "Saved" strip floated above ~480px of nothing. Pin the trailing
+       section to the bottom so the panel always reads as a top group and a
+       bottom group rather than as content that ran out. */
+    aside > :last-child { margin-top: auto; }
     /* Collapsible sidebar: toggled via #sidebar-toggle. Collapsed by default on
        small screens (where the sidebar otherwise stacks on top and buries the
        feed); the content area reclaims the full width. */
@@ -868,7 +882,10 @@
       display: flex;
       flex-direction: column;
       gap: 4px;
-      max-height: 280px;
+      /* No cap: the aside is already viewport-capped and scrolls, so a 34-day
+         archive's list should fill the panel (and the panel scroll) instead of
+         stopping at 280px and leaving the rest of the column dead. */
+      max-height: none;
       overflow-y: auto;
       padding-right: 4px;
     }
@@ -1038,6 +1055,21 @@
 
     .chart-viewport.chart-days {
       height: 54px;
+    }
+
+    /* "This view" hour sparkline in the pipeline-status panel. 24 flex columns
+       sharing the panel width over a baseline, so the shape of the day is
+       readable; the axis below reuses .chart-x-axis, so its hour labels are the
+       same strings as the sidebar's. The bars carry their own height inline
+       (they are data), this only draws the frame. */
+    .sparkline {
+      display: flex;
+      align-items: flex-end;
+      gap: 2px;
+      height: 32px;
+      margin: 4px 0 0;
+      padding-bottom: 3px;
+      border-bottom: 1px solid var(--border-color);
     }
 
     .chart-bar.day-bar.active {
@@ -2657,6 +2689,15 @@
        itself is built from inline styles, so the floor is declared here:
        widen the hit area, not the paint. */
     #system-status-content > details > summary { min-height: 24px; }
+    /* "Showing N of M snapshots" only fits beside the tabs on one row above
+       ~1360px; measured at 1280px the cap had squeezed it to 146px and wrapped
+       it onto two lines, and at 1024px to 12px. Below that it takes its own row
+       under the tabs -- the same treatment .toolbar-bar's .tab-cluster already
+       gets at 768px -- rather than being truncated to nothing. */
+    @media (max-width: 1359px) {
+      .header-content .tab-cluster { flex-wrap: wrap; row-gap: 2px; }
+      #stats-label.stats-info { flex: 1 1 100%; text-align: left; }
+    }
     @media (max-width: 960px) {
       .header-content { flex-wrap: wrap; }
       .header-content .tab-cluster { order: 0; flex: 1 1 auto; min-width: 0; }
@@ -3504,6 +3545,40 @@
     }
     // === /pure:hourInZone ===
 
+    // === pure:timeStampLabel ===
+    // Card + audit-trail clock time, e.g. "05:00:00 PM" / "12:00:00 AM".
+    //
+    // The card stamp used to be an en-AU toLocaleTimeString with only `hour`
+    // set, which leaves the hour cycle to whatever the runtime's CLDR data says
+    // for that locale: this build spells the day period lowercase, so a card
+    // read "12:00:00 pm" directly under the sidebar axis's "12 AM", and any
+    // build resolving the cycle to 24-hour drops the day period entirely and
+    // prints midnight as "00:00:00" -- indistinguishable from a noon stamp.
+    // Read the hour at h23 (so 00 is never confused with 12) and derive the
+    // day period here, uppercase to match the axis. withSeconds is false for
+    // the audit trail, which only ever printed hours and minutes.
+    function timeStampLabel(dateObj, tz, withSeconds) {
+      if (!dateObj || typeof dateObj.getTime !== 'function' || !isFinite(dateObj.getTime())) return '';
+      let p = {};
+      try {
+        p = new Intl.DateTimeFormat('en-GB', {
+          timeZone: tz || 'UTC', hourCycle: 'h23',
+          hour: '2-digit', minute: '2-digit', second: '2-digit',
+        }).formatToParts(dateObj).reduce((a, x) => (a[x.type] = x.value, a), {});
+      } catch (e) {
+        return '';
+      }
+      let h = parseInt(p.hour, 10);
+      if (h === 24) h = 0; // some engines render midnight as 24
+      if (!isFinite(h) || !p.minute) return '';
+      const hh = String(h % 12 === 0 ? 12 : h % 12).padStart(2, '0');
+      const meridiem = h < 12 ? 'AM' : 'PM';
+      return withSeconds
+        ? `${hh}:${p.minute}:${p.second} ${meridiem}`
+        : `${hh}:${p.minute} ${meridiem}`;
+    }
+    // === /pure:timeStampLabel ===
+
     // === pure:shortTimeZoneName ===
     function shortTimeZoneName(dateObj, tz) {
       const d = (dateObj && typeof dateObj.getTime === 'function' && isFinite(dateObj.getTime()))
@@ -3753,7 +3828,7 @@
           dateStr: f.dateStr,
           timeStr: f.timeStr,
           formattedDate: dateObj.toLocaleDateString('en-AU', { month: 'short', day: 'numeric', year: 'numeric', timeZone: DISPLAY_TZ }),
-          formattedTime: dateObj.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: DISPLAY_TZ }),
+          formattedTime: timeStampLabel(dateObj, DISPLAY_TZ, true),
           eventType: f.eventType,
           original: f.original,
         };
@@ -4875,11 +4950,16 @@
     // === /pure:visitsSummary ===
 
     // === pure:gridStatsLabel ===
+    // Thousands-grouped, so a real archive reads "Showing 1,234 of 12,345
+    // snapshots" rather than an unpunctuated digit run. toLocaleString inline
+    // rather than via formatCount() because the per-helper suites eval this
+    // block on its own. Three-digit counts are unchanged, so the short forms
+    // still read "Showing 7 of 10 snapshots" / "Showing 1 of 1 snapshot".
     function gridStatsLabel(shown, total) {
       const s = (typeof shown === 'number' && isFinite(shown)) ? shown : 0;
       const t = (typeof total === 'number' && isFinite(total)) ? total : 0;
       const noun = t === 1 ? 'snapshot' : 'snapshots';
-      return `Showing ${s} of ${t} ${noun}`;
+      return `Showing ${s.toLocaleString('en-US')} of ${t.toLocaleString('en-US')} ${noun}`;
     }
     // === /pure:gridStatsLabel ===
 
@@ -8507,7 +8587,7 @@
 
           // Audit trail (last 15)
           const trail = log.slice(0, 15).map(r => {
-            const t = new Date(r.started * 1000).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', timeZone: DISPLAY_TZ });
+            const t = timeStampLabel(new Date(r.started * 1000), DISPLAY_TZ, false);
             const labels = r.labels.length ? escapeHtml(r.labels.join(', ')) : (r.ok ? 'clear' : '<span style="color:#ef4444;">failed</span>');
             return `<div style="padding:2px 0;border-bottom:1px solid var(--border-color);">
               ${t} &middot; <b>${labels}</b> &middot; ${fmtDur(r.duration_s)} &middot; ${escapeHtml(r.trigger)}<br>
@@ -8524,8 +8604,14 @@
           const insTop = labelCounts(Object.values(state.analysis).map(a => effectiveLabels(a))).slice(0, 5);
           const insMax = Math.max(1, ...insBuckets);
           // 24-bar hour sparkline (tallest = busiest); current behaviour-free.
+          // These were 3px inline-block hairlines 2-18px tall in a
+          // line-height:0 box, so a real view drew one 18px green peak above a
+          // row of 2px stubs and read as a stray tick. Flex columns that share
+          // the panel width, a visible floor for an empty hour, and a baseline
+          // under the bars turn it back into a chart; the axis reuses
+          // .chart-x-axis, so the hour labels match the sidebar's exactly.
           const insSpark = insBuckets.map((c, h) =>
-            `<span title="${String(h).padStart(2, '0')}:00 — ${c}" style="display:inline-block;width:3px;margin-right:1px;height:${Math.round(2 + (c / insMax) * 16)}px;background:${h === insPeak ? '#10b981' : 'var(--border-color)'};vertical-align:bottom;"></span>`
+            `<span title="${String(h).padStart(2, '0')}:00 — ${c}" style="flex:1 1 0;min-width:0;height:${Math.max(4, Math.round((c / insMax) * 28))}px;background:${h === insPeak ? '#10b981' : 'var(--border-color)'};"></span>`
           ).join('');
           const insTopHtml = insTop.length
             ? insTop.map(t => `${escapeHtml(t.label)} ${t.count}`).join(' &middot; ')
@@ -8579,7 +8665,8 @@
             ${s.filesystem ? `<div style="color:${s.filesystem.free_gb < 1 ? '#ef4444' : 'var(--text-secondary)'};">Host disk: ${formatGb(s.filesystem.free_gb, 'GB')} free of ${formatGb(s.filesystem.total_gb, 'GB')} (${s.filesystem.used_pct}% used)</div>` : ''}
             <div style="margin-top:8px;font-weight:700;text-transform:uppercase;font-size:0.7rem;color:var(--text-secondary);border-bottom:1px solid var(--border-color);padding-bottom:3px;">This view</div>
             <div title="computed from the frames loaded in this view, not the full on-disk set">${insTotal.toLocaleString()} loaded frames${insPeak >= 0 ? ` &middot; busiest ${String(insPeak).padStart(2, '0')}:00` : ''}</div>
-            <div style="margin:3px 0;line-height:0;">${insSpark}</div>
+            <div class="sparkline">${insSpark}</div>
+            <div class="chart-x-axis"><span>12 AM</span><span>6 AM</span><span>12 PM</span><span>6 PM</span><span>11 PM</span></div>
             ${sparklineHasData(insBuckets) ? '' : '<div style="color:var(--text-secondary);font-size:0.75rem;">no activity yet</div>'}
             <div><b>Most seen:</b> ${insTopHtml}</div>
             <div style="margin-top:8px;font-weight:700;text-transform:uppercase;font-size:0.7rem;color:var(--text-secondary);border-bottom:1px solid var(--border-color);padding-bottom:3px;">Inference (last ${(s.metrics && s.metrics.window_min) || 60}m)</div>
