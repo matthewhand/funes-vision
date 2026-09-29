@@ -82,13 +82,13 @@
     <div class="header">
       <p class="header-eyebrow">Architecture · funes-vision</p>
       <h1>Inside <code>index.html</code>: the A–S section map</h1>
-      <p class="subtitle">The SPA is one inline classic <code>&lt;script&gt;</code> (lines 3126–8944, 281,628 bytes, 198 <code>function</code> declarations). The hand-maintained comment block at the top of the file names it A–S; this diagram groups those 19 letters by concern so you know which group to open before you start editing.</p>
+      <p class="subtitle">The SPA is one inline classic <code>&lt;script&gt;</code> (lines 3217–9111, 285,574 bytes, 199 <code>function</code> declarations). The hand-maintained comment block at the top of the file names it A–S; this diagram groups those 19 letters by concern so you know which group to open before you start editing.</p>
     </div>
 
     <div class="diagram-container">
       <svg viewBox="0 0 1104 700" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="14-frontend-internals-title 14-frontend-internals-desc">
         <title id="14-frontend-internals-title">Inside index.html: the A–S section map</title>
-        <desc id="14-frontend-internals-desc">The single inline script of the gallery SPA divided into eight concern groups — routing, state, filtering, rendering, pure helpers, API access, live updates and bootstrap — with the 95 sentinel-wrapped pure helpers feeding the Node test suites and the API-access and live-update groups talking to the api_server process over fetch and Server-Sent Events.</desc>
+        <desc id="14-frontend-internals-desc">The single inline script of the gallery SPA divided into eight concern groups — routing, state, filtering, rendering, pure helpers, API access, live updates and bootstrap — with the 96 sentinel-wrapped pure helpers feeding the Node test suites and the API-access and live-update groups talking to the api_server process over fetch and Server-Sent Events.</desc>
         <defs>
           <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
             <polygon points="0 0, 8 3, 0 6" fill="#94a3b8"/>
@@ -106,7 +106,7 @@
         <!-- ZONES (drawn first) -->
         <rect x="24" y="24" width="1056" height="420" rx="8" fill="rgba(248,250,252,0.02)" stroke="rgba(248,250,252,0.10)" stroke-width="0.8"/>
         <rect x="396" y="28" width="312" height="12" rx="2" fill="#080c14"/>
-        <text x="552" y="37" fill="rgba(148,163,184,0.55)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.14em">ONE INLINE &lt;SCRIPT&gt; · index.html:3126–8944</text>
+        <text x="552" y="37" fill="rgba(148,163,184,0.55)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.14em">ONE INLINE &lt;SCRIPT&gt; · index.html:3217–9111</text>
 
         <rect x="24" y="480" width="1056" height="132" rx="8" fill="rgba(248,250,252,0.02)" stroke="rgba(248,250,252,0.10)" stroke-width="0.8"/>
         <rect x="468" y="484" width="168" height="12" rx="2" fill="#080c14"/>
@@ -203,7 +203,7 @@
         <rect x="56" y="347" width="16" height="12" rx="2" fill="transparent" stroke="rgba(59,130,246,0.60)" stroke-width="0.8"/>
         <text x="64" y="356" fill="#3b82f6" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle">K</text>
         <text x="78" y="356" fill="#94a3b8" font-size="9" font-family="'Geist Mono', monospace">dates · visits · duration</text>
-        <text x="56" y="400" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace">95 pure:NAME sentinel pairs</text>
+        <text x="56" y="400" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace">96 pure:NAME sentinel pairs</text>
 
         <!-- API -->
         <rect x="304" y="256" width="236" height="160" rx="6" fill="#080c14"/>
@@ -256,7 +256,7 @@
         <rect x="56" y="514" width="40" height="12" rx="2" fill="transparent" stroke="rgba(148,163,184,0.40)" stroke-width="0.8"/>
         <text x="76" y="523" fill="rgba(148,163,184,0.80)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">TESTS</text>
         <text x="56" y="540" fill="#f8fafc" font-size="12" font-weight="600" font-family="'Geist', sans-serif">tests/*.js</text>
-        <text x="56" y="558" fill="#94a3b8" font-size="9" font-family="'Geist Mono', monospace">94 zero-dep CJS suites</text>
+        <text x="56" y="558" fill="#94a3b8" font-size="9" font-family="'Geist Mono', monospace">96 zero-dep CJS suites</text>
         <text x="56" y="572" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace">loadSentinel() extracts and evals</text>
 
         <rect x="304" y="508" width="492" height="72" rx="6" fill="#080c14"/>
@@ -283,7 +283,7 @@
       <div class="card">
         <div class="card-header"><span class="card-dot coral"></span><h3>Start here: the pure helpers</h3></div>
         <ul>
-          <li>Sections C, G and K are the only ones whose functions are pure, and each is wrapped in a <code>// === pure:NAME ===</code> … <code>// === /pure:NAME ===</code> pair — 95 pairs today.</li>
+          <li>Sections C, G and K are the only ones whose functions are pure, and each is wrapped in a <code>// === pure:NAME ===</code> … <code>// === /pure:NAME ===</code> pair — 96 pairs today.</li>
           <li>A suite pulls the exact block out of <code>index.html</code> and <code>eval</code>s it, so the page and the unit test share one copy of the function.</li>
           <li>That contract is why the planned <code>js/*.js</code> split is tractable: a pure helper is already a self-contained unit with a test attached.</li>
         </ul>
@@ -299,8 +299,8 @@
       <div class="card">
         <div class="card-header"><span class="card-dot link"></span><h3>What this diagram leaves out</h3></div>
         <ul>
-          <li>The ~85 KB <code>&lt;style&gt;</code> block (lines 139–2674) — CSS, not client logic.</li>
-          <li>Individual function names. The map in <code>index.html:2–121</code> has them; listing 198 here would be a table, not a diagram.</li>
+          <li>The ~90 KB <code>&lt;style&gt;</code> block (lines 141–2746) — CSS, not client logic.</li>
+          <li>Individual function names. The map in <code>index.html:2–123</code> has them; listing 199 here would be a table, not a diagram.</li>
           <li><code>js/</code> does not exist yet. This is today's file, not the target layout.</li>
         </ul>
       </div>
@@ -308,7 +308,7 @@
 
     <div class="footer">
       <span>funes-vision · docs/diagrams</span>
-      <span>Source: index.html:2-121 (section map), 139-2674 (style), 3126-8944 (inline script), 3229+ (sentinels), 6403 (API_BASE), 7378-7385 (6 s poll), 7445 (EventSource) · api_server.py:1509-1561,1877-2034 (routes) · DEVELOP.md:469-497</span>
+      <span>Source: index.html:2-123 (section map), 141-2746 (style), 3217-9111 (inline script), 3320+ (sentinels), 6563 (API_BASE), 7538-7545 (6 s poll), 7605 (EventSource) · api_server.py:1509-1573,1877-2061 (routes) · DEVELOP.md:476-507</span>
     </div>
   </div>
 </body>

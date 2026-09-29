@@ -358,11 +358,11 @@ needed” runs.
 
 ### api_server.py (port 8190)
 Stdlib-only HTTP server, the single write channel (nginx mounts are ro). It
-exposes 11 routes — `pins`, `pin`, `delete`, `settings` (GET/POST), `integrations`
-(GET/POST + `/test`), `status`, `health`, `inference_log`, `POST /api/clip`
-(GIF for the player; MP4 accepted by the API only), `GET /api/llm-schema`
-(live prompt + front/back HA schemas), and the `events` SSE stream
-(`image.new` / `detection.preliminary` / `new-detection` / `new-burst`;
+exposes 15 routes — `pins`, `pin`, `delete`, `settings` (GET/POST), `integrations`
+(GET/POST + `/test`), `status`, `health`, `inference_log`, `taxonomy`, `cameras`,
+`catalogs`, `POST /api/clip` (GIF for the player; MP4 accepted by the API only),
+`GET /api/llm-schema` (live prompt + front/back HA schemas), and the `events` SSE
+stream (`image.new` / `detection.preliminary` / `new-detection` / `new-burst`;
 `X-Accel-Buffering: no` so it survives the proxy unbuffered).
 
 **Methods, request/response payloads, status codes, and the SSE event schema
@@ -414,9 +414,11 @@ tabulated in [DEPLOYMENT.md](DEPLOYMENT.md#host-configuration-etcwebcamwebcamenv
 No build step. Key state lives in the `state` object; persisted bits in
 localStorage: `webcam_ai_blacklist` (hidden labels) and
 `webcam_ai_aliases` (label merging, default `{face:person, body:person}`).
-- Label pipeline: raw analysis keys -> `canonicalLabel()` (alias map) ->
-  blacklist filter -> filter buttons / badges / chart highlighting.
-- Tabs: Objects (detections only), All, Timeline (events).
+- Label pipeline: raw analysis keys -> `computeLabelStates(analysis,
+  state.labelAliases)` (alias map, and preliminary/verified per entry) ->
+  `visibleLabels()` -> blacklist filter -> filter buttons / badges / chart
+  highlighting. The sentinel marker on that first step is `labelStates`.
+- Tabs: Objects (detections only), Motion (every snapshot), Timeline (events).
 - Timeline: `computeVisits()` groups each label's contiguous presence
   into visits (start/end, duration, frame count, ongoing flag) from
   chronological detector (+ leftover `description`) records; single-frame
@@ -695,9 +697,10 @@ which holds the global lock) and the secret-handling rules below.
 ### integrations.json (secrets — NOT a synced data file)
 Lives at the repo root, **gitignored**, written `0600` by `api_server.py`,
 and deliberately **excluded from the nginx web-root sync** (`create-index.sh`
-copies only `index.html` + the four public JSON files), so bot tokens are
-never world-readable. `GET /api/integrations` only ever returns a redacted
-view (Slack only). Schema:
+copies only `index.html`, the PWA/`lucide`/Help static assets, and the
+per-camera-sliced `images.json` / `analysis.json` / `bursts.json`), so bot
+tokens are never world-readable. `GET /api/integrations` only ever returns a
+redacted view (Slack only). Schema:
 
 ```json
 {
@@ -827,16 +830,37 @@ one-line entry point that puts the loader self-test into that count.
   the `_IO_LOCK`-guarded audit writes (8-thread hammer stays valid JSON, no lost
   log entries).
 - **Node** suites cover the SPA's pure helpers **without** a headless browser.
-  Each function the browser uses is wrapped in sentinel comments in
+  Each pure helper the browser uses is wrapped in sentinel comments in
   `index.html` — `// === pure:NAME ===` … `// === /pure:NAME ===` — and the
   test extracts that block by regex and `eval`s it, so there's exactly one copy
-  of the function (it ships in the page *and* is unit-tested). Covered today:
-  `parseFilenameFields`, `relativeTime`, `dayLabel`, `resolveDisplayTz`,
-  `zonedTimeToUtc`, `computeLabelStates`, `visibleLabels`, `labelsMatchFilter`,
-  `smoothFlicker`, `formatDuration`, `formatSeconds`, `backfillProgress`,
-  `bucketByHour`, `labelCounts`, `busiestHour`, `filterSnapshot`,
-  `upsertSearch`, `removeSearch`, `mergeNewImage`, `detectionEntry`,
-  `escapeHtml`, `isRecent`, `clearedFilters`, `matchesSearch`, `cardAriaLabel`, `badgeLabel`, `visitDateLabel`, `visitsSummary`, `formatCount`, `tabWrap`, `streamStatusText`, `timeStampLabel`.
+  of the function (it ships in the page *and* is unit-tested). Covered
+  today — all 96 sentinel pairs, in file order:
+  `switchChipLabel`, `cameraFeedKind`, `peerFeedUrl`, `cameraDisplayName`,
+  `taxonomy`, `resolveDisplayTz`, `zonedTimeToUtc`, `hourInZone`,
+  `timeStampLabel`, `shortTimeZoneName`, `parseFilenameFields`,
+  `filenamesOnDate`, `visitAltText`, `lightboxTitle`, `deleteConfirmText`,
+  `timelineEmptyState`, `timelineEmptyDayCopy`, `lightboxFooterMeta`,
+  `showSearchClear`, `isActivateKey`, `resolveGalleryCameraId`,
+  `pinnedSetFor`, `pinSetsEqual`, `pinResponseState`, `labelStates`,
+  `badgeStateFor`, `getHAFlags`, `visibleLabels`, `isRecent`, `tabWrap`,
+  `formatCount`, `formatGb`, `countActiveFilters`, `activeFilterBanner`,
+  `prefersReducedMotion`, `hideLabelSwitchName`, `spaceTogglesPlayback`,
+  `frameDurations`, `playbackToggleState`, `clipButtonState`, `inFlightState`,
+  `frameErrorFallbackSrc`, `frameFadeMs`, `scrubOwnsArrowKey`,
+  `frameAnnouncement`, `isGifPayload`, `lightboxImageState`,
+  `shouldRefreshSystemPanel`, `emptyStateKind`, `loadErrorKind`,
+  `sparklineHasData`, `labelCounts`, `visitsSummary`, `gridStatsLabel`,
+  `visitDateLabel`, `badgeLabel`, `cardAriaLabel`, `frameStatusBadge`,
+  `timePillRange`, `hourInRange`, `timeRangeIsDefault`, `timeRangeCollapsed`,
+  `listRowSummary`, `activeFiltersSummary`, `actionsOverflow`,
+  `sidebarDefaultCollapsed`, `escapeHtml`, `mergeNewImage`, `detectionEntry`,
+  `clearedFilters`, `viewTabStates`, `filterSnapshot`, `upsertSearch`,
+  `removeSearch`, `labelsMatchFilter`, `todayDateStr`, `homeDateFilter`,
+  `dayLabel`, `relativeTime`, `entryCaption`, `matchesSearch`,
+  `visitPassesTimeFilter`, `smoothFlicker`, `burstContaining`,
+  `visitPlayFrames`, `formatDuration`, `clampPan`, `framePosition`,
+  `outsidePaintedImage`, `streamStatusText`, `liveBadgeCopy`, `nlStatusView`,
+  `formatSeconds`, `bucketByHour`, `busiestHour`, `backfillProgress`
 - **Regression guard** (`tests/test_dom_refs.js`): cross-checks every
   `getElementById('x')` the SPA relies on against an `id="x"` in the markup
   (minus a tiny allowlist of runtime-created elements), catching a broken/renamed
