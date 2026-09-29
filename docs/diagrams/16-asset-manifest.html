@@ -144,8 +144,8 @@
         <rect x="444" y="278" width="32" height="12" rx="2" fill="transparent" stroke="rgba(148,163,184,0.40)" stroke-width="0.8"/>
         <text x="460" y="287" fill="rgba(148,163,184,0.80)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">DEMO</text>
         <text x="444" y="306" fill="#f8fafc" font-size="12" font-weight="600" font-family="'Geist', sans-serif">The published static demo bundle</text>
-        <text x="444" y="324" fill="#94a3b8" font-size="9" font-family="'Geist Mono', monospace">tools/demo/build_demo.py:94-118 · injects ./static/demo-shim.js, then copies four files</text>
-        <text x="444" y="340" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace">lucide.min.js · favicon.ico · icon.svg · manifest.json — no USER-GUIDE.html, so Help 404s there</text>
+        <text x="444" y="324" fill="#94a3b8" font-size="9" font-family="'Geist Mono', monospace">tools/demo/build_demo.py:104-140 · injects ./static/demo-shim.js, then copies the guide</text>
+        <text x="444" y="340" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace">four root files + docs/USER-GUIDE.html + guide/img/*.png — the last gap is closed</text>
 
         <!-- TARGET 4 -->
         <rect x="436" y="392" width="620" height="76" rx="6" fill="#080c14"/>
@@ -163,8 +163,8 @@
         <text x="52" y="455" fill="#3b82f6" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">GUARD</text>
         <text x="32" y="476" fill="#f8fafc" font-size="12" font-weight="600" font-family="'Geist', sans-serif">test_static_asset_manifest.js</text>
         <text x="32" y="496" fill="#94a3b8" font-size="9" font-family="'Geist Mono', monospace">asserts all four lists agree</text>
-        <text x="32" y="512" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace">one known deviation is allowed</text>
-        <text x="32" y="526" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace">and fails once it goes stale</text>
+        <text x="32" y="512" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace">KNOWN_GAPS is empty — none recorded</text>
+        <text x="32" y="526" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace">and a recorded one goes stale</text>
 
         <!-- LEGEND -->
         <line x1="30" y1="572" x2="1074" y2="572" stroke="rgba(248,250,252,0.12)" stroke-width="0.8"/>
@@ -186,10 +186,10 @@
         </ul>
       </div>
       <div class="card">
-        <div class="card-header"><span class="card-dot muted"></span><h3>The one deviation on record</h3></div>
+        <div class="card-header"><span class="card-dot muted"></span><h3>The deviation is closed</h3></div>
         <ul>
-          <li><code>tools/demo/build_demo.py</code> ships no <code>USER-GUIDE.html</code>, so the gallery's Help link 404s in the published demo. The demo sets <code>window.__IS_DEMO__</code> but the SPA never reads it, so the link stays live.</li>
-          <li>It is recorded as a named <code>KNOWN_GAPS</code> entry rather than dropped, so the assertion fails if the entry ever goes stale.</li>
+          <li><code>tools/demo/build_demo.py</code> used to ship no <code>USER-GUIDE.html</code>, so the gallery's Help link 404ed in the published demo. It now copies the guide plus its <code>docs/guide/img/*.png</code> — the guide is not self-contained, so the HTML alone would have traded a dead link for broken images.</li>
+          <li>So <code>KNOWN_GAPS</code> is empty. The mechanism is kept and still self-invalidates: a recorded gap whose target has since started shipping the asset fails the suite, so the next deviation cannot hide behind a stale entry.</li>
         </ul>
       </div>
       <div class="card">
@@ -203,7 +203,7 @@
 
     <div class="footer">
       <span>funes-vision · docs/diagrams</span>
-      <span>Source: tests/test_static_asset_manifest.js:1-60 · create-index.sh:48-58 · tools/deploy-webroot.sh:24-37,59-62 · tools/demo/build_demo.py:33-38,94-118 · tools/screenshots/proxy.py:30-42,229-243 · DEVELOP.md:840-847</span>
+      <span>Source: tests/test_static_asset_manifest.js:1-60 · create-index.sh:48-58 · tools/deploy-webroot.sh:24-37,59-62 · tools/demo/build_demo.py:33-38,104-140 · tools/screenshots/proxy.py:30-42,229-255 · DEVELOP.md:840-847</span>
     </div>
   </div>
 </body>
