@@ -58,7 +58,7 @@ Rules, all enforced by `tests/test_no_remote_cdn.js`:
    Diagrams must render identically with the network unplugged.
 2. **Never inline the `@font-face` rules** into a diagram's `<style>`. The
    `self_check.py` linter rejects any non-fragment `url()`, so the faces have to
-   live in a sibling stylesheet. Change `fonts.css`, not the 14 HTML files —
+   live in a sibling stylesheet. Change `fonts.css`, not the 17 HTML files —
    that is also what keeps the set typographically consistent.
 3. To add or re-skin a face: put the woff2 in `fonts/`, declare it in
    `fonts.css`, and record provenance, byte count and `sha256` plus its OFL

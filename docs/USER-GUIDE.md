@@ -99,8 +99,10 @@ button.
 ![Mobile timeline of dog and person visits](guide/img/mobile-timeline.png)
 
 On a phone you will also see a **Panels** button. That hides or shows
-the date list, activity charts, and saved searches. Landscape desktop
-keeps the sidebar open.
+the date list and saved searches. Landscape desktop keeps the sidebar
+open. The activity charts are **not** in the rail — they are a
+**Trends** panel above the grid (see [§4](#4-the-left-rail-and-trends)),
+so they are on a phone too.
 
 ---
 
@@ -108,7 +110,7 @@ keeps the sidebar open.
 
 One sticky bar, left to right on a wide screen:
 
-- **Panels** — show/hide the dates rail (and collapsed Motion / Saved)
+- **Panels** — show/hide the dates rail (and collapsed Saved)
 - **Front** (or **Back**) + **swap chip** — other camera
 - **Timeline | Objects | All** and the count
 - **Search** — time, detector labels, or caption text (see [§5](#5-find-something))
@@ -165,7 +167,7 @@ On a phone, **All** is a single-column stack:
 
 ---
 
-## 4. The left rail
+## 4. The left rail and Trends
 
 ### Date Timeline
 
@@ -175,14 +177,24 @@ has no stills yet, the newest day in the catalog is selected instead.
 The count is how many stills that day has, not how many match the
 current object filter. Clear all returns to this home day.
 
-**Motion** and **Saved** start **collapsed**. Open the section when you
-need the charts or a named view.
+The rail is **Dates** and **Saved** only. **Saved** starts
+**collapsed** — open the section when you need a named view.
 
-### Motion Activity
+### Trends
+
+**Trends** is a panel in the main column, above the grid — not a rail
+section. It ships **open**; fold the **Trends** header to get it out of
+the way. Being in the content column is the point: the rail is hidden
+on a phone by default, so the charts used to be unreachable there.
 
 - **By day** — one bar per day, top = midnight. Red marks when the
   *currently filtered* objects appeared.
 - **By hour** — 12 AM → 11 PM over the selected day(s).
+
+**By day / By hour / Both** above the charts picks what you see. A
+phone (≤768px) starts on **By day** — two stacked charts would leave
+the feed too short — and a wider layout starts on **Both**, side by
+side. The choice is not remembered; a reload returns to the default.
 
 Tap a day bar to drill into hours. Tap again to clear. Search and object
 filters apply to these charts the same way they apply to the grid. Typing
@@ -227,7 +239,7 @@ Matches, case-insensitive, against:
 - event type / filename tokens
 - caption text (fixture sentences **or** synthesized HA facts)
 
-The grid, Timeline, and activity charts share this predicate. If you
+The grid, Timeline, and the Trends charts share this predicate. If you
 type `person` and a card disappears, the red chart bars for that hour
 disappear too.
 
