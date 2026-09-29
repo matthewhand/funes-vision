@@ -47,10 +47,12 @@
      also: galleryCameraId / fetchPinsFor / galleryLoadSeq
   E. Dashboard view (/cameras/) dashboardState / loadDashboardCatalogs /
      renderDashboard / loadGalleryForCamera
-  F. Rendering — date rail + charts
-                                 renderDateSidebar / renderActivityChart /
-     clearActivityChart  (chartPanel is the details host for the chart)
-  G. Pure helpers — labels / badges / counts
+   F. Rendering — date rail + trends panel
+                                  renderDateSidebar / renderActivityChart /
+      clearActivityChart / setTrendView  (chartPanel is the details host for
+      the charts, which live in .content-area, not in the sidebar rail)
+   G. Pure helpers — labels / badges / counts
+
      sentinels: labelStates badgeStateFor getHAFlags visibleLabels isRecent
        tabWrap formatCount formatGb countActiveFilters activeFilterBanner
        prefersReducedMotion hideLabelSwitchName spaceTogglesPlayback
@@ -838,10 +840,10 @@
       flex-direction: column;
       gap: 8px;
       flex-shrink: 0;
-      /* Constrain the panel to the viewport so a long date list (34+ days) or
-         the activity chart can't push the whole page taller than the window.
-         Without this the aside is sized by its content and the workspace
-         flex-row layout happily overflows vertically on every tab switch. */
+      /* Constrain the panel to the viewport so a long date list (34+ days)
+         can't push the whole page taller than the window. Without this the
+         aside is sized by its content and the workspace flex-row layout
+         happily overflows vertically on every tab switch. */
       max-height: calc(100vh - 120px);
       overflow-y: auto;
     }
@@ -929,14 +931,44 @@
       color: var(--accent-fg);
     }
 
-    /* Hourly Activity Chart */
+    /* Trends panel. These charts used to be the sidebar's "Motion" section,
+       which is display:none below 992px — so the app's only trends surface did
+       not exist on a phone at all — and 196px left a six-day planner at 28.8px
+       per bar with the 24px targets overhanging the rail by 15px. The card
+       surface is the existing .panel primitive; nothing new is painted. */
     .activity-chart-container {
       display: flex;
       flex-direction: column;
       gap: 12px;
     }
+    .trends-panel > summary {
+      cursor: pointer; list-style: none; display: flex; align-items: center;
+      flex-wrap: wrap; gap: var(--space-2); min-height: var(--control-h);
+    }
+    .trends-panel > summary::-webkit-details-marker { display: none; }
+    .trends-panel h3 {
+      font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.05em; color: var(--text-secondary); margin: 0;
+      display: flex; align-items: center; gap: var(--space-2);
+    }
+    .trends-summary-hint { font-size: var(--fs-chip); color: var(--text-secondary); }
+    /* .trends-view is display:flex, which outranks the UA [hidden] rule, so the
+       view toggle has to state it (same idiom as .filters-count[hidden]). */
+    .trends-view[hidden] { display: none; }
+    .trends-views { display: grid; grid-template-columns: 1fr; gap: var(--space-3); }
+    .trends-view {
+      display: flex; flex-direction: column; gap: var(--space-2); min-width: 0;
+    }
+    /* Two charts share a row only when the panel is wide enough for a
+       half-width day planner to still read as one bar per day, and only while
+       BOTH are shown — a single view takes the whole width. */
+    @media (min-width: 900px) {
+      .trends-views:not(:has(.trends-view[hidden])) { grid-template-columns: 1fr 1fr; }
+    }
+    .trends-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); }
+    .trend-view-btn { white-space: nowrap; }
     /* Sidebar-toggle label: hidden on desktop (icon only), shown on mobile so
-       the collapsed Dates/Activity/Saved panels are discoverable. */
+       the collapsed Dates/Saved panels are discoverable. */
     .sidebar-toggle-label { display: none; }
     @media (max-width: 768px) { .sidebar-toggle-label { display: inline; } }
     /* tiny sub-labels so the stacked day/hour charts read as two distinct views */
@@ -956,17 +988,16 @@
       display: flex;
       align-items: flex-end;
       justify-content: space-between;
-      height: 70px;
+      height: 88px;
       padding: 0 4px;
       gap: 3px;
     }
 
     /* The day planner draws one bar per day with red segments at the hour they
-       occurred. In a 196px sidebar six days are ~30px each and the segments
-       line up at matching heights, so adjacent days visually fuse into a single
-       solid band and the chart stops being readable as "one bar per day". A
-       visible separator between bars restores the count without changing the
-       data or the bar geometry. */
+       occurred. In a narrow column the segments line up at matching heights, so
+       adjacent days visually fuse into a single solid band and the chart stops
+       being readable as "one bar per day". A visible separator between bars
+       restores the count without changing the data or the bar geometry. */
     .chart-days { gap: 2px; }
     .chart-days .chart-bar-wrapper + .chart-bar-wrapper {
       border-left: 1px solid var(--border-color);
@@ -975,8 +1006,8 @@
     .chart-bar-wrapper {
       flex: 1;
       height: 100%;
-      /* Floor, not a size: the bars are ~5px wide by design (24 hours have to
-         share a 196px sidebar), so only the *target* is enlarged. min-height
+      /* Floor, not a size: the bars are a few px wide by design (24 hours
+         share the panel width), so only the *target* is enlarged. min-height
          keeps a wrapper from ever reporting a 0x0 box -- a collapsed chart
          panel used to leave the day bar with no box at all. */
       min-width: 0;
@@ -1054,13 +1085,13 @@
     }
 
     .chart-viewport.chart-days {
-      height: 54px;
+      height: 76px;
     }
 
     /* "This view" hour sparkline in the pipeline-status panel. 24 flex columns
        sharing the panel width over a baseline, so the shape of the day is
        readable; the axis below reuses .chart-x-axis, so its hour labels are the
-       same strings as the sidebar's. The bars carry their own height inline
+       same strings as the trends panel's. The bars carry their own height inline
        (they are data), this only draws the frame. */
     .sparkline {
       display: flex;
@@ -2720,7 +2751,7 @@
     <header>
       <div class="header-content">
         <div class="logo-area">
-          <button class="btn" id="sidebar-toggle" aria-label="Show or hide the dates & activity panels" aria-pressed="false" title="Dates &amp; activity panels">
+          <button class="btn" id="sidebar-toggle" aria-label="Show or hide the dates & saved panels" aria-pressed="false" title="Dates &amp; saved panels">
             <i data-lucide="panel-left"></i>
             <span class="sidebar-toggle-label">Panels</span>
           </button>
@@ -2978,25 +3009,6 @@
           </div>
         </div>
 
-        <!-- Activity Chart section -->
-        <details class="sidebar-section activity-chart-container" open>
-          <summary><h3><i data-lucide="activity"></i> Motion</h3></summary>
-          <div class="chart-sublabel">By day <span class="chart-sublabel-hint">top = 12 AM</span></div>
-          <div class="chart-viewport chart-days" id="activity-chart-days">
-          </div>
-          <div class="chart-x-axis" id="chart-x-axis-days"></div>
-          <div class="chart-sublabel">By hour</div>
-          <div class="chart-viewport" id="activity-chart">
-          </div>
-          <div class="chart-x-axis">
-            <span>12 AM</span>
-            <span>6 AM</span>
-            <span>12 PM</span>
-            <span>6 PM</span>
-            <span>11 PM</span>
-          </div>
-        </details>
-
         <details class="sidebar-section">
           <summary><h3><i data-lucide="bookmark"></i> Saved</h3></summary>
           <div class="saved-list" id="saved-list"></div>
@@ -3008,6 +3020,44 @@
 
       <!-- Main feeds area -->
       <div class="content-area">
+        <!-- Trends: the day planner and the hour histogram, above the feed.
+             This was the sidebar's "Motion" section; the rail is display:none
+             below 992px, so the app's only trends surface did not exist on a
+             phone, and 196px gave a six-day planner 28.8px per bar. It is a
+             panel here, not a nav item, so it needs no toggle to reach. -->
+        <details class="panel trends-panel activity-chart-container" open>
+          <summary>
+            <h3><i data-lucide="activity"></i> Trends</h3>
+            <span class="trends-summary-hint">Detections by day and by hour &middot; select a bar to filter</span>
+          </summary>
+          <div class="trends-toolbar">
+            <div class="segmented trends-toggle" role="group" aria-label="Trend chart view">
+              <button type="button" class="trend-view-btn" data-trend="days" aria-pressed="false">By day</button>
+              <button type="button" class="trend-view-btn" data-trend="hours" aria-pressed="false">By hour</button>
+              <button type="button" class="trend-view-btn active" data-trend="both" aria-pressed="true">Both</button>
+            </div>
+          </div>
+          <div class="trends-views">
+            <div class="trends-view" data-trend-view="days">
+              <div class="chart-sublabel">By day <span class="chart-sublabel-hint">top = 12 AM</span></div>
+              <div class="chart-viewport chart-days" id="activity-chart-days">
+              </div>
+              <div class="chart-x-axis" id="chart-x-axis-days"></div>
+            </div>
+            <div class="trends-view" data-trend-view="hours">
+              <div class="chart-sublabel">By hour</div>
+              <div class="chart-viewport" id="activity-chart">
+              </div>
+              <div class="chart-x-axis">
+                <span>12 AM</span>
+                <span>6 AM</span>
+                <span>12 PM</span>
+                <span>6 PM</span>
+                <span>11 PM</span>
+              </div>
+            </div>
+          </div>
+        </details>
       <div class="toolbar-bar">
           <!-- Time-of-day Range Slider -->
 
@@ -4250,7 +4300,7 @@
       });
     }
 
-    // Render the sidebar activity charts:
+    // Render the trends panel charts:
     // 1) Day planner - one bar per DAY, a midnight(top) to midnight
     //    (bottom) timeline; red segments mark WHEN matches occurred,
     //    sized by volume. Click a day to drill in (again to clear).
@@ -4277,8 +4327,38 @@
       chartPanel.addEventListener('toggle', () => {
         if (chartPanel.open) renderActivityChart();
         else clearActivityChart();
+        // The panel sits above the feed, so folding it moves the grid's top.
+        if (window.syncGridOffset) window.syncGridOffset();
       });
     }
+
+    // Which of the two charts the panel shows. The initial state is
+    // viewport-dependent on purpose: the grid is capped to the viewport
+    // (syncGridOffset), so two stacked charts on a 390x844 phone would leave
+    // the feed ~300px tall. A phone starts on "By day"; wider layouts start on
+    // both, side by side.
+    const trendViewButtons = document.querySelectorAll('.trend-view-btn');
+    const trendViews = {
+      days: document.querySelector('.trends-view[data-trend-view="days"]'),
+      hours: document.querySelector('.trends-view[data-trend-view="hours"]'),
+    };
+    function setTrendView(view) {
+      Object.keys(trendViews).forEach((k) => {
+        if (trendViews[k]) trendViews[k].hidden = view !== 'both' && view !== k;
+      });
+      trendViewButtons.forEach((b) => {
+        const on = b.dataset.trend === view;
+        b.classList.toggle('active', on);
+        b.setAttribute('aria-pressed', String(on));
+      });
+    }
+    trendViewButtons.forEach((b) => {
+      b.addEventListener('click', () => {
+        setTrendView(b.dataset.trend);
+        if (window.syncGridOffset) window.syncGridOffset();
+      });
+    });
+    setTrendView(window.matchMedia('(max-width: 768px)').matches ? 'days' : 'both');
 
     function renderActivityChart() {
       clearActivityChart();
