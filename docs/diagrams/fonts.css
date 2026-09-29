@@ -7,7 +7,7 @@
  * diagram opened from disk, over a LAN, or behind an egress block renders
  * exactly as designed with no third-party host involved.
  *
- * One file, shared by all 13 diagrams plus _template.html: the faces cannot
+ * One file, shared by all 16 diagrams plus _template.html: the faces cannot
  * drift between diagrams because there is only one place to change them.
  * Do NOT inline these rules into a diagram's <style> — the diagram-design
  * self_check.py linter rejects any non-fragment CSS url(), so the fonts have
