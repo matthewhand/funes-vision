@@ -121,9 +121,12 @@ const diagrams = fs
 
 // Guard against a vacuous pass: if the glob ever stops matching (renamed
 // directory, files moved to .htm), the loop below would trivially succeed.
+// The floor is the real count -- 16 numbered diagrams + _template.html -- so
+// deleting a diagram fails here instead of quietly shrinking the set. Raise it
+// in the same commit that adds a diagram.
 assert.ok(
-  diagrams.length >= 13,
-  'expected the 13 numbered diagrams + _template.html under docs/diagrams, found ' + diagrams.length
+  diagrams.length >= 17,
+  'expected the 16 numbered diagrams + _template.html under docs/diagrams, found ' + diagrams.length
 );
 
 for (const name of diagrams) {
@@ -142,8 +145,8 @@ for (const name of diagrams) {
   const cdnHits = (source.match(/https?:\/\/[^\s"'<>]+/gi) || []).filter((u) => CDN_HOST_RE.test(u));
   assert.deepStrictEqual(cdnHits, [], label + ' must not load third-party CDNs: ' + cdnHits.join(', '));
 
-  // Every diagram must pull the same vendored stylesheet, so the 13 diagrams
-  // cannot drift apart typographically.
+  // Every diagram must pull the same vendored stylesheet, so the 17 HTML
+  // files cannot drift apart typographically.
   const sheets = (source.match(/<link[^>]+rel="stylesheet"[^>]*>/gi) || []).map((t) =>
     (/href="([^"]+)"/.exec(t) || [])[1]
   );
