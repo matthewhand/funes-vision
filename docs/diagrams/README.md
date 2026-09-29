@@ -19,16 +19,16 @@ the app UI). The profile is selected by the `.diagram-design` marker at the repo
 | [`02-runtime-architecture.html`](02-runtime-architecture.html) | Architecture | devs / operators | What runs where, and which boundaries separate them? | api_server.py, analyze_images.py, systemd/*, nginx.conf |
 | [`03-deployment.html`](03-deployment.html) | Deployment | operators | How is it deployed on one host — ports, volumes, containers, cron? | docker-compose.yml, systemd/*, nginx.conf, tools/webcam-compose-run.sh |
 | [`04-sequence-ingest-analysis.html`](04-sequence-ingest-analysis.html) | Sequence | devs | How does a still move from FTP to a catalogued detection? | create-index.sh, analyze_images.py, scans.py, taxonomy.py |
-| [`05-sequence-live-sse.html`](05-sequence-live-sse.html) | Sequence | devs | How do browser, auth, API and the SSE stream interact? | api_server.py:684-720,1003-1147, pipeline_events.py, nginx.conf, index.html |
+| [`05-sequence-live-sse.html`](05-sequence-live-sse.html) | Sequence | devs | How do browser, auth, API and the SSE stream interact? | api_server.py:1311-1351,1723-1875, pipeline_events.py, nginx.conf, index.html |
 | [`06-sequence-recovery.html`](06-sequence-recovery.html) | Sequence | operators | What happens on a stuck sweep, dead unit, or corrupt catalog? | tools/watchdog.sh, systemd/*, tools/webcam-healthcheck.sh, analyze_images.py, api_server.py |
-| [`07-integrations.html`](07-integrations.html) | DP integration | devs / ops | How do Slack, ntfy and HA MQTT get events, and what leaves the box? | integrations/*, ha_mqtt.py, api_server.py:805 |
+| [`07-integrations.html`](07-integrations.html) | DP integration | devs / ops | How do Slack, ntfy and HA MQTT get events, and what leaves the box? | integrations/*, ha_mqtt.py, api_server.py:1530 |
 | [`08-data-flow.html`](08-data-flow.html) | Data flow | devs / ops | How does frame data move, and where are the retention boundaries? | analyze_images.py, catalog.py, scans.py, settings.example.json |
-| [`09-security-boundaries.html`](09-security-boundaries.html) | Architecture | security | What are the trust zones, auth boundaries and secrets? | api_server.py:60,79-87,684-708, nginx.conf, SECURITY.md |
-| [`10-data-model.html`](10-data-model.html) | ER | devs | What do the JSON catalogs contain and how do they relate? | DEVELOP.md:449-474, analyze_images.py:1522,960,2286, create-index.sh:22, api_server.py:357 |
-| [`11-detection-states.html`](11-detection-states.html) | State machine | devs | How does an image move from unanalyzed to merged, pinned or deleted? | catalog.py:13-58, analyze_images.py:838,981,1201,1760 |
-| [`12-burst-timeline.html`](12-burst-timeline.html) | Timeline | devs / ops | What happens, and when, within one visit — and how long does the deep pass lag? | analyze_images.py, api_server.py:1003-1147, pipeline_events.py, integrations/media.py:20 |
-| [`13-visit-swimlane.html`](13-visit-swimlane.html) | Swimlane | devs / ops | Which lane owns each handoff for one person visit, camera to notification? | create-index.sh:10, analyze_images.py:2120-2294, api_server.py, index.html |
-| [`14-frontend-internals.html`](14-frontend-internals.html) | Architecture | devs | Which group of the A–S sections in the one-file SPA do I open? | index.html:2-121,3126-8944, api_server.py:1509-2034, DEVELOP.md:469-497 |
+| [`09-security-boundaries.html`](09-security-boundaries.html) | Architecture | security | What are the trust zones, auth boundaries and secrets? | api_server.py:60,214-227,1311-1351, nginx.conf, SECURITY.md |
+| [`10-data-model.html`](10-data-model.html) | ER | devs | What do the JSON catalogs contain and how do they relate? | DEVELOP.md:511-536, analyze_images.py:1838,1276,2864, create-index.sh:27-33, api_server.py:791 |
+| [`11-detection-states.html`](11-detection-states.html) | State machine | devs | How does an image move from unanalyzed to merged, pinned or deleted? | catalog.py:13-58, analyze_images.py:1008,1297,1517,2093 |
+| [`12-burst-timeline.html`](12-burst-timeline.html) | Timeline | devs / ops | What happens, and when, within one visit — and how long does the deep pass lag? | analyze_images.py, api_server.py:1723-1875, pipeline_events.py, integrations/media.py:20 |
+| [`13-visit-swimlane.html`](13-visit-swimlane.html) | Swimlane | devs / ops | Which lane owns each handoff for one person visit, camera to notification? | create-index.sh:16, analyze_images.py:2656-2884, api_server.py, index.html |
+| [`14-frontend-internals.html`](14-frontend-internals.html) | Architecture | devs | Which group of the A–S sections in the one-file SPA do I open? | index.html:2-123,3217-9111, api_server.py:1509-1573,1877-2061, DEVELOP.md:476-507 |
 | [`15-test-ci-gates.html`](15-test-ci-gates.html) | Architecture | devs | What has to be green before a change lands? | .github/workflows/ci.yml, tests/run.sh:13-34, tools/screenshots/a11y_audit.js, requirements-dev.txt:19-23 |
 | [`16-asset-manifest.html`](16-asset-manifest.html) | Data flow | devs / ops | Which four lists decide what ships, and which test keeps them in step? | tests/test_static_asset_manifest.js, create-index.sh:48-58, tools/deploy-webroot.sh, tools/demo/build_demo.py, tools/screenshots/proxy.py:229-243 |
 
@@ -40,9 +40,11 @@ deliverable in itself.
 
 ## Fonts
 
-The three faces the set uses — **Instrument Serif** (page titles), **Geist**
+The three families the set uses — **Instrument Serif** (page titles), **Geist**
 (node names) and **Geist Mono** (technical sublabels) — are **vendored in this
-repo**, not loaded from a font CDN:
+repo** as the four woff2 faces below (Instrument Serif ships regular *and*
+italic, the latter for the profile's editorial callouts), not loaded from a
+font CDN:
 
 ```
 docs/diagrams/
