@@ -3,12 +3,10 @@
 //
 // Two defects this pins:
 //
-//  1. DISCOVERABILITY. The chart lives in
-//     `<details class="sidebar-section activity-chart-container">` and nothing
-//     ever set `open`, so the app's only trends surface was permanently
-//     collapsed AND never drawn -- `renderActivityChart()` early-returns on
-//     `!chartPanel.open`. The Motion tab showed a photo grid with no hint that
-//     a chart existed.
+//  1. DISCOVERABILITY. The chart's <details> host shipped collapsed, so the
+//     app's only trends surface was permanently hidden AND never drawn --
+//     `renderActivityChart()` early-returns on `!chartPanel.open`. The Motion
+//     tab showed a photo grid with no hint that a chart existed.
 //
 //  2. AXIS CONTENT. The day axis rendered
 //     `<span>{first}</span><span>days - top=12AM</span><span>{last}</span>`.
@@ -17,16 +15,26 @@
 //     range printed the same date twice: "6/18 | days - top=12AM | 6/18".
 //     The hint now lives in the "By day" sublabel and the axis is dates only,
 //     with a single-day range printing one label.
+//
+// UPDATED (trends-panel move): the host used to be
+// `<details class="sidebar-section activity-chart-container" open>`. It is now
+// `<details class="panel trends-panel activity-chart-container" open>`, inside
+// .content-area -- the rail is display:none below 992px, so the chart did not
+// exist on a phone at all, and 196px gave a six-day planner 28.8px per bar.
+// Only the selector below changed: the behaviour it pins (the host is a
+// <details>, and it ships OPEN) is unchanged and still load-bearing. Its
+// LOCATION is pinned by tests/test_trends_panel.js, so this file keeps owning
+// discoverability and the axis and does not also own layout.
 const assert = require('assert');
 const { src, css, rule, grabFn } = require('./helpers/load.cjs');
 
 // ---- 1. the disclosure ships open -----------------------------------------
 const details = src.match(
-  /<details class="sidebar-section activity-chart-container"([^>]*)>/
+  /<details class="([^"]*\bactivity-chart-container\b[^"]*)"([^>]*)>/
 );
 assert.ok(details, 'the activity chart host must still be a <details>');
 assert.ok(
-  /\bopen\b/.test(details[1]),
+  /\bopen\b/.test(details[2]),
   'the activity chart must ship OPEN. It is the only trends surface, and ' +
     'renderActivityChart() returns early while it is closed, so a collapsed ' +
     'host means no chart is ever drawn.'
