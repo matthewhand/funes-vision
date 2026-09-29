@@ -2,7 +2,7 @@
 
 // Shared loader for the Node suites in tests/*.js.
 //
-// index.html is the app's only source of truth, and ~90 suites assert on it as
+// index.html is the app's only source of truth, and 94 suites assert on it as
 // TEXT: a CSS rule body, a markup fragment, a function body, a sentinel block.
 // Before this module every suite rolled its own `fs.readFileSync` + a private
 // regex scraper, in three slightly different flavours, and half of them returned

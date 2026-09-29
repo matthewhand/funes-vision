@@ -88,7 +88,7 @@
     <div class="diagram-container">
       <svg viewBox="0 0 1104 720" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="15-test-ci-gates-title 15-test-ci-gates-desc">
         <title id="15-test-ci-gates-title">Test and CI gates</title>
-        <desc id="15-test-ci-gates-desc">Two CI jobs on every push: a fast job running the Python suite, the 94 Node suites and an inline JavaScript syntax gate, and a separate browser job that installs a pinned Playwright Chromium, serves the synthetic fixture gallery from a stub server, and runs a six-check accessibility and visual audit whose report is uploaded even on failure.</desc>
+        <desc id="15-test-ci-gates-desc">Two CI jobs on every push: a fast job running the Python suite, the 97 Node suites and an inline JavaScript syntax gate, and a separate browser job that installs a pinned Playwright Chromium, serves the synthetic fixture gallery from a stub server, and runs a six-check accessibility and visual audit whose report is uploaded even on failure.</desc>
         <defs>
           <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
             <polygon points="0 0, 8 3, 0 6" fill="#94a3b8"/>
@@ -141,16 +141,16 @@
         <rect x="56" y="174" width="40" height="12" rx="2" fill="transparent" stroke="rgba(148,163,184,0.40)" stroke-width="0.8"/>
         <text x="76" y="183" fill="rgba(148,163,184,0.80)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">PYTHON</text>
         <text x="56" y="202" fill="#f8fafc" font-size="12" font-weight="600" font-family="'Geist', sans-serif">Python suite — imports api_server and integrations</text>
-        <text x="56" y="220" fill="#94a3b8" font-size="9" font-family="'Geist Mono', monospace">unittest discover -s tests · 40 files · 667 passed, 2 skipped locally</text>
+        <text x="56" y="220" fill="#94a3b8" font-size="9" font-family="'Geist Mono', monospace">unittest discover -s tests · 42 files · 716 passed, 2 skipped locally</text>
         <text x="56" y="238" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace">CORS and same-origin · auth · SSE + connection caps · settings · retention · media</text>
 
         <rect x="48" y="276" width="472" height="84" rx="6" fill="#080c14"/>
         <rect x="48" y="276" width="472" height="84" rx="6" fill="#0f172a" stroke="rgba(248,250,252,0.30)" stroke-width="1"/>
         <rect x="56" y="282" width="32" height="12" rx="2" fill="transparent" stroke="rgba(148,163,184,0.40)" stroke-width="0.8"/>
         <text x="72" y="291" fill="rgba(148,163,184,0.80)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">NODE</text>
-        <text x="56" y="310" fill="#f8fafc" font-size="12" font-weight="600" font-family="'Geist', sans-serif">94 Node suites — zero dependencies, no package.json</text>
-        <text x="56" y="328" fill="#94a3b8" font-size="9" font-family="'Geist Mono', monospace">bash tests/run.sh · 94/94 · CommonJS, node builtins only</text>
-        <text x="56" y="346" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace">every suite reads index.html through tests/helpers/load.cjs, which throws on a miss</text>
+        <text x="56" y="310" fill="#f8fafc" font-size="12" font-weight="600" font-family="'Geist', sans-serif">97 Node suites — zero dependencies, no package.json</text>
+        <text x="56" y="328" fill="#94a3b8" font-size="9" font-family="'Geist Mono', monospace">bash tests/run.sh · 97/97 · CommonJS, node builtins only</text>
+        <text x="56" y="346" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace">36 suites read index.html through tests/helpers/load.cjs, which throws on a miss</text>
 
         <rect x="48" y="384" width="472" height="84" rx="6" fill="#080c14"/>
         <rect x="48" y="384" width="472" height="84" rx="6" fill="#0f172a" stroke="rgba(248,250,252,0.30)" stroke-width="1"/>
@@ -160,7 +160,7 @@
         <text x="56" y="436" fill="#94a3b8" font-size="9" font-family="'Geist Mono', monospace">tools/lint/extract-inline.mjs → node --check</text>
         <text x="56" y="454" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace">a syntax error in the one inline script fails here, not in a browser</text>
 
-        <text x="56" y="492" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace">Also asserted here: 95 pure: sentinels unique and non-empty · every getElementById</text>
+        <text x="56" y="492" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace">Also asserted here: 96 pure: sentinels unique and non-empty · every getElementById</text>
         <text x="56" y="508" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace">cross-checked against the markup · the four-target asset manifest · no remote CDN</text>
         <text x="56" y="524" fill="#64748b" font-size="8" font-family="'Geist Mono', monospace">in any diagram or fonts.css · sentinel inventory · taxonomy parity · demo build.</text>
         <text x="56" y="540" fill="#94a3b8" font-size="8" font-family="'Geist Mono', monospace">Everything in this column inspects the DOM as text — blind to paint.</text>
@@ -235,7 +235,7 @@
         <ul>
           <li>ESLint. It is a real <code>eslint.config.mjs</code>, but opt-in and npm-free — CI never runs it.</li>
           <li>The cron watchdog, which is an <em>operational</em> check, not a test — see diagram 06.</li>
-          <li>Per-suite detail. 94 files is a list; <code>tests/</code> is the list.</li>
+          <li>Per-suite detail. 97 files is a list; <code>tests/</code> is the list.</li>
         </ul>
       </div>
     </div>
