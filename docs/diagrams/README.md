@@ -28,9 +28,13 @@ the app UI). The profile is selected by the `.diagram-design` marker at the repo
 | [`11-detection-states.html`](11-detection-states.html) | State machine | devs | How does an image move from unanalyzed to merged, pinned or deleted? | catalog.py:13-58, analyze_images.py:838,981,1201,1760 |
 | [`12-burst-timeline.html`](12-burst-timeline.html) | Timeline | devs / ops | What happens, and when, within one visit — and how long does the deep pass lag? | analyze_images.py, api_server.py:1003-1147, pipeline_events.py, integrations/media.py:20 |
 | [`13-visit-swimlane.html`](13-visit-swimlane.html) | Swimlane | devs / ops | Which lane owns each handoff for one person visit, camera to notification? | create-index.sh:10, analyze_images.py:2120-2294, api_server.py, index.html |
+| [`14-frontend-internals.html`](14-frontend-internals.html) | Architecture | devs | Which group of the A–S sections in the one-file SPA do I open? | index.html:2-121,3126-8944, api_server.py:1509-2034, DEVELOP.md:469-497 |
+| [`15-test-ci-gates.html`](15-test-ci-gates.html) | Architecture | devs | What has to be green before a change lands? | .github/workflows/ci.yml, tests/run.sh:13-34, tools/screenshots/a11y_audit.js, requirements-dev.txt:19-23 |
+| [`16-asset-manifest.html`](16-asset-manifest.html) | Data flow | devs / ops | Which four lists decide what ships, and which test keeps them in step? | tests/test_static_asset_manifest.js, create-index.sh:48-58, tools/deploy-webroot.sh, tools/demo/build_demo.py, tools/screenshots/proxy.py:229-243 |
 
-`_template.html` is the shared dark skeleton; `_conventions.md` holds the token table and
-connector rules. Neither is a deliverable in itself.
+That is **16 diagrams**. `_template.html` is the shared dark skeleton;
+`_conventions.md` holds the token table and connector rules. Neither is a
+deliverable in itself.
 
 ---
 
@@ -64,7 +68,7 @@ This replaced a `<link>` to `https://fonts.googleapis.com/css2` that every
 diagram carried, which contradicted the project's own no-remote-CDN rule (see
 [issue #44](https://github.com/matthewhand/funes-vision/issues/44)). A system
 font stack was considered first and rejected: it would have made headings render
-in whatever serif the reader happens to have, so the 13 diagrams would stop
+in whatever serif the reader happens to have, so the 16 diagrams would stop
 looking like a set. Self-hosting is a one-time ~192 KB and keeps the design
 byte-for-byte identical to the CDN rendering.
 
@@ -161,8 +165,11 @@ the profile's font names are only a wish until a woff2 backs them.
 ## Recommended future diagrams
 
 The core set (hero, architecture, deployment, sequences, integrations, data flow,
-security, data model, state machine, timeline, swimlane) is complete. Possible additions:
+security, data model, state machine, timeline, swimlane, frontend internals, CI
+gates, asset manifest) is complete. Possible additions:
 
 - **Quadrant or backlog chart**: retention pressure vs. detection value per camera.
 - **Dependency graph**: Python module fan-in across `analyze_images.py`, `api_server.py`,
-  `catalog.py`, `scans.py`, `taxonomy.py`.
+  `catalog.py`, `scans.py`, `taxonomy.py`. [`14-frontend-internals.html`](14-frontend-internals.html)
+  already maps the client side of the same question (which group of the A–S sections
+  owns a job); this would be the server-side equivalent, which nothing covers yet.

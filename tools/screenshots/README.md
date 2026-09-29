@@ -175,18 +175,47 @@ SPA's offline fallback (issue #66).
 
 ## Optimize the guide PNGs
 
-Playwright captures are 24-bit RGB PNGs (~0.5-1 MB each). Before committing,
-re-encode them to 256-colour PNGs — visually unchanged at guide size and
-roughly 63% smaller:
+Playwright captures are 24-bit RGB PNGs, and the desktop ones are 1440px
+wide — far wider than the box the guide paints them into. Before
+committing, re-encode them to capped-width 256-colour palette PNGs —
+visually unchanged at guide size, and much smaller:
 
 ```sh
-python3 tools/screenshots/optimize_guide_img.py
+python3 tools/screenshots/optimize_guide_img.py           # rewrite in place
+python3 tools/screenshots/optimize_guide_img.py --check   # read-only gate
 ```
 
-The script rewrites every `*.png` in `docs/guide/img/` in place using
-Pillow's median-cut quantizer (`optimize=True`). Keep the `.png` extensions:
-`tests/test_screenshot_proxy.py` asserts `timeline.png` still serves
-PNG/JPEG bytes.
+Both take an optional directory argument to override the default
+(`docs/guide/img`).
+
+The script rewrites every `*.png` in place with Pillow's median-cut
+quantizer (`optimize=True`) after a Lanczos downscale. Four constants
+are the whole policy:
+
+| Constant | Value | What it is |
+|----------|-------|------------|
+| `MAX_WIDTH` | `1024` | Hard cap on width. Never upscales, so the 780px phone captures pass through at native size |
+| `DISPLAY_CSS_WIDTH` | `802` | Measured width of the box an `<img>` in `docs/USER-GUIDE.html` is painted into. `MAX_WIDTH` is 1.28x it, for a 125%-zoomed browser and HiDPI |
+| `COLORS` | `256` | Palette size. Cutting it further is what costs quality, not the resample |
+| `MAX_PNG_BYTES` / `MAX_TOTAL_BYTES` | `420_000` / `2_600_000` | Per-file and per-directory byte ceilings |
+
+The cap is a mandate, not a target: a re-encode that comes out *larger*
+is still written, so "no guide PNG is wider than `MAX_WIDTH`" stays one
+unconditional invariant. Two very flat captures (`help.png`, `timeline.png`)
+are heavier that way, and that is the trade.
+
+Re-running is a byte-exact no-op — median cut is not a fixed point, so
+the tool short-circuits any file already in palette mode at or under the
+cap. `--check` re-validates the committed bytes **read-only** (under the
+width cap, in palette mode, and inside both byte ceilings) and exits
+non-zero on any failure; a write run also exits non-zero if the
+directory busts `MAX_TOTAL_BYTES`. Nothing in the build runs `--check`;
+`tests/test_guide_img_budget.py` does, and it also proves the gate can
+fail (too-wide, too-fat, over-colour, over-ceiling).
+
+Keep the `.png` extensions: `tests/test_screenshot_proxy.py` asserts
+`timeline.png` still serves PNG/JPEG bytes. The two GIFs are
+`make_gifs.py`'s and are budgeted separately.
 
 ## Regenerate the showcase GIFs
 
