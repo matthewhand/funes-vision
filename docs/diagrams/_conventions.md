@@ -41,8 +41,9 @@ Mask fills must always be `#080c14` (opaque over the dark page).
 
 ### Fonts are vendored, not linked
 
-All three faces are **self-hosted**. `fonts.css` declares them once with
-`@font-face` rules pointing at `fonts/*.woff2` right here in the repo, and every
+All three families — the four vendored woff2 faces, Instrument Serif regular
+*and* italic — are **self-hosted**. `fonts.css` declares them once with
+`@font-face` rules pointing at `fonts/*.woff2` right here in this repo, and every
 diagram — including `_template.html` — loads it with:
 
 ```html
@@ -114,7 +115,8 @@ no clipped text; source JSON/HTML valid.
 ## Offline check (fonts)
 
 To confirm a diagram is genuinely self-contained, open it from `file://` with the
-network disabled and check the console/network panel is empty and the three faces
-resolved. `self_check.py` cannot see this — it validates the document, not the
-bytes that come off disk — which is why `test_no_remote_cdn.js` additionally
-asserts every `url()` in `fonts.css` resolves to a real, non-empty file.
+network disabled and check the console/network panel is empty and the four
+vendored faces resolved. `self_check.py` cannot see this — it validates the
+document, not the bytes that come off disk — which is why
+`test_no_remote_cdn.js` additionally asserts every `url()` in `fonts.css`
+resolves to a real, non-empty file.
