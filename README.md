@@ -22,7 +22,7 @@ detections group into **visits** — see [ARCHITECTURE.md](ARCHITECTURE.md).
 ## Quickstart
 
 **Prerequisites:** Linux/systemd (Debian/Ubuntu), Python 3.11+, `inotify-tools`,
-`jq`, `ffmpeg`, and Docker Compose. Ollama is optional (deep pass only). Full
+`jq`, `ffmpeg`, and Docker Compose. Ollama is optional (typed decisions and/or burst summaries). Full
 detail: [docs/INSTALL.md](docs/INSTALL.md).
 
 ```bash
@@ -79,7 +79,7 @@ larger clips live in [docs/guide/img](docs/guide/img) and
 |---|---|---|---|
 | Focus | Post-hoc timeline of stills + HA flags | Live/recorded video NVR | Live/recorded video NVR |
 | Video pipeline | No — motion stills over FTP | Continuous stream + detection | Continuous stream + detection |
-| AI | Tiered YOLO + local vision LLM (Ollama) | Coral/GPU detector, no LLM schema | Detector + optional cloud AI |
+| AI | Tiered YOLO + typed decision backend (Ollama/Gemma or Imajev) | Coral/GPU detector, no LLM schema | Detector + optional cloud AI |
 | Home Assistant | Fixed flag schema, first-class | MQTT entities | MQTT / HTTP |
 | Required cloud | None | None | Optional cloud |
 | Best for | "Who was here, confirmed" on a small ARM box | Live NVR with clips | Live NVR, many cameras |
