@@ -14,6 +14,7 @@ REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 COMPOSE=(docker compose -f "$REPO_DIR/docker-compose.yml")
 CONTAINER="gallery"
 URL="http://127.0.0.1:8180/"
+LOCK_FILE="/run/lock/funes-gallery-compose.lock"
 
 # 0. nginx alias roots must match the compose bind mounts.
 #
@@ -77,9 +78,21 @@ if curl -fsS -o /dev/null --max-time 5 "${URL}" 2>/dev/null; then
   exit 0
 fi
 
-# 3. Down — restart it.
+# 3. Down — serialize with webcam-compose.service before mutating Compose.
+exec 9>"$LOCK_FILE"
+flock -x 9
+
+# The service may have recovered while we waited for the lock.
+if docker ps --filter "name=${CONTAINER}" --format '{{.Names}}' | grep -qx "${CONTAINER}"; then
+  exit 0
+fi
+if curl -fsS -o /dev/null --max-time 5 "${URL}" 2>/dev/null; then
+  exit 0
+fi
+
 echo "webcam healthcheck: container down, restarting" >&2
 "${COMPOSE[@]}" up -d "${CONTAINER}" 2>&1 >&2
+flock -u 9
 sleep 3
 if curl -fsS -o /dev/null --max-time 5 "${URL}" 2>/dev/null; then
   echo "webcam healthcheck: gallery back up" >&2

@@ -64,6 +64,35 @@ class TestMountOrdering(unittest.TestCase):
         self.assertIn("${WEBCAM_MODELS_DIR}", text)
 
 
+class TestComposeHealthcheckSerialization(unittest.TestCase):
+    def test_timer_delays_first_probe_from_activation(self):
+        text = unit("webcam-healthcheck.timer")
+        self.assertIn("OnActiveSec=30s", text)
+        self.assertNotIn("OnBootSec=", text)
+
+    def test_compose_mutations_share_a_lock(self):
+        runner = read(os.path.join(ROOT, "tools", "webcam-compose-run.sh"))
+        health = read(os.path.join(ROOT, "tools", "webcam-healthcheck.sh"))
+        lock = "/run/lock/funes-gallery-compose.lock"
+        self.assertIn(lock, runner)
+        self.assertIn(lock, health)
+        self.assertIn("flock -x 9", runner)
+        self.assertIn("flock -x 9", health)
+
+    def test_healthcheck_rechecks_after_lock(self):
+        text = read(os.path.join(ROOT, "tools", "webcam-healthcheck.sh"))
+        lock_pos = text.index("flock -x 9")
+        recheck_pos = text.index(
+            'docker ps --filter "name=${CONTAINER}"',
+            lock_pos,
+        )
+        compose_pos = text.index(
+            '"${COMPOSE[@]}" up -d "${CONTAINER}"',
+            lock_pos,
+        )
+        self.assertLess(recheck_pos, compose_pos)
+
+
 class TestHealthcheckSourceOfTruth(unittest.TestCase):
     def test_healthcheck_executes_repo_script(self):
         text = unit("webcam-healthcheck.service")

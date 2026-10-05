@@ -15,8 +15,14 @@
 set -eu
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+LOCK_FILE="/run/lock/funes-gallery-compose.lock"
 
+# The healthcheck can also repair the container. Serialize compose
+# mutations so a timer firing during service restart cannot race `up -d`.
+exec 9>"$LOCK_FILE"
+flock -x 9
 docker compose -f "$REPO_DIR/docker-compose.yml" up -d gallery
+flock -u 9
 # exec so systemd tracks the wait process as the main PID: when the container
 # exits, this process exits, and Restart=always brings the whole thing back.
 exec docker wait gallery
