@@ -1,6 +1,7 @@
 [Unit]
 Description=funes-vision gallery write API (pin/delete)
-After=network.target remote-fs.target
+RequiresMountsFor=__WEBCAM_MODELS_DIR__
+After=network.target local-fs.target
 
 # Host identity (account, home, checkout path) comes from
 # /etc/webcam/webcam.env, written by systemd/install.sh — see

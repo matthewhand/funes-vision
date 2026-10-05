@@ -1,6 +1,7 @@
 [Unit]
 Description=Ollama local LLM server
-After=network.target remote-fs.target
+RequiresMountsFor=__WEBCAM_MODELS_DIR__
+After=network.target local-fs.target
 
 # WEBCAM_OLLAMA_BIN and the OLLAMA_* runtime settings come from
 # /etc/webcam/webcam.env (systemd/install.sh; see systemd/webcam.env.example).

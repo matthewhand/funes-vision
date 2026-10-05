@@ -1,6 +1,7 @@
 [Unit]
 Description=Webcam analysis pipeline for %i
-After=network.target remote-fs.target
+RequiresMountsFor=__WEBCAM_MODELS_DIR__
+After=network.target local-fs.target
 
 # Identity/paths from /etc/webcam/webcam.env (systemd/install.sh; see
 # systemd/webcam.env.example). User=/Group=/HOME= are install-time tokens

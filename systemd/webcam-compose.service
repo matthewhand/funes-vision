@@ -5,6 +5,7 @@ Description=funes-vision nginx gallery (docker compose)
 # was historically 1.7 min late on boot because it had no ordering on the
 # ext3 mount — without this the container dies on every reboot and nothing
 # restarts it (restart: unless-stopped does not survive a daemon restart).
+RequiresMountsFor=__WEBCAM_MODELS_DIR__
 After=docker.service docker.socket network-online.target local-fs.target
 Wants=docker.service docker.socket network-online.target
 
