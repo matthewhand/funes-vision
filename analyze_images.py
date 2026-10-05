@@ -1643,7 +1643,14 @@ def analyze_image_with_schema(image_path, schema, num_predict, extra_images=None
     global RATE_LIMITED, LAST_MODEL_USED
     images = [encode_image(image_path)]
     if extra_images:
-        images = [encode_image(p) for p in extra_images] + images
+        # collect_timeline_images() returns [prior..., current]. The current
+        # frame is already images[0], so prepending that list verbatim sends
+        # the answer-target JPEG twice and makes the timeline prompt/reporting
+        # disagree with what the model actually receives.
+        current_path = os.path.abspath(image_path)
+        priors = [p for p in extra_images if os.path.abspath(p) != current_path]
+        if priors:
+            images = [encode_image(p) for p in priors] + images
     if len(images) > 1:
         prompt = TIMELINE_PROMPT.format(n=len(images))
     else:
