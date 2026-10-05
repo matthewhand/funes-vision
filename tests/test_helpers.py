@@ -965,6 +965,9 @@ class TestJsonRecovery(unittest.TestCase):
         # the truncated tail is the only record that the frames past the cut
         # were LLM-verified, and overwriting it made them deletable.
         with tempfile.TemporaryDirectory() as td:
+            old_watch_dirs = analyze_images.WATCH_DIRS
+            analyze_images.WATCH_DIRS = [td]
+            self.addCleanup(setattr, analyze_images, "WATCH_DIRS", old_watch_dirs)
             path = os.path.join(td, "analysis.json")
             corrupt = (
                 '{\n  "x.jpg": {\n    "fast_pass": "negative"\n  },\n'
