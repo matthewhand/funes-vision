@@ -40,6 +40,24 @@ class TestMountOrdering(unittest.TestCase):
                 text = unit(name)
                 self.assertNotIn("After=network.target remote-fs.target", text)
 
+
+    def test_environment_file_is_in_service_section(self):
+        for name in self.UNITS:
+            with self.subTest(unit=name):
+                text = unit(name)
+                before, service = text.split("[Service]", 1)
+                self.assertNotIn("EnvironmentFile=", before)
+                self.assertIn(
+                    "EnvironmentFile=-/etc/webcam/webcam.env",
+                    service,
+                )
+
+    def test_installer_renders_execstart_path_tokens(self):
+        text = read(os.path.join(SYSTEMD, "install.sh"))
+        self.assertIn("__WEBCAM_DIR__", text)
+        self.assertIn("__WEBCAM_OLLAMA_BIN__", text)
+        self.assertIn("${WEBCAM_OLLAMA_BIN}", text)
+
     def test_installer_renders_models_dir_token(self):
         text = read(os.path.join(SYSTEMD, "install.sh"))
         self.assertIn("__WEBCAM_MODELS_DIR__", text)
@@ -49,7 +67,7 @@ class TestMountOrdering(unittest.TestCase):
 class TestHealthcheckSourceOfTruth(unittest.TestCase):
     def test_healthcheck_executes_repo_script(self):
         text = unit("webcam-healthcheck.service")
-        self.assertIn("${WEBCAM_DIR}/tools/webcam-healthcheck.sh", text)
+        self.assertIn("__WEBCAM_DIR__/tools/webcam-healthcheck.sh", text)
         self.assertNotIn("/usr/local/bin/webcam-healthcheck.sh", text)
 
     def test_installer_does_not_copy_stale_healthcheck(self):

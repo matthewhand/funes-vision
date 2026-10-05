@@ -7,14 +7,13 @@ After=network.target local-fs.target
 # /etc/webcam/webcam.env (systemd/install.sh; see systemd/webcam.env.example).
 # User=/Group=/HOME= are install-time tokens because systemd cannot expand
 # environment variables there.
-EnvironmentFile=-/etc/webcam/webcam.env
-
 [Service]
+EnvironmentFile=-/etc/webcam/webcam.env
 Type=simple
 User=__WEBCAM_USER__
 Group=__WEBCAM_GROUP__
 Environment=HOME=__WEBCAM_HOME__
-ExecStart=${WEBCAM_OLLAMA_BIN} serve
+ExecStart=__WEBCAM_OLLAMA_BIN__ serve
 Restart=always
 RestartSec=10
 # Lowest CPU priority: inference soaks all 4 cores for ~5 min per

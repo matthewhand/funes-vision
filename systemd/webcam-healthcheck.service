@@ -5,8 +5,7 @@ Description=Health check for the funes-vision nginx gallery
 # it otherwise.
 RequiresMountsFor=__WEBCAM_MODELS_DIR__
 After=webcam-compose.service docker.service local-fs.target
-EnvironmentFile=-/etc/webcam/webcam.env
-
 [Service]
+EnvironmentFile=-/etc/webcam/webcam.env
 Type=oneshot
-ExecStart=/usr/bin/bash ${WEBCAM_DIR}/tools/webcam-healthcheck.sh
+ExecStart=/usr/bin/bash __WEBCAM_DIR__/tools/webcam-healthcheck.sh

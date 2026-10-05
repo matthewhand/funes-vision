@@ -6,14 +6,13 @@ After=network.target local-fs.target
 # Identity/paths from /etc/webcam/webcam.env (systemd/install.sh; see
 # systemd/webcam.env.example). User=/Group=/HOME= are install-time tokens
 # because systemd cannot expand environment variables there.
-EnvironmentFile=-/etc/webcam/webcam.env
-
 [Service]
+EnvironmentFile=-/etc/webcam/webcam.env
 Type=simple
 User=__WEBCAM_USER__
 Group=__WEBCAM_GROUP__
 Environment=HOME=__WEBCAM_HOME__
-ExecStart=${WEBCAM_DIR}/create-index.sh ${WEBCAM_MODELS_DIR}/%i
+ExecStart=__WEBCAM_DIR__/create-index.sh __WEBCAM_MODELS_DIR__/%i
 Restart=always
 RestartSec=10
 Nice=10

@@ -113,9 +113,10 @@ CORS origin allowlist: $WEBCAM_CORS_ORIGIN
   with: journalctl -u webcam-api | grep 'CORS allowlist'
 EOF
 
-# systemd cannot expand environment variables in User=/Group=/HOME= or
-# RequiresMountsFor=, so those values are rendered as __WEBCAM_*__ tokens.
-# Runtime command paths still expand from the EnvironmentFile above.
+# systemd cannot expand environment variables in User=/Group=/HOME=,
+# RequiresMountsFor=, or as the ExecStart executable path, so host identity
+# and executable paths are rendered as __WEBCAM_*__ tokens here. Runtime
+# options still come from the EnvironmentFile.
 render() {
   sed \
     -e "s|__WEBCAM_USER__|${WEBCAM_USER}|g" \
@@ -123,6 +124,7 @@ render() {
     -e "s|__WEBCAM_HOME__|${WEBCAM_HOME}|g" \
     -e "s|__WEBCAM_DIR__|${WEBCAM_DIR}|g" \
     -e "s|__WEBCAM_MODELS_DIR__|${WEBCAM_MODELS_DIR}|g" \
+    -e "s|__WEBCAM_OLLAMA_BIN__|${WEBCAM_OLLAMA_BIN}|g" \
     "$1" > "$2"
 }
 
