@@ -1347,7 +1347,7 @@ class TestE2bSchema(unittest.TestCase):
         self.assertEqual(rec["fast_pass"], "partial")
         self.assertEqual(rec["_llm_skip"], "ram_tight")
 
-    def test_analyze_local_payload_uses_schema_not_prompt(self):
+    def test_analyze_local_payload_keeps_schema_shape_and_prompt_questions(self):
         ai = analyze_images
         ai.MODEL_PRIMARY, ai.MODEL_FALLBACK = "gemma4:e2b", ""
         ai.MIN_MEM_FOR_LOCAL_GB = 0.0
@@ -1373,9 +1373,11 @@ class TestE2bSchema(unittest.TestCase):
         self.assertEqual(captured["format"], ai.FRONT_SCHEMA)
         self.assertEqual(captured["think"], False)
         self.assertEqual(captured["options"]["num_predict"], 220)
-        self.assertEqual(captured["messages"][0]["content"], "Look at this image and answer the questions.")
-        self.assertNotIn("postal_delivery", captured["messages"][0]["content"])
-        self.assertNotIn("JSON", captured["messages"][0]["content"])
+        prompt = captured["messages"][0]["content"]
+        self.assertTrue(prompt.startswith(ai.DETECT_PROMPT))
+        for key in ai.FRONT_SCHEMA["required"]:
+            self.assertIn(key, prompt)
+        self.assertNotIn("JSON", prompt)
         self.assertEqual(res["porch_access"], True)
         self.assertEqual(res["postal_how"], "none")
 
@@ -1414,7 +1416,7 @@ class TestE2bSchema(unittest.TestCase):
             "dog_walked": True, "animal_detected": True, "animal_type": "dog",
         }), "Person walking a dog")
 
-    def test_analyze_openrouter_payload_uses_schema(self):
+    def test_analyze_openrouter_payload_keeps_schema_and_prompt_questions(self):
         ai = analyze_images
         ai.encode_image = lambda p: "x"
         captured = {}
@@ -1443,9 +1445,11 @@ class TestE2bSchema(unittest.TestCase):
         self.assertTrue(rf["json_schema"]["strict"])
         self.assertEqual(payload["max_tokens"], 220)
         self.assertEqual(payload["temperature"], 0)
-        self.assertEqual(payload["messages"][0]["content"][0]["text"],
-                         "Look at this image and answer the questions.")
-        self.assertNotIn("postal_delivery", payload["messages"][0]["content"][0]["text"])
+        text = payload["messages"][0]["content"][0]["text"]
+        self.assertTrue(text.startswith(ai.DETECT_PROMPT))
+        self.assertNotIn("JSON", text)
+        for key in ai.FRONT_SCHEMA["required"]:
+            self.assertIn(key, text)
         self.assertEqual(res, {"porch_access": True})
 
         captured.clear()

@@ -502,10 +502,44 @@ TIMELINE_PROMPT = (
     "Do not describe the earlier frames — only answer about the final frame."
 )
 
+
+def prompt_for_schema(schema, header=DETECT_PROMPT, tail=None):
+    """Build the model-visible questions for a structured-output schema.
+
+    The JSON schema passed through ``format`` constrains the answer shape, but
+    the model should not have to infer the task from terse property names.
+    Restate each property's description and allowed answer form in the prompt.
+    """
+    props = (schema or {}).get("properties") or {}
+    order = [k for k in ((schema or {}).get("required") or []) if k in props]
+    order += [k for k in props if k not in order]
+
+    lines = [header] if header else []
+    for key in order:
+        spec = props.get(key) or {}
+        enum = spec.get("enum")
+        if spec.get("type") == "boolean" or enum == [True, False]:
+            label = "true or false"
+        elif enum:
+            label = "one of: " + ", ".join(str(option) for option in enum)
+        else:
+            label = "text"
+
+        desc = " ".join(str(spec.get("description") or "").split())
+        lines.append(
+            "- %s (%s): %s"
+            % (key, label, desc or "answer from the image")
+        )
+
+    if tail:
+        lines.append(tail)
+    return "\\n".join(lines)
+
+
 # HA front/back schemas — do not replace with person_at_car
-# Structured flags are enforced by the inference API `format` field
-# (Ollama /api/chat JSON Schema). Question text lives in each property
-# `description` — never in the prompt.
+# Structured flags are enforced by the inference API `format` field.
+# prompt_for_schema() also restates each property's description so the model
+# sees the actual question instead of only terse output-key names.
 FRONT_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
@@ -759,8 +793,14 @@ def entry_caption(a):
 def get_llm_schema():
     """Read-only export of the live prompt + HA schemas for the UI viewer."""
     import scans
+    example = scans.union_schema([scans.SCANS[0]]) if scans.SCANS else {}
     return {
         "prompt": DETECT_PROMPT,
+        "prompt_example": prompt_for_schema(example) if example else DETECT_PROMPT,
+        "prompt_note": (
+            "Structured output constrains the answer shape; scan questions are "
+            "also restated into the model prompt (see prompt_example)."
+        ),
         "schemas": {
             "front_door": FRONT_SCHEMA,
             "dog_cam": BACK_SCHEMA,
@@ -973,7 +1013,7 @@ def analyze_image_openrouter(image_path, api_key, schema=None, num_predict=None)
             {
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": DETECT_PROMPT},
+                    {"type": "text", "text": prompt_for_schema(schema)},
                     {
                         "type": "image_url",
                         "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"},
@@ -1652,9 +1692,13 @@ def analyze_image_with_schema(image_path, schema, num_predict, extra_images=None
         if priors:
             images = [encode_image(p) for p in priors] + images
     if len(images) > 1:
-        prompt = TIMELINE_PROMPT.format(n=len(images))
+        prompt = prompt_for_schema(
+            schema,
+            TIMELINE_PROMPT.format(n=len(images)),
+            tail="Answer every question about the final frame only.",
+        )
     else:
-        prompt = DETECT_PROMPT
+        prompt = prompt_for_schema(schema)
     base = {
         "messages": [{
             "role": "user",

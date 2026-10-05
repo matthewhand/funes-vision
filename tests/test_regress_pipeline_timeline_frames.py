@@ -121,7 +121,8 @@ class TestCurrentFrameNotDuplicated(unittest.TestCase):
         analyze_images.analyze_image_with_schema(
             solo, SCHEMA, 16, extra_images=timeline)
         self.assertEqual(self.rec.frames, ["solo.jpg"])
-        self.assertEqual(self.rec.prompt, analyze_images.DETECT_PROMPT)
+        self.assertEqual(self.rec.prompt,
+                         analyze_images.prompt_for_schema(SCHEMA))
 
     def test_one_prior_sends_two_distinct_frames_once_each(self):
         timeline = self._call("f3.jpg")
