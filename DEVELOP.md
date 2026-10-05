@@ -79,16 +79,20 @@ no restarts needed). Per camera dir, in order:
    (auto, or via `fast_pass_engine`). YOLO = yolov4-tiny via OpenCV DNN,
    COCO classes mapped to person/car/bird/cat/dog, conf 0.45, ~0.2s/image.
    Haar = legacy frontal-face/fullbody/frontalcatface cascades.
-5. **Deep pass** — the `model_primary` vision model through Ollama
-   (`analyze_image_local`, /api/chat with `format: json` + the front/back HA
-   schema). Live tag is `gemma4:e2b`. `model_primary` can be a local tag *or*
-   an Ollama `:cloud` model (e.g. `minimax-m3:cloud`) — same `:11434` path
-   either way. OpenRouter remains a separate fallback when `allow_cloud` is
-   true. Budgeted: `max_deep_passes` per camera per sweep counts local AND
-   cloud calls. **The LLM writes HA flags** (`postal_delivery`, `porch_access`,
-   `animal_detected`, …). **`merge_llm_into_fastpass` never overwrites
-   detector labels** (`person`/`car`/`dog`/…). There is no free-text
-   `description` field.
+5. **Deep pass** — typed HA decisions use `decision_backend`:
+   `ollama` (default) sends the active schema to `model_primary` through
+   Ollama `/api/chat`; `imajev` sends the same boolean/enum schema as typed
+   `noul`/`choice` questions to `imajev_url` (`/v1/systemone`). With timeline
+   context, Imajev receives at most the newest prior frame plus the current
+   target frame. Abstention is preserved as `None` instead of forcing a guess.
+   `model_primary` can be a local tag *or* an Ollama `:cloud` model; OpenRouter
+   remains a separate fallback when `allow_cloud` is true. Budgeted:
+   `max_deep_passes` per camera per sweep counts local AND cloud calls.
+   **The decision stage writes HA flags** (`postal_delivery`, `porch_access`,
+   `animal_detected`, …). **`merge_llm_into_fastpass` never overwrites detector
+   labels** (`person`/`car`/`dog`/…). There is no free-text `description` field.
+   Burst summaries are intentionally separate: they remain free-text
+   Ollama/OpenRouter work even when typed decisions use Imajev.
    - *Which models run here* (`runnable_chain`): the primary→fallback chain is
      filtered to what THIS host can serve — a `:cloud` model only when
      `allow_cloud` is true (it runs on Ollama's servers, no local RAM, but
@@ -135,6 +139,13 @@ occasional outliers are much slower). `allow_cloud` is false; the deep pass
 does **not** run `gemma4:12b` (~5.5 min/image) or a cloud primary here.
 `max_deep_passes` (30) bounds a sweep so it can't hold the 1h lock indefinitely.
 Idle backfill is off, so the archive is not grinding toward full HA coverage.
+
+**Imajev runtime note:** the adapter and backend toggle are integrated, but the
+current PyTorch CPU runtime is experimental on teamstinky. Local testing saw
+roughly 8.6 GiB RSS, a real inference remain CPU-bound for more than 27 minutes,
+FP16/BF16 substantially slower than FP32, and TorchAO INT8 slower than FP32 in
+representative linear benchmarks. Keep `decision_backend=ollama` on this host
+until a better ARM/quantized Imajev runtime is available.
 
 ### Retention (file rotation)
 
@@ -368,8 +379,9 @@ stream (`image.new` / `detection.preliminary` / `new-detection` / `new-burst`;
 **Methods, request/response payloads, status codes, and the SSE event schema
 are documented once in [API.md](API.md)** — the source of truth; keep it in
 sync with the code. Two things worth repeating here: the only settings
-`POST /api/settings` will accept are `fast_pass_engine`, `deep_backfill`,
-`deep_passes_enabled`, `burst_summaries_enabled`, `idle_sweep_seconds`; and `GET /api/integrations` is
+`POST /api/settings` will accept are `fast_pass_engine`, `decision_backend`,
+`deep_backfill`, `deep_passes_enabled`, `burst_summaries_enabled`,
+`idle_sweep_seconds`; and `GET /api/integrations` is
 always **redacted** (token presence, never values — see [Integrations](#integrations)).
 
 API origin: the UI calls the API **same-origin at `/api/`** so there's no

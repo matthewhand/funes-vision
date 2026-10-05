@@ -29,6 +29,8 @@
   "min_mem_for_local_gb": 6.0,
   "allow_cloud": false,
   "ollama_url": "http://localhost:11434",
+  "decision_backend": "ollama",
+  "imajev_url": "http://127.0.0.1:8791",
   "ollama_keep_alive": "24h",
   "model_local": "gemma4:e2b",
   "model_primary": "gemma4:e2b",

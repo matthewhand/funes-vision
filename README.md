@@ -12,9 +12,11 @@ FTP snapshots into a queryable, de-duplicated timeline of visits.
 > units and some paths still use `webcam` — intentional, not a bug.
 
 **How it works:** cameras drop motion stills over FTP; `inotifywait` queues each
-one. A cheap YOLOv4-tiny pass runs on every frame; only real hits reach a local
-vision LLM (`gemma4:e2b` via Ollama) that returns a fixed Home Assistant flag
-schema (`postal_delivery`, `porch_access`, `animal_detected`, ...). Contiguous
+one. A cheap YOLOv4-tiny pass runs on every frame; only real hits reach the
+typed decision stage, which defaults to `gemma4:e2b` via Ollama and can
+optionally use Imajev for schema-bound yes/no/choice decisions. The stage
+returns fixed Home Assistant flags (`postal_delivery`, `porch_access`,
+`animal_detected`, ...). Contiguous
 detections group into **visits** — see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Quickstart

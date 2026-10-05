@@ -620,6 +620,7 @@ def camera_dir(camera_id):
 # numeric range
 MUTABLE_SETTINGS = {
     "fast_pass_engine": {"choices": ("yolo", "haar")},
+    "decision_backend": {"choices": ("ollama", "imajev")},
     "deep_backfill": {"choices": (True, False)},
     "deep_passes_enabled": {"choices": (True, False)},
     "burst_summaries_enabled": {"choices": (True, False)},

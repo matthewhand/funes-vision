@@ -26,6 +26,8 @@ from integrations import media, ntfy, slack
 class TestSettingValid(unittest.TestCase):
     def test_choice_ok(self):
         self.assertTrue(api_server.setting_valid("fast_pass_engine", "yolo"))
+        self.assertTrue(api_server.setting_valid("decision_backend", "ollama"))
+        self.assertTrue(api_server.setting_valid("decision_backend", "imajev"))
         self.assertTrue(api_server.setting_valid("deep_passes_enabled", False))
         self.assertTrue(api_server.setting_valid("burst_summaries_enabled", False))
         self.assertTrue(api_server.setting_valid("burst_summaries_enabled", True))
@@ -33,6 +35,7 @@ class TestSettingValid(unittest.TestCase):
 
     def test_choice_bad(self):
         self.assertFalse(api_server.setting_valid("fast_pass_engine", "nope"))
+        self.assertFalse(api_server.setting_valid("decision_backend", "nope"))
 
     def test_range(self):
         self.assertTrue(api_server.setting_valid("idle_sweep_seconds", 60))

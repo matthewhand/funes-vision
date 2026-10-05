@@ -241,7 +241,7 @@ not errors. A camera that has never been swept is a valid empty payload.
 
 ### `GET /api/settings`
 The mutable settings subset, plus a live `cameras` registry (not POST-able).
-- **200** → `{"fast_pass_engine", "deep_backfill", "deep_passes_enabled", "burst_summaries_enabled", "idle_sweep_seconds", "ignore_regions", "cameras"}`
+- **200** → `{"fast_pass_engine", "decision_backend", "deep_backfill", "deep_passes_enabled", "burst_summaries_enabled", "idle_sweep_seconds", "ignore_regions", "cameras"}`
   `cameras` is `[{id, kind, label, source_dir, index}, ...]` from the process's
   `watch_dirs` (folder basename = `id`; `kind` is front/back).
 
@@ -249,6 +249,7 @@ The mutable settings subset, plus a live `cameras` registry (not POST-able).
 Update one or more mutable settings (validated; others ignored).
 - **Body** any subset of:
   - `fast_pass_engine` ∈ `"yolo" | "haar"`
+  - `decision_backend` ∈ `"ollama" | "imajev"` — typed deep-pass decisions only; burst summaries remain on the Ollama/OpenRouter caption path
   - `deep_backfill` ∈ `true | false`
   - `deep_passes_enabled` ∈ `true | false`
   - `burst_summaries_enabled` ∈ `true | false`
