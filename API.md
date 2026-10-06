@@ -158,15 +158,16 @@ what is read, not what the caller asserts.)
 
 **`WEBCAM_PROBE_TTL`** — `/api/status` and `/api/health` are unauthenticated and
 polled hard (the SPA, `tools/watchdog.sh` and the uptime monitor all hit them).
-An uncached call forks `pgrep` **and** opens a socket to Ollama's
-`/api/version`, so 20 polls used to cost 20 forks and 20 connects on the
-documented 4-core box. Both answers are stable for seconds, so they are
+An uncached call forks `pgrep` **and** opens a socket to the selected local
+decision backend (`Ollama /api/version` or `Imajev /v1/models`), so 20 polls
+used to cost 20 forks and 20 connects on the documented 4-core box. Both
+answers are stable for seconds, so they are
 memoised in-process. Only `trigger.inotify_active` and `llm.reachable` (and
 therefore `checks.inotify` / `checks.llm_reachable`) are cached —
 `last_sweep_age_s`, `disk_space` and the queue counts are recomputed per call.
 *Guidance:* at the default, 20 polls cost 2 probes and those two values may be
 up to ~5 s stale. Set `0` to disable caching (every call re-probes — always
-correct, and the reason `/api/health` can be slow while Ollama is down). The
+correct, and the reason `/api/health` can be slow while the selected backend is down). The
 cache is in-process and TTL-bounded; `reset_probe_cache()` drops it immediately
 (tests, and ops after a pipeline restart).
 
@@ -241,7 +242,7 @@ not errors. A camera that has never been swept is a valid empty payload.
 
 ### `GET /api/settings`
 The mutable settings subset, plus a live `cameras` registry (not POST-able).
-- **200** → `{"fast_pass_engine", "deep_backfill", "deep_passes_enabled", "burst_summaries_enabled", "idle_sweep_seconds", "ignore_regions", "cameras"}`
+- **200** → `{"fast_pass_engine", "decision_backend", "deep_backfill", "deep_passes_enabled", "burst_summaries_enabled", "idle_sweep_seconds", "ignore_regions", "cameras"}`
   `cameras` is `[{id, kind, label, source_dir, index}, ...]` from the process's
   `watch_dirs` (folder basename = `id`; `kind` is front/back).
 
@@ -249,6 +250,7 @@ The mutable settings subset, plus a live `cameras` registry (not POST-able).
 Update one or more mutable settings (validated; others ignored).
 - **Body** any subset of:
   - `fast_pass_engine` ∈ `"yolo" | "haar"`
+  - `decision_backend` ∈ `"ollama" | "imajev"` — typed deep-pass decisions only; burst summaries remain on the Ollama/OpenRouter caption path
   - `deep_backfill` ∈ `true | false`
   - `deep_passes_enabled` ∈ `true | false`
   - `burst_summaries_enabled` ∈ `true | false`
@@ -257,7 +259,7 @@ Update one or more mutable settings (validated; others ignored).
     `polygon` is 3–8 points in `[0,1]` image fractions (origin top-left).
     `mode=ignore` (default): YOLO drops a listed label when the box centre
     is inside an enabled polygon (parked-car bay). `mode=gate` + `scan=porch`:
-    do **not** drop the person; skip the e2b porch question and set
+    do **not** drop the person; skip the typed porch question and set
     `porch_access` from whether the person centre sits in the polygon.
     Empty list = no mask.
 - **200** → `{"ok": true, ...changed}`
@@ -311,7 +313,7 @@ Live pipeline snapshot. Shape (keys may be absent if a source is unavailable):
   (`last_sweep_age_s` is seconds since `/tmp/webcam_analysis.lastrun`, or
   JSON `null` if the marker is missing; the UI treats null as “unknown”.
   The cron watchdog and `recent_sweep` health check use this)
-- `llm` → `{model, reachable, allow_cloud}`
+- `llm` → `{backend, model, reachable, allow_cloud}` — `backend` is the selected typed-decision service (`ollama` or `imajev`)
 - `inference` → `{}` when idle, otherwise the live `inference_status.json`
   object plus `running_for_s` (the ℹ panel’s “Analyzing now” line)
 - `queue` → `{images_on_disk, unanalyzed, unverified_partials,
@@ -343,7 +345,7 @@ Live pipeline snapshot. Shape (keys may be absent if a source is unavailable):
 - `watch_dirs` and `cameras[]` come from **import-time** `WATCH_DIRS`. `settings`
   is re-read from disk each request, so the two can disagree until the API restarts
   after a `watch_dirs` edit.
-- `trigger.inotify_active` and `llm.reachable` are **memoised** for
+- `trigger.inotify_active` and selected-backend `llm.reachable` are **memoised** for
   `WEBCAM_PROBE_TTL` seconds (default 5; `0` = re-probe every call) — see
   [Request limits](#request-limits). Every other value in the snapshot is read
   fresh.
@@ -484,6 +486,6 @@ patching — see [ROADMAP.md](ROADMAP.md). `image.new` / `detection.preliminary`
 `loadData()` refetch.
 
 ### `GET /api/llm-schema`
-Read-only prompt + front/back JSON schemas the pipeline sends to the vision
-model. Used by the ℹ panel.
+Read-only prompt + front/back JSON schemas the pipeline sends to the typed
+vision decision backend. Used by the ℹ panel.
 - **200** → `{prompt, schemas: {front_door, dog_cam}, ...}`

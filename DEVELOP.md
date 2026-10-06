@@ -17,7 +17,7 @@ Hikvision cameras ──FTP──> /mnt/models/Webcam21 (webcam)   nginx :8180 (
                         │ 1. retention (age + disk budget, pin-aware)
                         │ 2. thumbnails (320px JPEG -> thumbs/)
                         │ 3. fast pass: YOLO (yolov4-tiny) or Haar
-                        │ 4. deep pass: gemma4:e2b via local Ollama
+                        │ 4. deep pass: typed decision backend (Ollama/Gemma or Imajev)
                         │    (HA flags; YOLO labels kept; OpenRouter if allow_cloud)
                         │ 5. burst detection + optional LLM burst summaries
                         │ 6. stale-entry pruning
@@ -79,16 +79,20 @@ no restarts needed). Per camera dir, in order:
    (auto, or via `fast_pass_engine`). YOLO = yolov4-tiny via OpenCV DNN,
    COCO classes mapped to person/car/bird/cat/dog, conf 0.45, ~0.2s/image.
    Haar = legacy frontal-face/fullbody/frontalcatface cascades.
-5. **Deep pass** — the `model_primary` vision model through Ollama
-   (`analyze_image_local`, /api/chat with `format: json` + the front/back HA
-   schema). Live tag is `gemma4:e2b`. `model_primary` can be a local tag *or*
-   an Ollama `:cloud` model (e.g. `minimax-m3:cloud`) — same `:11434` path
-   either way. OpenRouter remains a separate fallback when `allow_cloud` is
-   true. Budgeted: `max_deep_passes` per camera per sweep counts local AND
-   cloud calls. **The LLM writes HA flags** (`postal_delivery`, `porch_access`,
-   `animal_detected`, …). **`merge_llm_into_fastpass` never overwrites
-   detector labels** (`person`/`car`/`dog`/…). There is no free-text
-   `description` field.
+5. **Deep pass** — typed HA decisions use `decision_backend`:
+   `ollama` (default) sends the active schema to `model_primary` through
+   Ollama `/api/chat`; `imajev` sends the same boolean/enum schema as typed
+   `noul`/`choice` questions to `imajev_url` (`/v1/systemone`). With timeline
+   context, Imajev receives at most the newest prior frame plus the current
+   target frame. Abstention is preserved as `None` instead of forcing a guess.
+   `model_primary` can be a local tag *or* an Ollama `:cloud` model; OpenRouter
+   remains a separate fallback when `allow_cloud` is true. Budgeted:
+   `max_deep_passes` per camera per sweep counts local AND cloud calls.
+   **The decision stage writes HA flags** (`postal_delivery`, `porch_access`,
+   `animal_detected`, …). **`merge_llm_into_fastpass` never overwrites detector
+   labels** (`person`/`car`/`dog`/…). There is no free-text `description` field.
+   Burst summaries are intentionally separate: they remain free-text
+   Ollama/OpenRouter work even when typed decisions use Imajev.
    - *Which models run here* (`runnable_chain`): the primary→fallback chain is
      filtered to what THIS host can serve — a `:cloud` model only when
      `allow_cloud` is true (it runs on Ollama's servers, no local RAM, but
@@ -135,6 +139,13 @@ occasional outliers are much slower). `allow_cloud` is false; the deep pass
 does **not** run `gemma4:12b` (~5.5 min/image) or a cloud primary here.
 `max_deep_passes` (30) bounds a sweep so it can't hold the 1h lock indefinitely.
 Idle backfill is off, so the archive is not grinding toward full HA coverage.
+
+**Imajev runtime note:** the adapter and backend toggle are integrated, but the
+current PyTorch CPU runtime is experimental on teamstinky. Local testing saw
+roughly 8.6 GiB RSS, a real inference remain CPU-bound for more than 27 minutes,
+FP16/BF16 substantially slower than FP32, and TorchAO INT8 slower than FP32 in
+representative linear benchmarks. Keep `decision_backend=ollama` on this host
+until a better ARM/quantized Imajev runtime is available.
 
 ### Retention (file rotation)
 
@@ -194,7 +205,7 @@ assets, host free space on `/` or the whole `/mnt/models` volume
 |------|------|
 | Full sweep | Every `analyze_images.py` run (inotify / idle / startup), step 1 |
 | `--retention-only` | Cron hourly + manual; age/budget + catalog prune only — **no** YOLO/LLM queue |
-| `--rescan-days N` | One-shot: re-YOLO + current e2b scans on person/dog/cat/bird frames in the last N days. Empties and car-only skipped. Holds the pipeline flock |
+| `--rescan-days N` | One-shot: re-YOLO + current typed decision scans on person/dog/cat/bird frames in the last N days. Empties and car-only skipped. Holds the pipeline flock |
 | Manual API delete | `POST /api/delete` (also unpins); not retention, but same disk effect |
 
 After deletes, the sweep **prunes** stale keys from `analysis.json` /
@@ -368,8 +379,9 @@ stream (`image.new` / `detection.preliminary` / `new-detection` / `new-burst`;
 **Methods, request/response payloads, status codes, and the SSE event schema
 are documented once in [API.md](API.md)** — the source of truth; keep it in
 sync with the code. Two things worth repeating here: the only settings
-`POST /api/settings` will accept are `fast_pass_engine`, `deep_backfill`,
-`deep_passes_enabled`, `burst_summaries_enabled`, `idle_sweep_seconds`; and `GET /api/integrations` is
+`POST /api/settings` will accept are `fast_pass_engine`, `decision_backend`,
+`deep_backfill`, `deep_passes_enabled`, `burst_summaries_enabled`,
+`idle_sweep_seconds`; and `GET /api/integrations` is
 always **redacted** (token presence, never values — see [Integrations](#integrations)).
 
 API origin: the UI calls the API **same-origin at `/api/`** so there's no
@@ -392,7 +404,7 @@ The API's whole environment surface, defaults cross-checked against
 | `WEBCAM_API_SOCKET_TIMEOUT` | `30` (s) | per connection | Read timeout on one client socket. A stalled peer can't park a handler thread and starve `/api/health`. Raise only for a genuinely slow client. `0` or less means **no** read timeout (and warns at startup): `settimeout(0)` is non-blocking mode, and a negative value raises inside `socketserver.setup()`, which answers no request at all. |
 | `WEBCAM_API_MAX_CONNECTIONS` | `64` | per connection | Concurrent-connection ceiling, checked before the handler thread exists. Past it a new connection gets **503** `too many concurrent connections`, not another thread. The socket timeout above bounds a thread's lifetime; this bounds the count. `0` disables. Raise if something legitimate needs more than 64 at once — a browser uses at most 6 per host and a reverse proxy reuses one upstream connection, so single-user use is 1–2. Refusals are not logged per connection (the burst is the flood); the reason is in the 503 body. |
 | `WEBCAM_API_MAX_BODY` | `1048576` (1 MiB) | per `POST` | Largest accepted `Content-Length`; over it (or negative) is **413** `request body too large`, refused before the body is read. Every mutating endpoint is small JSON — leave it alone. |
-| `WEBCAM_PROBE_TTL` | `5` (s) | per probe call | Memoises the `pgrep` inotify probe and the Ollama `/api/version` reachability behind `/api/status` and `/api/health`, so 20 polls cost 2 forks instead of 20. `0` re-probes every call. Raise only if you need fresher `llm.reachable` than the default ~5 s. |
+| `WEBCAM_PROBE_TTL` | `5` (s) | per probe call | Memoises the `pgrep` inotify probe and the selected decision-backend reachability (`Ollama /api/version` or `Imajev /v1/models`) behind `/api/status` and `/api/health`, so 20 polls cost 2 probes instead of 20. `0` re-probes every call. Raise only if you need fresher `llm.reachable` than the default ~5 s. |
 | `WEBCAM_API_HOST` | `127.0.0.1` | **once at startup** | Bind address — the only exposure control. `0.0.0.0` only behind a proxy that does its own auth; restart the unit after changing. |
 | `WEBCAM_API_TOKEN` | unset (auth off) | per request | Shared secret gating **every** `POST`. WINS over the `api_token` key in `settings.json`. A blank env value falls through to `settings.json`; an `api_token` key that is present but blank is a misconfiguration the server **refuses to start on** (`auth=broken`) rather than silently serving auth-off. |
 | `WEBCAM_CORS_ORIGIN` | `http://localhost:8180,http://127.0.0.1:8180` | per request | Comma-separated origin allowlist, lowercased and `/`-stripped. A literal `*` or `null` is dropped and never sent — the wildcard is the hole this replaced. **Only needed when the gallery is served from a different origin than the API** (e.g. opening a camera container at `http://<host>:8180`); behind the reverse proxy `/api/` is same-origin and needs no entry (#51). A list that resolves empty or holds a non-`scheme://host[:port]` entry is reported at startup and 403s every browser write. |
@@ -425,7 +437,7 @@ localStorage: `webcam_ai_blacklist` (hidden labels) and
   flickers smoothed; each visit's frame run (2 context frames + up to 60)
   plays via `openEventPlayer()` (2.5fps thumbnail flipbook). Player
   download is **GIF only**.
-- Captions: the UI still reads `analysis.description`. The e2b deep pass
+- Captions: the UI still reads `analysis.description`. The typed deep pass
   **does not write that field** — it writes HA flags instead (shown as
   badges / ℹ schema). Old catalog rows may still have a caption.
 - Charts: day-planner (per-day 24h timelines, red marks at match
@@ -596,19 +608,21 @@ move → verify) lives in [ROADMAP.md](ROADMAP.md).
 | `persist_budget_pct` | 20 | retention: max % of `max_dir_gb` for LLM-verified timeline frames older than `max_age_days` (code fallback 20; not UI-mutable) |
 | `min_mem_for_local_gb` | 6.0 | min free RAM to attempt a **local** model; a `:cloud` model ignores this (see `runnable_chain`) |
 | `allow_cloud` | false | kill switch for ALL cloud inference: gates the OpenRouter fallback AND any Ollama `:cloud` model in the chain |
-| `ollama_url` | http://localhost:11434 | local LLM endpoint |
+| `ollama_url` | http://localhost:11434 | local Ollama endpoint |
+| `decision_backend` | ollama | typed HA decision backend: `ollama` or `imajev` (UI-selectable) |
+| `imajev_url` | http://127.0.0.1:8791 | local Imajev endpoint; file-configured, not UI-mutable |
 | `ollama_keep_alive` | 24h | sent on every `/api/chat`; activity refreshes the unload timer (Ollama default is 5m). Also `OLLAMA_KEEP_ALIVE` on the ollama unit |
 | `model_local` | gemma4:e2b | Ollama model tag (back-compat default for `model_primary`; import-time fallback in code is also `gemma4:e2b`) |
 | `model_primary` | gemma4:e2b | primary inference model via Ollama (local tag or a `:cloud` model) |
 | `model_fallback` | "" | optional fallback tried when the primary errors/rate-limits (import-time default is empty) |
-| `max_deep_passes` | 30 | LLM calls per camera per sweep (local+cloud; import-time fallback is 30) |
+| `max_deep_passes` | 30 | typed decision calls per camera per sweep (local+cloud; import-time fallback is 30) |
 | `deep_concurrency` | 1 | parallel **backfill** deep passes. Safe only with a `:cloud` model (no local RAM contention); the cloud endpoint partially parallelizes (~1.4× at 3). Rate-limit backoff + per-sweep `RATE_LIMITED` still guard it |
 | `fast_pass_engine` | yolo | `yolo` or `haar` (UI-selectable) |
 | `deep_passes_enabled` | true | master switch for ALL vision-model work (priority+backfill+bursts); false = detector-only, no LLM (UI-toggleable) |
 | `deep_backfill` | false | idle LLM verification of the archive (UI-toggleable; **off** on this box) |
 | `burst_summaries_enabled` | false | multi-image (burst) LLM captions of a visit; off does not affect single-frame deep passes (UI-toggleable) |
 | `gate_ignore_labels` | ["car"] | labels that alone don't trigger urgent deep passes |
-| `ignore_regions` | parked-car triangle + porch quad | Spatial masks. `mode=ignore`: YOLO drops a `car` whose centre sits in the parked-SUV triangle (street / leaving cars kept). `mode=gate` + `scan=porch`: person centre on the grey tiles → `porch_access` without an e2b call; path/street is false. UI: Settings → Ignore parked car / Gate porch by tiles. Applies to **new** stills |
+| `ignore_regions` | parked-car triangle + porch quad | Spatial masks. `mode=ignore`: YOLO drops a `car` whose centre sits in the parked-SUV triangle (street / leaving cars kept). `mode=gate` + `scan=porch`: person centre on the grey tiles → `porch_access` without a typed decision call; path/street is false. UI: Settings → Ignore parked car / Gate porch by tiles. Applies to **new** stills |
 | `camera_offline_hours` | 24 | no frames in this long → a Slack "camera offline?" alert |
 | `cameras` | _(absent)_ | explicit camera registry — see [Camera registry](#camera-registry-cameras). Absent keeps the legacy Webcam21/22 + IP heuristic |
 | `mqtt_topic_prefix` | funes_vision | namespace for the retained HA vision topics (`<prefix>/vision/<camera>`); `MQTT_TOPIC_PREFIX` env overrides it (see [Integrations](#integrations)) |
@@ -652,7 +666,7 @@ recorder means editing those two regexes; the ingest contract is otherwise
 counts need a successful `_llm` merge, not the absence of `fast_pass`.
 Beyond those, the pipeline pushes **debounced Slack alerts** at the end of
 each sweep (`run_health_checks` in
-`analyze_images.py`) when: local Ollama is down with no cloud fallback, a
+`analyze_images.py`) when: the selected local typed-decision backend is down with no cloud fallback, a
 camera has gone silent past `camera_offline_hours`, storage exceeds 90% of
 `max_dir_gb`, or ≥3 inferences failed in the last hour. State lives in
 `alert_state.json` with a 6h cooldown so a persistent condition alerts once,

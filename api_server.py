@@ -620,6 +620,7 @@ def camera_dir(camera_id):
 # numeric range
 MUTABLE_SETTINGS = {
     "fast_pass_engine": {"choices": ("yolo", "haar")},
+    "decision_backend": {"choices": ("ollama", "imajev")},
     "deep_backfill": {"choices": (True, False)},
     "deep_passes_enabled": {"choices": (True, False)},
     "burst_summaries_enabled": {"choices": (True, False)},
@@ -1089,12 +1090,33 @@ def _inotify_running():
         return False
 
 
-def _ollama_reachable(url):
+def _http_reachable(url):
+    """Best-effort liveness probe for a local inference service."""
     try:
         with urllib.request.urlopen(url, timeout=3):
             return True
     except Exception:
         return False
+
+
+def _decision_probe(settings):
+    """Return (backend, model, health_url) for the selected typed backend."""
+    backend = str(settings.get("decision_backend") or "ollama").lower()
+    if backend == "imajev":
+        base = str(
+            settings.get("imajev_url") or "http://127.0.0.1:8791"
+        ).rstrip("/")
+        return "imajev", "imajev-2b", f"{base}/v1/models"
+
+    base = str(
+        settings.get("ollama_url") or "http://localhost:11434"
+    ).rstrip("/")
+    return "ollama", settings.get("model_local"), f"{base}/api/version"
+
+
+def _ollama_reachable(url):
+    """Backward-compatible alias for older callers/tests."""
+    return _http_reachable(url)
 
 
 # --- Liveness probe cache (#33) ---------------------------------------------
@@ -1147,17 +1169,21 @@ def pipeline_status(camera_id=None):
     except (OSError, ValueError):
         settings = {}
 
+    backend, decision_model, decision_url = _decision_probe(settings)
     status = {"watch_dirs": WATCH_DIRS, "settings": redacted_settings(settings),
               "trigger": {"inotify_active": False,
                           "idle_sweep_seconds": settings.get("idle_sweep_seconds", 60)},
-              "llm": {"model": settings.get("model_local"), "reachable": False,
+              "llm": {"backend": backend,
+                      "model": decision_model,
+                      "reachable": False,
                       "allow_cloud": settings.get("allow_cloud", False)}}
 
     status["trigger"]["inotify_active"] = _cached_probe("inotify", _inotify_running)
 
-    url = settings.get("ollama_url", "http://localhost:11434") + "/api/version"
-    status["llm"]["reachable"] = _cached_probe(("ollama", url),
-                                               lambda: _ollama_reachable(url))
+    status["llm"]["reachable"] = _cached_probe(
+        (backend, decision_url),
+        lambda: _http_reachable(decision_url),
+    )
 
     # Per-camera fields: which dirs to look at for this request.
     try:

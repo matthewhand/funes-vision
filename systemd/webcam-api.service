@@ -1,20 +1,20 @@
 [Unit]
 Description=funes-vision gallery write API (pin/delete)
-After=network.target remote-fs.target
+RequiresMountsFor=__WEBCAM_MODELS_DIR__
+After=network.target local-fs.target
 
 # Host identity (account, home, checkout path) comes from
 # /etc/webcam/webcam.env, written by systemd/install.sh — see
 # systemd/webcam.env.example. systemd's User=/Group= cannot read environment
 # variables, so install.sh substitutes the __WEBCAM_*__ tokens below before
 # the unit is copied into /etc/systemd/system.
-EnvironmentFile=-/etc/webcam/webcam.env
-
 [Service]
+EnvironmentFile=-/etc/webcam/webcam.env
 Type=simple
 User=__WEBCAM_USER__
 Group=__WEBCAM_GROUP__
 Environment=HOME=__WEBCAM_HOME__
-ExecStart=/usr/bin/python3 ${WEBCAM_DIR}/api_server.py
+ExecStart=/usr/bin/python3 __WEBCAM_DIR__/api_server.py
 Restart=always
 RestartSec=5
 

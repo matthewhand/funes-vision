@@ -3,8 +3,9 @@ Description=Health check for the funes-vision nginx gallery
 # One-shot wrapper for tools/webcam-healthcheck.sh. The timer fires it every
 # 60s; the script exits 0 if the container is up and serving, and restarts
 # it otherwise.
-After=webcam-compose.service docker.service
-
+RequiresMountsFor=__WEBCAM_MODELS_DIR__
+After=webcam-compose.service docker.service local-fs.target
 [Service]
+EnvironmentFile=-/etc/webcam/webcam.env
 Type=oneshot
-ExecStart=/usr/local/bin/webcam-healthcheck.sh
+ExecStart=/usr/bin/bash __WEBCAM_DIR__/tools/webcam-healthcheck.sh

@@ -2856,6 +2856,16 @@
                   <option value="yolo">YOLO (recommended)</option>
                   <option value="haar">Haar cascades (legacy)</option>
                 </select>
+                <div class="menu-section-title with-gap" id="decision-backend-heading">
+                  Decision Backend
+                </div>
+                <select id="decision-backend-select" class="menu-field"
+                        aria-labelledby="decision-backend-heading"
+                        title="Typed vision decisions: Ollama/Gemma or local Imajev"
+                        style="width: 100%;">
+                  <option value="ollama">Ollama + Gemma</option>
+                  <option value="imajev">Imajev</option>
+                </select>
                 <div class="blacklist-item" id="deep-passes-toggle" title="Master switch for ALL vision-model analysis (priority + backfill + burst summaries). Off = detector-only, frees CPU/RAM." style="margin-top: 8px;">
                   <span>Vision deep passes</span>
                   <div class="blacklist-status"></div>
@@ -6661,6 +6671,7 @@
     // Server-side pipeline settings (detector engine, idle backfill,
     // sweep interval)
     const detectorSelect = document.getElementById('detector-select');
+    const decisionBackendSelect = document.getElementById('decision-backend-select');
     const backfillToggle = document.getElementById('backfill-toggle');
     const deepPassesToggle = document.getElementById('deep-passes-toggle');
     const burstSummariesToggle = document.getElementById('burst-summaries-toggle');
@@ -6706,6 +6717,7 @@
       try {
         const s = await apiFetch('/api/settings');
         if (s.fast_pass_engine) detectorSelect.value = s.fast_pass_engine;
+        if (s.decision_backend) decisionBackendSelect.value = s.decision_backend;
         if (typeof s.deep_backfill === 'boolean') backfillOn = s.deep_backfill;
         if (typeof s.deep_passes_enabled === 'boolean') deepPassesOn = s.deep_passes_enabled;
         if (typeof s.burst_summaries_enabled === 'boolean') burstSummariesOn = s.burst_summaries_enabled;
@@ -6783,6 +6795,17 @@
         try {
           await apiPost('/api/settings', { fast_pass_engine: engine });
           showToast(`Detector: ${engine.toUpperCase()} (applies to new images)`);
+        } catch (err) {
+          showToast('Failed to update - is the API service running?');
+        }
+      });
+    };
+    decisionBackendSelect.onchange = async (e) => {
+      const backend = e.target.value;
+      await withInFlight(decisionBackendSelect, async () => {
+        try {
+          await apiPost('/api/settings', { decision_backend: backend });
+          showToast(`Decision backend: ${backend === 'imajev' ? 'Imajev' : 'Ollama + Gemma'} (applies next pipeline cycle)`);
         } catch (err) {
           showToast('Failed to update - is the API service running?');
         }

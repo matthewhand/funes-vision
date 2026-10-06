@@ -113,15 +113,18 @@ CORS origin allowlist: $WEBCAM_CORS_ORIGIN
   with: journalctl -u webcam-api | grep 'CORS allowlist'
 EOF
 
-# systemd cannot expand environment variables in User=/Group=/HOME=, so those
-# three are shipped as __WEBCAM_*__ tokens and substituted here. Every other
-# path is expanded at runtime from the EnvironmentFile above.
+# systemd cannot expand environment variables in User=/Group=/HOME=,
+# RequiresMountsFor=, or as the ExecStart executable path, so host identity
+# and executable paths are rendered as __WEBCAM_*__ tokens here. Runtime
+# options still come from the EnvironmentFile.
 render() {
   sed \
     -e "s|__WEBCAM_USER__|${WEBCAM_USER}|g" \
     -e "s|__WEBCAM_GROUP__|${WEBCAM_GROUP}|g" \
     -e "s|__WEBCAM_HOME__|${WEBCAM_HOME}|g" \
     -e "s|__WEBCAM_DIR__|${WEBCAM_DIR}|g" \
+    -e "s|__WEBCAM_MODELS_DIR__|${WEBCAM_MODELS_DIR}|g" \
+    -e "s|__WEBCAM_OLLAMA_BIN__|${WEBCAM_OLLAMA_BIN}|g" \
     "$1" > "$2"
 }
 
@@ -130,10 +133,8 @@ for unit in webcam-pipeline@.service webcam-api.service ollama.service \
             webcam-healthcheck.timer; do
   render "$SCRIPT_DIR/$unit" "$SYSTEMD_DIR/$unit"
 done
-# webcam-healthcheck.service runs /usr/local/bin/webcam-healthcheck.sh, so the
-# script has to actually be there. Without this the timer fires a unit whose
-# ExecStart does not exist and the gallery guard is silently dead.
-install -m 755 "$REPO_DIR/tools/webcam-healthcheck.sh" /usr/local/bin/webcam-healthcheck.sh
+# webcam-healthcheck.service executes the script from WEBCAM_DIR so the
+# watchdog always matches the deployed checkout instead of a stale copy.
 systemctl daemon-reload
 
 # Stop any ad-hoc watchers so systemd owns the processes.

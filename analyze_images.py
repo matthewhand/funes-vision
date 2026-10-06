@@ -39,6 +39,8 @@ PERSIST_BUDGET_PCT = 20.0  # max % of max_dir_gb for LLM timeline frames past ma
 ALLOW_CLOUD = False  # kill switch for ALL cloud inference: OpenRouter fallback
                      # AND Ollama ':cloud' models (both ship frames off-box)
 OLLAMA_URL = "http://localhost:11434"
+DECISION_BACKEND = "ollama"  # "ollama" or "imajev" for typed scans
+IMAJEV_URL = "http://127.0.0.1:8791"
 # Idle unload: each /api/chat refreshes this TTL. Ollama's default is 5m.
 OLLAMA_KEEP_ALIVE = "24h"
 MAX_DEEP_PASSES = 30  # LLM calls (local or cloud) per camera per sweep
@@ -271,7 +273,8 @@ def apply_settings(cfg=None):
     """
     global BURST_THRESHOLD_SECONDS, MAX_AGE_DAYS, MAX_DIR_GB
     global PERSIST_BUDGET_PCT, MIN_MEM_FOR_LOCAL_GB, ALLOW_CLOUD
-    global OLLAMA_URL, OLLAMA_KEEP_ALIVE, MAX_DEEP_PASSES, DEEP_CONCURRENCY
+    global OLLAMA_URL, OLLAMA_KEEP_ALIVE, DECISION_BACKEND, IMAJEV_URL
+    global MAX_DEEP_PASSES, DEEP_CONCURRENCY
     global MODEL_LOCAL, MODEL_PRIMARY, MODEL_FALLBACK, FAST_PASS_ENGINE
     global DEEP_BACKFILL, DEEP_PASSES_ENABLED, BURST_SUMMARIES_ENABLED
     global MULTI_IMAGE_ENABLED, MULTI_IMAGE_2H, MULTI_IMAGE_3H
@@ -304,6 +307,12 @@ def apply_settings(cfg=None):
                                        MIN_MEM_FOR_LOCAL_GB, lo=0.0)
     ALLOW_CLOUD = cfg.get("allow_cloud", ALLOW_CLOUD)
     OLLAMA_URL = setting_str(cfg, "ollama_url", OLLAMA_URL)
+    backend = setting_str(cfg, "decision_backend", DECISION_BACKEND).lower()
+    if backend in ("ollama", "imajev"):
+        DECISION_BACKEND = backend
+    else:
+        logger.warning("ignoring invalid decision_backend=%r; keeping %r", backend, DECISION_BACKEND)
+    IMAJEV_URL = setting_str(cfg, "imajev_url", IMAJEV_URL).rstrip("/")
     OLLAMA_KEEP_ALIVE = str(cfg.get("ollama_keep_alive", OLLAMA_KEEP_ALIVE) or "24h")
     # Floored at 1: 0 makes `deep_pass_count >= max_deep_passes` true before
     # the first frame, so a sweep catalogued exactly one row per camera and
@@ -502,10 +511,44 @@ TIMELINE_PROMPT = (
     "Do not describe the earlier frames — only answer about the final frame."
 )
 
+
+def prompt_for_schema(schema, header=DETECT_PROMPT, tail=None):
+    """Build the model-visible questions for a structured-output schema.
+
+    The JSON schema passed through ``format`` constrains the answer shape, but
+    the model should not have to infer the task from terse property names.
+    Restate each property's description and allowed answer form in the prompt.
+    """
+    props = (schema or {}).get("properties") or {}
+    order = [k for k in ((schema or {}).get("required") or []) if k in props]
+    order += [k for k in props if k not in order]
+
+    lines = [header] if header else []
+    for key in order:
+        spec = props.get(key) or {}
+        enum = spec.get("enum")
+        if spec.get("type") == "boolean" or enum == [True, False]:
+            label = "true or false"
+        elif enum:
+            label = "one of: " + ", ".join(str(option) for option in enum)
+        else:
+            label = "text"
+
+        desc = " ".join(str(spec.get("description") or "").split())
+        lines.append(
+            "- %s (%s): %s"
+            % (key, label, desc or "answer from the image")
+        )
+
+    if tail:
+        lines.append(tail)
+    return "\\n".join(lines)
+
+
 # HA front/back schemas — do not replace with person_at_car
-# Structured flags are enforced by the inference API `format` field
-# (Ollama /api/chat JSON Schema). Question text lives in each property
-# `description` — never in the prompt.
+# Structured flags are enforced by the inference API `format` field.
+# prompt_for_schema() also restates each property's description so the model
+# sees the actual question instead of only terse output-key names.
 FRONT_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
@@ -759,8 +802,14 @@ def entry_caption(a):
 def get_llm_schema():
     """Read-only export of the live prompt + HA schemas for the UI viewer."""
     import scans
+    example = scans.union_schema([scans.SCANS[0]]) if scans.SCANS else {}
     return {
         "prompt": DETECT_PROMPT,
+        "prompt_example": prompt_for_schema(example) if example else DETECT_PROMPT,
+        "prompt_note": (
+            "Structured output constrains the answer shape; scan questions are "
+            "also restated into the model prompt (see prompt_example)."
+        ),
         "schemas": {
             "front_door": FRONT_SCHEMA,
             "dog_cam": BACK_SCHEMA,
@@ -973,7 +1022,7 @@ def analyze_image_openrouter(image_path, api_key, schema=None, num_predict=None)
             {
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": DETECT_PROMPT},
+                    {"type": "text", "text": prompt_for_schema(schema)},
                     {
                         "type": "image_url",
                         "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"},
@@ -1434,9 +1483,13 @@ def run_deep_pass(image_path, img_name, can_run_chain, api_key, trigger, fp_labe
     for spec in todo:
         if RATE_LIMITED:
             break
-        set_inference_status({"image": img_name, "model": MODEL_PRIMARY,
-                              "trigger": trigger, "started": started,
-                              "scan": spec["id"]})
+        set_inference_status({
+            "image": img_name,
+            "model": "imajev-2b" if DECISION_BACKEND == "imajev" else MODEL_PRIMARY,
+            "trigger": trigger,
+            "started": started,
+            "scan": spec["id"],
+        })
         n += 1
         piece = None
         if can_run_chain:
@@ -1501,6 +1554,14 @@ def ollama_available():
         return requests.get(f"{OLLAMA_URL}/api/version", timeout=15).ok
     except requests.exceptions.RequestException:
         return False
+
+def imajev_available():
+    """True when the local Imajev decision server is reachable."""
+    try:
+        return requests.get(f"{IMAJEV_URL}/v1/models", timeout=3).ok
+    except requests.exceptions.RequestException:
+        return False
+
 
 # Rate-limit handling. The Ollama endpoint may be a cloud model (model tag
 # ending ":cloud") which can throttle; we must NOT hammer it. Strategy:
@@ -1632,8 +1693,109 @@ def _ollama_chat_stream(payload, on_delta, timeout):
     raise RateLimited("LLM throttled")  # defensive
 
 
+def _imajev_questions_for_schema(schema):
+    """Translate JSON-schema booleans/enums into Imajev typed questions."""
+    props = (schema or {}).get("properties") or {}
+    questions = {}
+    for key, spec in props.items():
+        description = spec.get("description") or key.replace("_", " ")
+        if spec.get("type") == "boolean":
+            questions[key] = {
+                "type": "noul",
+                "instructions": description,
+            }
+        elif spec.get("type") == "string" and spec.get("enum"):
+            questions[key] = {
+                "type": "choice",
+                "instructions": description,
+                "criteria": {str(v): None for v in spec["enum"]},
+            }
+        else:
+            raise ValueError(
+                f"Imajev does not support schema field {key!r}: {spec!r}"
+            )
+    return questions
+
+
+def analyze_image_imajev(image_path, schema, extra_images=None):
+    """Run one typed Imajev decision over one image or prior+current.
+
+    Imajev supports at most two images. If timeline context contains several
+    priors, the newest prior is the reference and the current frame the target.
+    Abstentions map to None rather than a guessed answer.
+    """
+    global LAST_MODEL_USED
+
+    try:
+        questions = _imajev_questions_for_schema(schema)
+    except ValueError as e:
+        print(f"Imajev schema unsupported: {e}")
+        return None
+    here = os.path.abspath(image_path)
+    priors = [
+        p for p in (extra_images or [])
+        if os.path.abspath(p) != here
+    ]
+    paths = (priors[-1:] if priors else []) + [image_path]
+    images = [
+        "data:image/jpeg;base64," + encode_image(p)
+        for p in paths
+    ]
+    payload = {
+        "state": {
+            "camera": camera_kind(image_path),
+            "image_order": (
+                "first=reference, second=target"
+                if len(images) == 2 else "single target image"
+            ),
+        },
+        "questions": questions,
+        "images": images,
+    }
+
+    try:
+        response = requests.post(
+            f"{IMAJEV_URL}/v1/systemone",
+            json=payload,
+            timeout=1200,
+        )
+        response.raise_for_status()
+        body = response.json()
+        if not isinstance(body, dict):
+            return None
+    except requests.exceptions.RequestException as e:
+        print(f"Imajev inference failed: {e}")
+        return None
+    except (TypeError, ValueError) as e:
+        print(f"Imajev response invalid: {e}")
+        return None
+
+    answers = body.get("answers")
+    if not isinstance(answers, dict):
+        return None
+
+    result = {}
+    for key, spec in ((schema or {}).get("properties") or {}).items():
+        ans = answers.get(key)
+        if not isinstance(ans, dict) or ans.get("abstained"):
+            result[key] = None
+            continue
+        if spec.get("type") == "boolean":
+            probability = ans.get("noul")
+            result[key] = (
+                probability > 0.5
+                if isinstance(probability, (int, float)) else None
+            )
+        else:
+            value = ans.get("choice")
+            result[key] = value if value in (spec.get("enum") or []) else None
+
+    LAST_MODEL_USED = body.get("model") or "imajev-2b"
+    return result
+
+
 def analyze_image_with_schema(image_path, schema, num_predict, extra_images=None):
-    """One Ollama JSON-schema call. Used by sequential priority scans.
+    """One typed vision decision call. Used by sequential priority scans.
 
     ``extra_images`` is an optional list of prior frame paths (oldest first)
     taken within a few minutes of ``image_path``. When provided, the vision
@@ -1641,13 +1803,27 @@ def analyze_image_with_schema(image_path, schema, num_predict, extra_images=None
     the prompt asks for a short timeline instead of a single snapshot.
     """
     global RATE_LIMITED, LAST_MODEL_USED
+    if DECISION_BACKEND == "imajev":
+        return analyze_image_imajev(
+            image_path, schema, extra_images=extra_images)
     images = [encode_image(image_path)]
     if extra_images:
-        images = [encode_image(p) for p in extra_images] + images
+        # collect_timeline_images() returns [prior..., current]. The current
+        # frame is already images[0], so prepending that list verbatim sends
+        # the answer-target JPEG twice and makes the timeline prompt/reporting
+        # disagree with what the model actually receives.
+        current_path = os.path.abspath(image_path)
+        priors = [p for p in extra_images if os.path.abspath(p) != current_path]
+        if priors:
+            images = [encode_image(p) for p in priors] + images
     if len(images) > 1:
-        prompt = TIMELINE_PROMPT.format(n=len(images))
+        prompt = prompt_for_schema(
+            schema,
+            TIMELINE_PROMPT.format(n=len(images)),
+            tail="Answer every question about the final frame only.",
+        )
     else:
-        prompt = DETECT_PROMPT
+        prompt = prompt_for_schema(schema)
     base = {
         "messages": [{
             "role": "user",
@@ -1926,13 +2102,20 @@ def run_health_checks(watch_dirs, api_key):
     offline_s = camera_offline_hours() * 3600
 
     alerts = {}
-    # Inference capability. Only a genuinely DOWN Ollama (server unreachable)
-    # with no cloud fallback is an outage. Don't alert on `can_run_chain`
-    # being briefly false — that includes the free-memory gate, which flaps
-    # sweep-to-sweep and recovers on its own (false alarms otherwise).
-    if DEEP_PASSES_ENABLED and not ollama_available() and not (ALLOW_CLOUD and api_key):
-        alerts["llm_down"] = ("⚠️ *Inference unavailable* — local Ollama is unreachable "
-                              "and no cloud fallback is configured. New images won't be analysed.")
+    # Typed-scan capability follows the selected local decision backend.
+    # Low-memory Ollama eligibility is transient and not itself an outage.
+    decision_service_up = (
+        imajev_available()
+        if DECISION_BACKEND == "imajev"
+        else ollama_available()
+    )
+    if (DEEP_PASSES_ENABLED and not decision_service_up
+            and not (ALLOW_CLOUD and api_key)):
+        alerts["llm_down"] = (
+            f"⚠️ *Inference unavailable* — local {DECISION_BACKEND} backend is "
+            "unreachable and no cloud fallback is configured. "
+            "New images won't be analysed."
+        )
 
     budget = MAX_DIR_GB * 1024 ** 3
     for d in watch_dirs:
@@ -2530,19 +2713,36 @@ def _run_sweep(cfg, retention_only=False, rescan_days=None):
 
     free_mem = get_free_mem_gb()
     ollama_up = ollama_available()
-# The models THIS host can serve right now: cloud models need no RAM but
+    # The models THIS host can serve right now: cloud models need no RAM but
     # are only allowed when the allow_cloud kill switch is on; local models
     # need free_mem >= threshold. A cloud primary works on a low-RAM box.
-    serve_chain = runnable_chain(MODEL_PRIMARY, MODEL_FALLBACK, free_mem, local_mem_threshold(), ALLOW_CLOUD)
+    serve_chain = runnable_chain(
+        MODEL_PRIMARY, MODEL_FALLBACK, free_mem,
+        local_mem_threshold(), ALLOW_CLOUD)
     can_run_chain = ollama_up and bool(serve_chain)
-    # Master gate for any LLM deep-pass/burst work this sweep
-    llm_ready = DEEP_PASSES_ENABLED and (can_run_chain or (ALLOW_CLOUD and api_key))
+
+    imajev_up = (
+        imajev_available() if DECISION_BACKEND == "imajev" else False
+    )
+    can_run_decision = (
+        imajev_up if DECISION_BACKEND == "imajev" else can_run_chain
+    )
+    decision_ready = DEEP_PASSES_ENABLED and (
+        can_run_decision or (ALLOW_CLOUD and api_key))
+    # Burst captions remain on Ollama/OpenRouter even when Imajev handles
+    # typed decisions.
+    llm_ready = DEEP_PASSES_ENABLED and (
+        can_run_chain or (ALLOW_CLOUD and api_key))
+
     mode = "retention-only" if retention_only else (
         "ON" if DEEP_PASSES_ENABLED else "OFF (detector-only)")
-    print(f"System Check: Free Memory = {free_mem:.1f}GB. Ollama up: {ollama_up}. "
-          f"Runnable chain: {serve_chain or '[]'}. Cloud allowed: {ALLOW_CLOUD}. "
-          f"Deep passes: {mode}. Burst summaries: "
-          f"{'ON' if BURST_SUMMARIES_ENABLED else 'OFF'}")
+    print(
+        f"System Check: Free Memory = {free_mem:.1f}GB. "
+        f"Ollama up: {ollama_up}. Decision backend: {DECISION_BACKEND}; "
+        f"Imajev up: {imajev_up}. Runnable chain: {serve_chain or '[]'}. "
+        f"Cloud allowed: {ALLOW_CLOUD}. Deep passes: {mode}. "
+        f"Burst summaries: {'ON' if BURST_SUMMARIES_ENABLED else 'OFF'}"
+    )
 
     for image_dir in watch_dirs:
         if not os.path.exists(image_dir):
@@ -2637,7 +2837,7 @@ def _run_sweep(cfg, retention_only=False, rescan_days=None):
                     # actually available; otherwise leave the partial in
                     # place for a later sweep instead of logging a
                     # zero-second failure.
-                    if deep_pass_count < max_deep_passes and llm_ready:
+                    if deep_pass_count < max_deep_passes and decision_ready:
                         # Stale stored labels (re-queued partials) force a
                         # fresh detector run so YOLO flags stay current
                         import scans
@@ -2654,7 +2854,7 @@ def _run_sweep(cfg, retention_only=False, rescan_days=None):
                                 max_age_minutes=MULTI_IMAGE_3H,
                                 max_images=3)
                         result, n_scans = run_deep_pass(
-                            image_path, img, can_run_chain, api_key,
+                            image_path, img, can_run_decision, api_key,
                             "priority", fp_labels=fresh_fp,
                             timeline_images=timeline_images)
                         deep_pass_count += n_scans
@@ -2678,9 +2878,11 @@ def _run_sweep(cfg, retention_only=False, rescan_days=None):
                     else:
                         if not DEEP_PASSES_ENABLED:
                             skip = "llm_disabled"
-                        elif not ollama_up:
+                        elif DECISION_BACKEND == "imajev" and not imajev_up:
+                            skip = "imajev_down"
+                        elif DECISION_BACKEND == "ollama" and not ollama_up:
                             skip = "ollama_down"
-                        elif not serve_chain:
+                        elif DECISION_BACKEND == "ollama" and not serve_chain:
                             skip = "low_mem"
                         else:
                             skip = "budget"
@@ -2730,14 +2932,14 @@ def _run_sweep(cfg, retention_only=False, rescan_days=None):
         if rescan_mode:
             if new_analysis:
                 flush_analysis(analysis_file, analysis_data, force=True)
-            print(f"Rescan done for {image_dir}: {deep_pass_count} e2b calls")
+            print(f"Rescan done for {image_dir}: {deep_pass_count} decision calls")
             continue
 
         # 1b. Idle backfill: spend any leftover deep-pass budget verifying
         # fast-pass negatives with the LLM, newest first, so the whole
         # archive eventually gets HA flags merged onto the detector record
         # (YOLO person/dog/car labels are never overwritten).
-        if DEEP_BACKFILL and deep_pass_count < max_deep_passes and llm_ready:
+        if DEEP_BACKFILL and deep_pass_count < max_deep_passes and decision_ready:
             pool = [i for i in images if i in analysis_data and in_backfill_pool(analysis_data[i])]
 
             # Prioritize frames near existing detections: appear/disappear
@@ -2776,7 +2978,7 @@ def _run_sweep(cfg, retention_only=False, rescan_days=None):
                     return (img, None, 0)
                 print(f"Backfill deep pass for {img}")
                 res, n = run_deep_pass(os.path.join(image_dir, img), img,
-                                       can_run_chain, api_key, "backfill")
+                                       can_run_decision, api_key, "backfill")
                 return (img, res, n)
 
             workers = concurrency_workers(DEEP_CONCURRENCY, len(targets))

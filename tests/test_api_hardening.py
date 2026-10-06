@@ -587,6 +587,37 @@ class TestRequestResourceLimits(SandboxCase):
         # One pgrep, one Ollama connect for twenty polls, not forty.
         self.assertEqual(self.probe_calls(), 2)
 
+    def test_status_probes_selected_imajev_backend(self):
+        self.write_settings(
+            api_token="SUPERSECRET",
+            watch_dirs=[self.front],
+            decision_backend="imajev",
+            imajev_url="http://127.0.0.1:9999/",
+        )
+        status = api_server.pipeline_status()
+        self.assertEqual(status["llm"]["backend"], "imajev")
+        self.assertEqual(status["llm"]["model"], "imajev-2b")
+        self.assertFalse(status["llm"]["reachable"])
+        self.assertEqual(self.urlopen.call_count, 1)
+        self.assertEqual(
+            self.urlopen.call_args.args[0],
+            "http://127.0.0.1:9999/v1/models",
+        )
+
+    def test_status_defaults_to_ollama_backend(self):
+        self.write_settings(
+            api_token="SUPERSECRET",
+            watch_dirs=[self.front],
+            model_local="gemma4:e2b",
+        )
+        status = api_server.pipeline_status()
+        self.assertEqual(status["llm"]["backend"], "ollama")
+        self.assertEqual(status["llm"]["model"], "gemma4:e2b")
+        self.assertEqual(
+            self.urlopen.call_args.args[0],
+            "http://localhost:11434/api/version",
+        )
+
     def test_probe_cache_expires(self):
         self.write_settings(api_token="SUPERSECRET", watch_dirs=[self.front])
         os.environ["WEBCAM_PROBE_TTL"] = "0"  # 0 disables caching
