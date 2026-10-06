@@ -56,6 +56,18 @@ assert(liveToggleTag, '#live-toggle markup not found');
 assert.ok(/role="switch"/.test(liveToggleTag[0]), '#live-toggle must stay a role="switch"');
 assert.ok(/aria-label=/.test(liveToggleTag[0]),
   '#live-toggle must carry aria-label, so hiding #live-text leaves it named');
+
+// #109: a native <select> contributes its option text to min-content sizing.
+// Adding the JEVision option made the Settings sheet 13px wider than a 320px
+// viewport in Chromium, which surfaced as #live-toggle ending at x=333. Bound
+// menu fields themselves instead of hiding the unrelated header control.
+const menuField = rule('.menu-field');
+assert.ok(/box-sizing:\s*border-box/.test(menuField),
+  '.menu-field must use border-box so width:100% includes padding and border');
+assert.ok(/min-width:\s*0/.test(menuField),
+  '.menu-field must allow native selects to shrink below option min-content');
+assert.ok(/max-width:\s*100%/.test(menuField),
+  '.menu-field must stay within its Settings/menu container');
 // The collapse must be bounded: at every wider breakpoint the label is back,
 // because the overflow only exists below ~360px.
 for (const q of ['480px', '768px', '960px']) {
