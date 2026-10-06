@@ -620,7 +620,7 @@ def camera_dir(camera_id):
 # numeric range
 MUTABLE_SETTINGS = {
     "fast_pass_engine": {"choices": ("yolo", "haar")},
-    "decision_backend": {"choices": ("ollama", "imajev")},
+    "decision_backend": {"choices": ("ollama", "imajev", "jevision")},
     "deep_backfill": {"choices": (True, False)},
     "deep_passes_enabled": {"choices": (True, False)},
     "burst_summaries_enabled": {"choices": (True, False)},
@@ -1107,6 +1107,14 @@ def _decision_probe(settings):
             settings.get("imajev_url") or "http://127.0.0.1:8791"
         ).rstrip("/")
         return "imajev", "imajev-2b", f"{base}/v1/models"
+    if backend == "jevision":
+        hf_home = str(
+            settings.get("jevision_hf_home") or "/mnt/models/hf/jevision/.hf"
+        ).rstrip("/")
+        revision = "dc7cdfe2ee4154fa7e30f5b51ca41bfa40174e68"
+        config = (f"{hf_home}/models--Qwen--Qwen3.5-0.8B-Base/"
+                  f"snapshots/{revision}/config.json")
+        return "jevision", "jevision-0.8b", f"file://{config}"
 
     base = str(
         settings.get("ollama_url") or "http://localhost:11434"

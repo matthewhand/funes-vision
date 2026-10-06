@@ -18,6 +18,8 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 import re
 import fcntl
+import subprocess
+from contextlib import contextmanager
 
 from log_config import get_logger
 
@@ -39,8 +41,16 @@ PERSIST_BUDGET_PCT = 20.0  # max % of max_dir_gb for LLM timeline frames past ma
 ALLOW_CLOUD = False  # kill switch for ALL cloud inference: OpenRouter fallback
                      # AND Ollama ':cloud' models (both ship frames off-box)
 OLLAMA_URL = "http://localhost:11434"
-DECISION_BACKEND = "ollama"  # "ollama" or "imajev" for typed scans
+DECISION_BACKEND = "ollama"  # "ollama", "imajev" or "jevision" for typed scans
 IMAJEV_URL = "http://127.0.0.1:8791"
+JEVISION_ROOT = "/mnt/models/hf/jevision"
+JEVISION_PYTHON = "/mnt/models/hf/jevision/.venv/bin/python"
+JEVISION_HF_HOME = "/mnt/models/hf/jevision/.hf"
+JEVISION_BASE_REVISION = "dc7cdfe2ee4154fa7e30f5b51ca41bfa40174e68"
+JEVISION_TIMEOUT = 180
+JEVISION_MAX_WIDTH = 384
+JEVISION_MAX_HEIGHT = 288
+HEAVY_INFERENCE_LOCK = "/tmp/funes-heavy-inference.lock"
 # Idle unload: each /api/chat refreshes this TTL. Ollama's default is 5m.
 OLLAMA_KEEP_ALIVE = "24h"
 MAX_DEEP_PASSES = 30  # LLM calls (local or cloud) per camera per sweep
@@ -274,6 +284,7 @@ def apply_settings(cfg=None):
     global BURST_THRESHOLD_SECONDS, MAX_AGE_DAYS, MAX_DIR_GB
     global PERSIST_BUDGET_PCT, MIN_MEM_FOR_LOCAL_GB, ALLOW_CLOUD
     global OLLAMA_URL, OLLAMA_KEEP_ALIVE, DECISION_BACKEND, IMAJEV_URL
+    global JEVISION_ROOT, JEVISION_PYTHON, JEVISION_HF_HOME
     global MAX_DEEP_PASSES, DEEP_CONCURRENCY
     global MODEL_LOCAL, MODEL_PRIMARY, MODEL_FALLBACK, FAST_PASS_ENGINE
     global DEEP_BACKFILL, DEEP_PASSES_ENABLED, BURST_SUMMARIES_ENABLED
@@ -308,11 +319,14 @@ def apply_settings(cfg=None):
     ALLOW_CLOUD = cfg.get("allow_cloud", ALLOW_CLOUD)
     OLLAMA_URL = setting_str(cfg, "ollama_url", OLLAMA_URL)
     backend = setting_str(cfg, "decision_backend", DECISION_BACKEND).lower()
-    if backend in ("ollama", "imajev"):
+    if backend in ("ollama", "imajev", "jevision"):
         DECISION_BACKEND = backend
     else:
         logger.warning("ignoring invalid decision_backend=%r; keeping %r", backend, DECISION_BACKEND)
     IMAJEV_URL = setting_str(cfg, "imajev_url", IMAJEV_URL).rstrip("/")
+    JEVISION_ROOT = setting_str(cfg, "jevision_root", JEVISION_ROOT).rstrip("/")
+    JEVISION_PYTHON = setting_str(cfg, "jevision_python", JEVISION_PYTHON)
+    JEVISION_HF_HOME = setting_str(cfg, "jevision_hf_home", JEVISION_HF_HOME).rstrip("/")
     OLLAMA_KEEP_ALIVE = str(cfg.get("ollama_keep_alive", OLLAMA_KEEP_ALIVE) or "24h")
     # Floored at 1: 0 makes `deep_pass_count >= max_deep_passes` true before
     # the first frame, so a sweep catalogued exactly one row per camera and
@@ -1480,44 +1494,76 @@ def run_deep_pass(image_path, img_name, can_run_chain, api_key, trigger, fp_labe
     combined = dict(seed)
     n = 0
     used = None
-    for spec in todo:
-        if RATE_LIMITED:
-            break
+    completed_scan_ids = []
+
+    # JEVision's speed advantage comes from sharing one visual prefix across
+    # every typed question for the frame. Do not reload it once per scan.
+    if DECISION_BACKEND == "jevision" and can_run_chain:
         set_inference_status({
-            "image": img_name,
-            "model": "imajev-2b" if DECISION_BACKEND == "imajev" else MODEL_PRIMARY,
-            "trigger": trigger,
-            "started": started,
-            "scan": spec["id"],
+            "image": img_name, "model": "jevision-0.8b",
+            "trigger": trigger, "started": started, "scan": "packed",
         })
-        n += 1
-        piece = None
-        if can_run_chain:
-            piece = analyze_image_with_schema(
-                image_path, spec["schema"], spec.get("num_predict") or scans.SCAN_TOKENS,
-                extra_images=timeline_images)
-            if isinstance(piece, dict):
-                used = LAST_MODEL_USED
-        if not piece and ALLOW_CLOUD and api_key:
-            used = MODEL_CLOUD
-            piece = analyze_image_openrouter(
-                image_path, api_key, schema=spec["schema"],
-                num_predict=spec.get("num_predict") or scans.SCAN_TOKENS)
+        n = 1
+        piece = analyze_image_jevision(image_path, scans.union_schema(todo))
         if isinstance(piece, dict):
             combined.update(piece)
+            used = LAST_MODEL_USED
+            completed_scan_ids = [spec["id"] for spec in todo]
+        elif ALLOW_CLOUD and api_key:
+            # Preserve the existing privacy-gated cloud fallback semantics.
+            for spec in todo:
+                cloud_piece = analyze_image_openrouter(
+                    image_path, api_key, schema=spec["schema"],
+                    num_predict=spec.get("num_predict") or scans.SCAN_TOKENS)
+                n += 1
+                if isinstance(cloud_piece, dict):
+                    combined.update(cloud_piece)
+                    completed_scan_ids.append(spec["id"])
+                    used = MODEL_CLOUD
+    else:
+        for spec in todo:
+            if RATE_LIMITED:
+                break
+            model_name = (
+                "imajev-2b" if DECISION_BACKEND == "imajev"
+                else "jevision-0.8b" if DECISION_BACKEND == "jevision"
+                else MODEL_PRIMARY)
+            set_inference_status({
+                "image": img_name, "model": model_name,
+                "trigger": trigger, "started": started, "scan": spec["id"],
+            })
+            n += 1
+            piece = None
+            if can_run_chain:
+                piece = analyze_image_with_schema(
+                    image_path, spec["schema"],
+                    spec.get("num_predict") or scans.SCAN_TOKENS,
+                    extra_images=timeline_images)
+                if isinstance(piece, dict):
+                    used = LAST_MODEL_USED
+            if not piece and ALLOW_CLOUD and api_key:
+                used = MODEL_CLOUD
+                piece = analyze_image_openrouter(
+                    image_path, api_key, schema=spec["schema"],
+                    num_predict=spec.get("num_predict") or scans.SCAN_TOKENS)
+            if isinstance(piece, dict):
+                combined.update(piece)
+                completed_scan_ids.append(spec["id"])
 
     set_inference_status(None)
     result = combined or None
     if isinstance(result, dict):
         result["_yolo"] = list(fp_labels or [])
-        result["_scans"] = [s["id"] for s in todo[:n]]
-        if timeline_images:
+        result["_scans"] = completed_scan_ids
+        # JEVision deliberately uses one current frame only.
+        if timeline_images and DECISION_BACKEND != "jevision":
             result["_timeline_images"] = len(timeline_images)
     labels = list(fp_labels or [])
     LAST_DURATION_S = time.time() - started
+    n_images = (1 if DECISION_BACKEND == "jevision"
+                else len(timeline_images) if timeline_images else 1)
     log_inference(img_name, used, started, LAST_DURATION_S,
-                  labels, result is not None, trigger,
-                  n_images=len(timeline_images) if timeline_images else 1)
+                  labels, result is not None, trigger, n_images=n_images)
     return result, n
 
 
@@ -1563,6 +1609,82 @@ def imajev_available():
         return False
 
 
+def jevision_available():
+    """True when the pinned one-shot JEVision runtime and base are local.
+
+    Production runs with Hugging Face offline flags: selecting this backend must
+    never turn a camera frame into an implicit model download.
+    """
+    helper = os.path.join(BASE_DIR, "tools", "jevision_once.py")
+    snapshot = os.path.join(
+        JEVISION_HF_HOME, "models--Qwen--Qwen3.5-0.8B-Base",
+        "snapshots", JEVISION_BASE_REVISION)
+    required = (
+        JEVISION_PYTHON, helper,
+        os.path.join(JEVISION_ROOT, "report.json"),
+        os.path.join(JEVISION_ROOT, "adapter", "adapter_model.safetensors"),
+        os.path.join(JEVISION_ROOT, "pointer_head.pt"),
+        snapshot,
+    )
+    return all(os.path.exists(path) for path in required)
+
+
+@contextmanager
+def heavyweight_inference_lock():
+    """Serialize model-residency changes across local inference processes."""
+    fd = os.open(HEAVY_INFERENCE_LOCK, os.O_RDWR | os.O_CREAT, 0o666)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        os.close(fd)
+
+
+def unload_ollama_residents():
+    """Unload every currently resident local Ollama model.
+
+    Ollama itself stays up. A later caption/decision reloads Gemma on demand.
+    Returns False if a resident model could not be unloaded, because starting
+    JEVision beside it on this 11 GiB host risks swapping/OOM.
+    """
+    try:
+        r = requests.get(f"{OLLAMA_URL}/api/ps", timeout=5)
+        r.raise_for_status()
+        models = [
+            (m.get("name") or m.get("model") or "").strip()
+            for m in ((r.json() or {}).get("models") or [])
+        ]
+        models = [m for m in models if m and not model_is_cloud(m)]
+        for model in models:
+            resp = requests.post(
+                f"{OLLAMA_URL}/api/generate",
+                json={"model": model, "keep_alive": 0}, timeout=30)
+            resp.raise_for_status()
+
+        # Do not trust the unload POST alone on a memory-constrained host. Wait
+        # until /api/ps confirms every local resident is actually gone before
+        # allowing the ~5.7 GiB JEVision process to start.
+        deadline = time.time() + 15
+        while True:
+            check = requests.get(f"{OLLAMA_URL}/api/ps", timeout=5)
+            check.raise_for_status()
+            resident = [
+                (m.get("name") or m.get("model") or "").strip()
+                for m in ((check.json() or {}).get("models") or [])
+            ]
+            resident = [m for m in resident if m and not model_is_cloud(m)]
+            if not resident:
+                return True
+            if time.time() >= deadline:
+                print(f"Ollama models still resident after unload: {resident}")
+                return False
+            time.sleep(0.2)
+    except requests.exceptions.RequestException as e:
+        print(f"Could not unload resident Ollama model(s): {e}")
+        return False
+
+
 # Rate-limit handling. The Ollama endpoint may be a cloud model (model tag
 # ending ":cloud") which can throttle; we must NOT hammer it. Strategy:
 #   - per call: retry a 429/503 a few times with EXPONENTIAL BACKOFF + jitter,
@@ -1600,17 +1722,22 @@ def _ollama_chat(payload, timeout):
     LLM_MAX_RETRIES. Other request errors propagate to the caller."""
     payload = ollama_payload(payload)
     for attempt in range(LLM_MAX_RETRIES):
-        resp = requests.post(f"{OLLAMA_URL}/api/chat", json=payload, timeout=timeout)
-        if resp.status_code in (429, 503):
-            if attempt == LLM_MAX_RETRIES - 1:
-                raise RateLimited(f"LLM throttled (HTTP {resp.status_code})")
-            # honor Retry-After if present, else exponential backoff; ±20% jitter
-            ra = resp.headers.get("Retry-After")
-            wait = float(ra) if (ra and ra.isdigit()) else backoff_delay(attempt)
-            time.sleep(min(LLM_BACKOFF_CAP, wait) * (0.8 + 0.4 * random.random()))
-            continue
-        resp.raise_for_status()
-        return resp
+        # Hold the same cross-process lock JEVision uses for the entire local
+        # model request. Otherwise an Ollama call can reload Gemma after
+        # JEVision unloads it and both heavyweight models can overlap in RAM.
+        with heavyweight_inference_lock():
+            resp = requests.post(
+                f"{OLLAMA_URL}/api/chat", json=payload, timeout=timeout)
+            status = resp.status_code
+            if status not in (429, 503):
+                resp.raise_for_status()
+                return resp
+        if attempt == LLM_MAX_RETRIES - 1:
+            raise RateLimited(f"LLM throttled (HTTP {status})")
+        # honor Retry-After if present, else exponential backoff; ±20% jitter
+        ra = resp.headers.get("Retry-After")
+        wait = float(ra) if (ra and ra.isdigit()) else backoff_delay(attempt)
+        time.sleep(min(LLM_BACKOFF_CAP, wait) * (0.8 + 0.4 * random.random()))
     raise RateLimited("LLM throttled")  # defensive; loop above normally returns/raises
 
 
@@ -1669,27 +1796,32 @@ def _ollama_chat_stream(payload, on_delta, timeout):
     429/503 backoff + RateLimited semantics of _ollama_chat."""
     payload = ollama_payload({**payload, "stream": True})
     for attempt in range(LLM_MAX_RETRIES):
-        resp = requests.post(f"{OLLAMA_URL}/api/chat", json=payload, timeout=timeout, stream=True)
-        if resp.status_code in (429, 503):
-            if attempt == LLM_MAX_RETRIES - 1:
-                raise RateLimited(f"LLM throttled (HTTP {resp.status_code})")
-            ra = resp.headers.get("Retry-After")
-            wait = float(ra) if (ra and ra.isdigit()) else backoff_delay(attempt)
-            time.sleep(min(LLM_BACKOFF_CAP, wait) * (0.8 + 0.4 * random.random()))
-            continue
-        resp.raise_for_status()
-        full = ""
-        for line in resp.iter_lines():
-            if not line:
-                continue
-            text, done = parse_chat_chunk(line.decode("utf-8") if isinstance(line, bytes) else line)
-            if text:
-                full += text
-                if on_delta:
-                    on_delta(text, full)
-            if done:
-                break
-        return full
+        # Keep the lock until the stream ends: requests.post() returns as soon
+        # as headers arrive, while the local model is still generating tokens.
+        with heavyweight_inference_lock():
+            resp = requests.post(
+                f"{OLLAMA_URL}/api/chat", json=payload, timeout=timeout, stream=True)
+            status = resp.status_code
+            if status not in (429, 503):
+                resp.raise_for_status()
+                full = ""
+                for line in resp.iter_lines():
+                    if not line:
+                        continue
+                    text, done = parse_chat_chunk(
+                        line.decode("utf-8") if isinstance(line, bytes) else line)
+                    if text:
+                        full += text
+                        if on_delta:
+                            on_delta(text, full)
+                    if done:
+                        break
+                return full
+        if attempt == LLM_MAX_RETRIES - 1:
+            raise RateLimited(f"LLM throttled (HTTP {status})")
+        ra = resp.headers.get("Retry-After")
+        wait = float(ra) if (ra and ra.isdigit()) else backoff_delay(attempt)
+        time.sleep(min(LLM_BACKOFF_CAP, wait) * (0.8 + 0.4 * random.random()))
     raise RateLimited("LLM throttled")  # defensive
 
 
@@ -1794,6 +1926,78 @@ def analyze_image_imajev(image_path, schema, extra_images=None):
     return result
 
 
+def analyze_image_jevision(image_path, schema):
+    """Run one packed, one-frame JEVision typed decision in a short-lived process.
+
+    JEVision is fast on teamstinky but uses ~5.7 GiB while resident. We unload
+    local Ollama residents under a cross-process lock, run the 0.8B model once,
+    then let process exit release all JEVision memory. The helper is forced
+    offline so production never downloads model weights implicitly.
+    """
+    global LAST_MODEL_USED
+    try:
+        questions = _imajev_questions_for_schema(schema)
+    except ValueError as e:
+        print(f"JEVision schema unsupported: {e}")
+        return None
+    helper = os.path.join(BASE_DIR, "tools", "jevision_once.py")
+    payload = {
+        "root": JEVISION_ROOT,
+        "image_path": os.path.abspath(image_path),
+        "state": {"camera": camera_kind(image_path), "image_order": "single target image"},
+        "questions": questions,
+        "max_width": JEVISION_MAX_WIDTH,
+        "max_height": JEVISION_MAX_HEIGHT,
+    }
+    env = dict(os.environ)
+    env.update({
+        "HF_HOME": JEVISION_HF_HOME,
+        "HF_HUB_CACHE": JEVISION_HF_HOME,
+        "HF_HUB_OFFLINE": "1",
+        "TRANSFORMERS_OFFLINE": "1",
+        "TOKENIZERS_PARALLELISM": "false",
+    })
+    try:
+        with heavyweight_inference_lock():
+            if not unload_ollama_residents():
+                return None
+            proc = subprocess.run(
+                [JEVISION_PYTHON, helper],
+                input=json.dumps(payload), text=True, capture_output=True,
+                timeout=JEVISION_TIMEOUT, env=env, check=False)
+        if proc.returncode != 0:
+            detail = (proc.stderr or proc.stdout or "").strip()[-1200:]
+            print(f"JEVision inference failed (exit {proc.returncode}): {detail}")
+            return None
+        # The helper itself writes one compact JSON line, but third-party model
+        # loaders may emit informational stdout. Treat the final non-empty line
+        # as the machine-readable response rather than making logging fatal.
+        lines = [line for line in (proc.stdout or "").splitlines() if line.strip()]
+        body = json.loads(lines[-1]) if lines else None
+    except (OSError, subprocess.TimeoutExpired, ValueError, TypeError) as e:
+        print(f"JEVision inference failed: {e}")
+        return None
+    answers = body.get("answers") if isinstance(body, dict) else None
+    if not isinstance(answers, dict):
+        return None
+    result = {}
+    for key, spec in ((schema or {}).get("properties") or {}).items():
+        ans = answers.get(key)
+        if not isinstance(ans, dict):
+            result[key] = None
+            continue
+        if spec.get("type") == "boolean":
+            probability = ans.get("noul")
+            result[key] = (
+                probability > 0.5
+                if isinstance(probability, (int, float)) else None)
+        else:
+            value = ans.get("choice")
+            result[key] = value if value in (spec.get("enum") or []) else None
+    LAST_MODEL_USED = body.get("model") or "jevision-0.8b"
+    return result
+
+
 def analyze_image_with_schema(image_path, schema, num_predict, extra_images=None):
     """One typed vision decision call. Used by sequential priority scans.
 
@@ -1806,6 +2010,8 @@ def analyze_image_with_schema(image_path, schema, num_predict, extra_images=None
     if DECISION_BACKEND == "imajev":
         return analyze_image_imajev(
             image_path, schema, extra_images=extra_images)
+    if DECISION_BACKEND == "jevision":
+        return analyze_image_jevision(image_path, schema)
     images = [encode_image(image_path)]
     if extra_images:
         # collect_timeline_images() returns [prior..., current]. The current
@@ -2105,8 +2311,8 @@ def run_health_checks(watch_dirs, api_key):
     # Typed-scan capability follows the selected local decision backend.
     # Low-memory Ollama eligibility is transient and not itself an outage.
     decision_service_up = (
-        imajev_available()
-        if DECISION_BACKEND == "imajev"
+        imajev_available() if DECISION_BACKEND == "imajev"
+        else jevision_available() if DECISION_BACKEND == "jevision"
         else ollama_available()
     )
     if (DEEP_PASSES_ENABLED and not decision_service_up
@@ -2724,13 +2930,18 @@ def _run_sweep(cfg, retention_only=False, rescan_days=None):
     imajev_up = (
         imajev_available() if DECISION_BACKEND == "imajev" else False
     )
+    jevision_up = (
+        jevision_available() if DECISION_BACKEND == "jevision" else False
+    )
     can_run_decision = (
-        imajev_up if DECISION_BACKEND == "imajev" else can_run_chain
+        imajev_up if DECISION_BACKEND == "imajev"
+        else jevision_up if DECISION_BACKEND == "jevision"
+        else can_run_chain
     )
     decision_ready = DEEP_PASSES_ENABLED and (
         can_run_decision or (ALLOW_CLOUD and api_key))
-    # Burst captions remain on Ollama/OpenRouter even when Imajev handles
-    # typed decisions.
+    # Burst captions remain on Ollama/OpenRouter when a typed-only backend
+    # (Imajev or JEVision) handles decisions.
     llm_ready = DEEP_PASSES_ENABLED and (
         can_run_chain or (ALLOW_CLOUD and api_key))
 
@@ -2739,7 +2950,8 @@ def _run_sweep(cfg, retention_only=False, rescan_days=None):
     print(
         f"System Check: Free Memory = {free_mem:.1f}GB. "
         f"Ollama up: {ollama_up}. Decision backend: {DECISION_BACKEND}; "
-        f"Imajev up: {imajev_up}. Runnable chain: {serve_chain or '[]'}. "
+        f"Imajev up: {imajev_up}; JEVision ready: {jevision_up}. "
+        f"Runnable chain: {serve_chain or '[]'}. "
         f"Cloud allowed: {ALLOW_CLOUD}. Deep passes: {mode}. "
         f"Burst summaries: {'ON' if BURST_SUMMARIES_ENABLED else 'OFF'}"
     )
@@ -2880,6 +3092,8 @@ def _run_sweep(cfg, retention_only=False, rescan_days=None):
                             skip = "llm_disabled"
                         elif DECISION_BACKEND == "imajev" and not imajev_up:
                             skip = "imajev_down"
+                        elif DECISION_BACKEND == "jevision" and not jevision_up:
+                            skip = "jevision_unavailable"
                         elif DECISION_BACKEND == "ollama" and not ollama_up:
                             skip = "ollama_down"
                         elif DECISION_BACKEND == "ollama" and not serve_chain:

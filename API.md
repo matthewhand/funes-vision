@@ -250,7 +250,7 @@ The mutable settings subset, plus a live `cameras` registry (not POST-able).
 Update one or more mutable settings (validated; others ignored).
 - **Body** any subset of:
   - `fast_pass_engine` ∈ `"yolo" | "haar"`
-  - `decision_backend` ∈ `"ollama" | "imajev"` — typed deep-pass decisions only; burst summaries remain on the Ollama/OpenRouter caption path
+  - `decision_backend` ∈ `"ollama" | "imajev" | "jevision"` — typed deep-pass decisions only; burst summaries remain on the Ollama/OpenRouter caption path
   - `deep_backfill` ∈ `true | false`
   - `deep_passes_enabled` ∈ `true | false`
   - `burst_summaries_enabled` ∈ `true | false`
@@ -313,7 +313,7 @@ Live pipeline snapshot. Shape (keys may be absent if a source is unavailable):
   (`last_sweep_age_s` is seconds since `/tmp/webcam_analysis.lastrun`, or
   JSON `null` if the marker is missing; the UI treats null as “unknown”.
   The cron watchdog and `recent_sweep` health check use this)
-- `llm` → `{backend, model, reachable, allow_cloud}` — `backend` is the selected typed-decision service (`ollama` or `imajev`)
+- `llm` → `{backend, model, reachable, allow_cloud}` — `backend` is the selected typed-decision service (`ollama`, `imajev`, or `jevision`)
 - `inference` → `{}` when idle, otherwise the live `inference_status.json`
   object plus `running_for_s` (the ℹ panel’s “Analyzing now” line)
 - `queue` → `{images_on_disk, unanalyzed, unverified_partials,
