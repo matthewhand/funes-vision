@@ -28,6 +28,7 @@ class TestSettingValid(unittest.TestCase):
         self.assertTrue(api_server.setting_valid("fast_pass_engine", "yolo"))
         self.assertTrue(api_server.setting_valid("decision_backend", "ollama"))
         self.assertTrue(api_server.setting_valid("decision_backend", "imajev"))
+        self.assertTrue(api_server.setting_valid("decision_backend", "jevision"))
         self.assertTrue(api_server.setting_valid("deep_passes_enabled", False))
         self.assertTrue(api_server.setting_valid("burst_summaries_enabled", False))
         self.assertTrue(api_server.setting_valid("burst_summaries_enabled", True))

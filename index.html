@@ -2861,10 +2861,11 @@
                 </div>
                 <select id="decision-backend-select" class="menu-field"
                         aria-labelledby="decision-backend-heading"
-                        title="Typed vision decisions: Ollama/Gemma or local Imajev"
+                        title="Typed vision decisions: Ollama/Gemma, Imajev, or one-shot JEVision"
                         style="width: 100%;">
                   <option value="ollama">Ollama + Gemma</option>
                   <option value="imajev">Imajev</option>
+                  <option value="jevision">JEVision 0.8B</option>
                 </select>
                 <div class="blacklist-item" id="deep-passes-toggle" title="Master switch for ALL vision-model analysis (priority + backfill + burst summaries). Off = detector-only, frees CPU/RAM." style="margin-top: 8px;">
                   <span>Vision deep passes</span>
@@ -6805,7 +6806,7 @@
       await withInFlight(decisionBackendSelect, async () => {
         try {
           await apiPost('/api/settings', { decision_backend: backend });
-          showToast(`Decision backend: ${backend === 'imajev' ? 'Imajev' : 'Ollama + Gemma'} (applies next pipeline cycle)`);
+          showToast(`Decision backend: ${backend === 'imajev' ? 'Imajev' : backend === 'jevision' ? 'JEVision 0.8B' : 'Ollama + Gemma'} (applies next pipeline cycle)`);
         } catch (err) {
           showToast('Failed to update - is the API service running?');
         }

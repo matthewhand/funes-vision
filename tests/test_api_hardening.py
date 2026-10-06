@@ -604,6 +604,24 @@ class TestRequestResourceLimits(SandboxCase):
             "http://127.0.0.1:9999/v1/models",
         )
 
+    def test_status_probes_selected_jevision_backend(self):
+        self.write_settings(
+            api_token="SUPERSECRET",
+            watch_dirs=[self.front],
+            decision_backend="jevision",
+            jevision_hf_home="/models/jev-cache",
+        )
+        status = api_server.pipeline_status()
+        self.assertEqual(status["llm"]["backend"], "jevision")
+        self.assertEqual(status["llm"]["model"], "jevision-0.8b")
+        self.assertFalse(status["llm"]["reachable"])
+        self.assertEqual(self.urlopen.call_count, 1)
+        self.assertEqual(
+            self.urlopen.call_args.args[0],
+            "file:///models/jev-cache/models--Qwen--Qwen3.5-0.8B-Base/"
+            "snapshots/dc7cdfe2ee4154fa7e30f5b51ca41bfa40174e68/config.json",
+        )
+
     def test_status_defaults_to_ollama_backend(self):
         self.write_settings(
             api_token="SUPERSECRET",

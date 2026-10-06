@@ -14,7 +14,7 @@ FTP snapshots into a queryable, de-duplicated timeline of visits.
 **How it works:** cameras drop motion stills over FTP; `inotifywait` queues each
 one. A cheap YOLOv4-tiny pass runs on every frame; only real hits reach the
 typed decision stage, which defaults to `gemma4:e2b` via Ollama and can
-optionally use Imajev for schema-bound yes/no/choice decisions. The stage
+optionally use Imajev or JEVision for schema-bound yes/no/choice decisions. The stage
 returns fixed Home Assistant flags (`postal_delivery`, `porch_access`,
 `animal_detected`, ...). Contiguous
 detections group into **visits** — see [ARCHITECTURE.md](ARCHITECTURE.md).
@@ -79,7 +79,7 @@ larger clips live in [docs/guide/img](docs/guide/img) and
 |---|---|---|---|
 | Focus | Post-hoc timeline of stills + HA flags | Live/recorded video NVR | Live/recorded video NVR |
 | Video pipeline | No — motion stills over FTP | Continuous stream + detection | Continuous stream + detection |
-| AI | Tiered YOLO + typed decision backend (Ollama/Gemma or Imajev) | Coral/GPU detector, no LLM schema | Detector + optional cloud AI |
+| AI | Tiered YOLO + typed decision backend (Ollama/Gemma, Imajev, or JEVision) | Coral/GPU detector, no LLM schema | Detector + optional cloud AI |
 | Home Assistant | Fixed flag schema, first-class | MQTT entities | MQTT / HTTP |
 | Required cloud | None | None | Optional cloud |
 | Best for | "Who was here, confirmed" on a small ARM box | Live NVR with clips | Live NVR, many cameras |
