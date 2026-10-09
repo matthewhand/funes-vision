@@ -10,7 +10,7 @@ the project's stated local-first/privacy posture and its own
 
 Faces are declared once in [`../fonts.css`](../fonts.css), which every diagram
 links with a plain relative `<link rel="stylesheet" href="fonts.css">`. Adding
-or re-skinning a face means editing that one file, never the 14 HTML files.
+or re-skinning a face means editing that one file, never the 17 HTML files.
 
 ## Files
 
@@ -92,7 +92,7 @@ notice must stay with the `docs/diagrams/fonts/` directory — **do not delete
 A system-stack fallback (the option considered first) would have made the CDN
 request disappear, but it changes the documented typography: the display face
 would stop being Instrument Serif on every machine, so headings would render in
-whatever serif the reader happens to have and the 13 diagrams would stop
+whatever serif the reader happens to have and the 16 diagrams would stop
 looking like a set. Self-hosting keeps the design intact and is a one-time
 ~192 KB. See the `Risks / follow-ups` section of the PR that introduced this
 directory.
