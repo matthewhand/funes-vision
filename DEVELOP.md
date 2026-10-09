@@ -417,7 +417,7 @@ The API's whole environment surface, defaults cross-checked against
 | `WEBCAM_SSE_MAX_CLIENTS` | `8` | per connection | Concurrent `/api/events` cap (`0` disables); past it a new stream gets **503**, not another thread. Raise if several tabs or reverse proxies are legitimate clients. |
 | `WEBCAM_SSE_HEARTBEAT_S` | `15` (s) | per stream | `event: ping` cadence (floored at 1 s) — a bare `: ping` is invisible to `EventSource`, so the client can see a silently stalled connection. |
 | `WEBCAM_SSE_IDLE_TIMEOUT_S` | `600` (s) | per stream | Reap a stream that has seen no real event for this long (`event: close`); `0` disables. |
-| `WEBCAM_TZ` | settings.json `timezone` > `Australia/Sydney` | per `/api/status` | Display timezone for the UI. Pin it with `Environment=WEBCAM_TZ=...` in the `webcam-api` unit (see [Timezones](#indexhtml-single-file-spa)) so filenames (SOURCE_TZ) and the display agree year-round. |
+| `WEBCAM_TZ` | `WEBCAM_TZ` env > settings.json `timezone` > `Australia/Sydney` | per `/api/status` | Display timezone for the UI. Pin it with `Environment=WEBCAM_TZ=...` in the `webcam-api` unit (see [Timezones](#indexhtml-single-file-spa)) so filenames (SOURCE_TZ) and the display agree year-round. |
 
 The first four are the per-request limits from #41 and #58; the HTTP contract
 they implement (including the **413** and the connection-cap **503**) is in
