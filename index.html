@@ -2801,7 +2801,7 @@
     .fv-context-link {
       display: inline-flex; align-items: center; justify-content: center; gap: 8px;
       min-height: 38px; padding: 0 13px;
-      text-decoration: none; white-space: nowrap;
+      text-decoration: none; white-space: nowrap; cursor: pointer;
       color: #eff7ff; background: #20558a;
       border: 1px solid rgba(139, 195, 247, .34); border-radius: 10px;
       font-size: .76rem; font-weight: 700;
@@ -3135,8 +3135,8 @@
             <h2 id="fv-context-title">What happened on camera?</h2>
             <p>Follow visits, detections, and motion across your camera archive.</p>
           </div>
-          <div class="fv-context-links" aria-label="Explore camera activity">
-            <a class="fv-context-link" href="/cameras/"><i data-lucide="layout-dashboard" aria-hidden="true"></i> All cameras</a>
+          <div class="fv-context-links" role="group" aria-label="Explore camera activity">
+            <button type="button" class="fv-context-link" id="fv-all-cameras"><i data-lucide="layout-dashboard" aria-hidden="true"></i> All cameras</button>
             <a class="fv-context-link fv-context-link--subtle" href="#image-grid"><i data-lucide="images" aria-hidden="true"></i> Browse snapshots</a>
           </div>
         </section>
@@ -3376,6 +3376,13 @@
       }
       applyRoute(route);
     }
+
+    // The operations overview uses the same client router as the camera menu.
+    // A button avoids a second document navigation and keeps asset manifests
+    // independent from the SPA's virtual /cameras/ route.
+    document.getElementById('fv-all-cameras')?.addEventListener('click', () =>
+      pushRoute({ view: ROUTE_DASHBOARD, cameraId: null })
+    );
 
     // Paint the view for a route. Called from init, popstate, and after
     // pushRoute — pushState does NOT fire popstate, so routing here must be
