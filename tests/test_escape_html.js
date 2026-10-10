@@ -38,8 +38,11 @@ assert.ok(/title="\$\{escapeHtml\(labelStr\)\}"/.test(html),
   'hour-chart title must be escaped');
 assert.ok(/\$\{escapeHtml\(lightboxFooterMeta\(meta, aiText\)\)\}/.test(html),
   'lightbox footer (includes detected labels) must be escaped');
-assert.ok(/<span>\$\{escapeHtml\(label\)\}<\/span>/.test(html),
-  'date-rail labels must be escaped');
+// Calendar labels come from numeric day values and month formatters and are
+// attached as DOM text, not inserted into HTML templates.
+assert.ok(/button\.textContent = String\(day\)/.test(html) &&
+          /option\.textContent = monthName\(month\)/.test(html),
+  'calendar labels must use safe textContent');
 assert.ok(/time-stamp">\$\{escapeHtml\(meta\.formattedTime/.test(html),
   'card formattedTime must be escaped');
 assert.ok(/href="\$\{encodeURI\(filename\)\}"/.test(html),
