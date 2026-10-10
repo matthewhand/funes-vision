@@ -63,6 +63,19 @@ async function main() {
         await page.keyboard.press('Escape');
       }
       await page.screenshot({path:path.join(OUT,size+'-light.png'),animations:'disabled'});
+      // A nonzero scroll region alone is not enough: the gallery must be
+      // reachable even when a short screen starts with Calendar expanded.
+      const firstCard = page.locator('#image-grid .image-card').first();
+      await firstCard.scrollIntoViewIfNeeded({timeout:7000});
+      const reachable = await firstCard.evaluate(card => {
+        const b = card.getBoundingClientRect();
+        const x = Math.min(innerWidth-1, Math.max(1,b.left + b.width/2));
+        const y = Math.min(innerHeight-1, Math.max(1,b.top + Math.min(b.height/2,80)));
+        return { x,y,bottom:b.bottom,top:b.top,
+          hit: document.elementFromPoint(x,y)?.closest('.image-card') === card };
+      });
+      assert(reachable.hit, size+' gallery card must be hit-testable after scrolling: '+JSON.stringify(reachable));
+      await page.screenshot({path:path.join(OUT,size+'-gallery-light.png'),animations:'disabled'});
       console.log(size, 'timeline/layout/settings OK, grid=',gridSize);
       await ctx.close();
     }
