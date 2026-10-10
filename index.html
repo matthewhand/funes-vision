@@ -2978,6 +2978,28 @@
       .fv-calendar { max-width: 420px; margin-inline: auto; }
       .fv-cal-day { min-height: 42px; font-size: .8rem; }
     }
+
+    /* Visibility repairs #121/#115: keep a scrollable gallery regardless of
+       short/tall header, landscape orientation, or the expanded calendar.
+       The grid remains the IntersectionObserver root for lazy image paging. */
+    @media (max-width: 992px) {
+      .workspace:not(.mode-dashboard) aside {
+        width: 100%; max-width: 100%; min-width: 0;
+      }
+      .image-grid:has(.image-card, .visit-log) {
+        min-height: min(60dvh, 320px);
+        max-height: max(min(60dvh, 320px), calc(100dvh - var(--grid-top-offset, 200px)));
+      }
+    }
+    /* #122: a backdrop-filtered sticky header is the containing block of
+       fixed-position Settings/Filters. Disabling it on mobile restores the
+       intended viewport sheet dimensions; the header is already opaque. */
+    @media (max-width: 768px) {
+      header { backdrop-filter: none; -webkit-backdrop-filter: none; }
+      /* #117: this higher-specificity rule wins over the later generic
+         .sidebar-toggle-label{display:none} utility at narrow widths. */
+      .logo-area #sidebar-toggle .sidebar-toggle-label { display: inline; }
+    }
   </style>
 </head>
 <body>
@@ -2986,8 +3008,8 @@
     <header>
       <div class="header-content">
         <div class="logo-area">
-          <button class="btn" id="sidebar-toggle" aria-label="Show or hide calendar and saved searches" aria-pressed="false" title="Dates &amp; saved panels">
-            <i data-lucide="panel-left"></i>
+          <button class="btn" id="sidebar-toggle" aria-label="Show or hide calendar and saved searches" aria-pressed="false" aria-expanded="true" title="Calendar &amp; saved searches">
+            <i data-lucide="calendar-days"></i>
             <span class="sidebar-toggle-label">Calendar</span>
           </button>
           <div class="logo-icon">
@@ -6522,6 +6544,10 @@
         list.appendChild(more);
       }
       grid.appendChild(list);
+      // Timeline appends its visit list after restoring the sentinel. Re-home
+      // the sentinel *now* so the visit rows occupy the first grid row.
+      // Otherwise grid-auto-rows reserves a large blank row before the visits.
+      moveSentinelToEnd();
       list.querySelectorAll('img.card-img').forEach(img => imageObserver.observe(img));
     }
 
@@ -8860,6 +8886,7 @@
         const applySidebarState = (collapsed) => {
           workspaceEl.classList.toggle('sidebar-collapsed', collapsed);
           sidebarToggle.setAttribute('aria-pressed', collapsed ? 'true' : 'false');
+          sidebarToggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
           updateActionsOverflow();
         };
         const storedSidebar = localStorage.getItem('webcam_sidebar_collapsed');
