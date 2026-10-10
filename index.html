@@ -2744,6 +2744,240 @@
     @media (max-width: 360px) {
       #live-text { display: none; }
     }
+
+
+    /* === Camera-first operations UI (#111) =================================
+       Styling only: keep existing routes, event handlers and single-file SPA.
+       Static context is deliberately non-metric; no made-up camera status. */
+    :root {
+      --bg-primary: #07111e;
+      --bg-secondary: #101f30;
+      --bg-tertiary: #1a2b40;
+      --border-color: rgba(146, 174, 211, 0.14);
+      --text-primary: #eff6ff;
+      --text-secondary: #b1c2d8;
+      --text-dim: #a5b7cd;
+      --accent-fg: #8ac2ff;
+      --surface-hover: rgba(114, 168, 230, 0.09);
+    }
+    body { background: radial-gradient(ellipse 1100px 650px at 70% -320px, rgba(39, 105, 178, .19), transparent 72%), var(--bg-primary); }
+    header { background: rgba(7, 17, 30, .96); border-bottom-color: rgba(146, 174, 211, .17); }
+    .header-content { max-width: 1780px; }
+    .workspace { max-width: 1780px; gap: 20px; padding: 22px 24px; }
+    .logo-area { gap: 10px; }
+    .logo-text { min-width: 0; }
+    .logo-text h1 { letter-spacing: -.035em; font-weight: 750; }
+    .logo-text p { color: var(--text-secondary); }
+    .cam-chip { border: 1px solid rgba(124, 183, 245, .28); background: rgba(34, 83, 138, .18); color: var(--accent-fg); }
+    #live-toggle { border: 1px solid rgba(52, 211, 153, .28); }
+    .search-trigger { border-color: rgba(150, 181, 215, .18); background: rgba(11, 27, 45, .9); }
+    .search-trigger:focus-visible, .fv-context-link:focus-visible { outline: 2px solid #9bcaff; outline-offset: 3px; }
+    .tab-group { background: rgba(14, 31, 51, .85); }
+    .tab-btn.active { box-shadow: inset 0 -2px 0 var(--accent-fg); }
+    aside { width: 214px; gap: 12px; }
+    aside .sidebar-section { background: rgba(15, 31, 50, .68); border: 1px solid rgba(143, 173, 207, .14); border-radius: 12px; }
+    aside .sidebar-section h3 { letter-spacing: .085em; }
+    aside .sidebar-item { border-radius: 8px; }
+    aside .sidebar-item.active { background: rgba(55, 123, 201, .20); }
+    .content-area { gap: 14px; }
+    .fv-context-bar {
+      display: flex; align-items: center; justify-content: space-between;
+      flex-wrap: wrap; gap: 12px 20px;
+      border: 1px solid rgba(122, 172, 230, .17);
+      background: linear-gradient(110deg, rgba(21, 47, 76, .85), rgba(12, 27, 45, .93));
+      box-shadow: 0 12px 38px rgba(0, 0, 0, .10);
+      border-radius: 16px; padding: 18px 22px;
+    }
+    .fv-context-copy { min-width: 0; }
+    .fv-eyebrow {
+      display: inline-flex; align-items: center; gap: 8px; margin-bottom: 5px;
+      font-size: .65rem; font-weight: 800; letter-spacing: .14em;
+      color: #a3cfff;
+    }
+    .fv-beacon { width: 7px; height: 7px; border-radius: 50%; background: #3de1a0; box-shadow: 0 0 0 3px rgba(61, 225, 160, .12); }
+    .fv-context-bar h2 { margin: 0; font-size: clamp(1.15rem, 1.8vw, 1.55rem); font-weight: 750; line-height: 1.25; letter-spacing: -.035em; }
+    .fv-context-bar p { margin: 4px 0 0; color: var(--text-secondary); font-size: .79rem; line-height: 1.5; }
+    .fv-context-links { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+    .fv-context-link {
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+      min-height: 38px; padding: 0 13px;
+      text-decoration: none; white-space: nowrap; cursor: pointer;
+      color: #eff7ff; background: #20558a;
+      border: 1px solid rgba(139, 195, 247, .34); border-radius: 10px;
+      font-size: .76rem; font-weight: 700;
+      transition: background-color .18s ease, border-color .18s ease;
+    }
+    .fv-context-link:hover { background: #2d6da9; }
+    .fv-context-link--subtle { background: rgba(127, 164, 208, .09); color: #d4e6fc; border-color: rgba(139, 195, 247, .20); }
+    .fv-context-link--subtle:hover { background: rgba(127, 164, 208, .18); }
+    .fv-context-link svg { width: 15px; height: 15px; }
+    .activity-chart-container {
+      background: rgba(15, 31, 50, .78);
+      border: 1px solid rgba(143, 173, 207, .16);
+      border-radius: 14px; overflow: hidden;
+    }
+    .image-grid { gap: max(10px, var(--grid-gap)); }
+    .image-card {
+      border-radius: 13px; border-color: rgba(143, 173, 207, .22);
+      background: #0c1a2c; box-shadow: 0 8px 24px rgba(0, 0, 0, .10);
+    }
+    .image-card:hover { border-color: rgba(138, 194, 255, .60); box-shadow: 0 12px 32px rgba(0, 0, 0, .22); }
+    .image-card:focus-visible { outline: 3px solid #9bcaff; outline-offset: 2px; }
+    body.mode-dashboard .fv-context-bar { display: none; }
+    @media (max-width: 992px) {
+      .workspace { padding: 14px; }
+      .fv-context-bar { padding: 14px 16px; }
+    }
+    @media (max-width: 768px) {
+      .workspace { padding: 10px; }
+      .fv-context-bar { gap: 10px; padding: 14px; border-radius: 12px; }
+      .fv-context-bar h2 { font-size: 1.17rem; }
+      .fv-context-bar p { font-size: .72rem; }
+      .fv-context-links { width: 100%; }
+      .fv-context-link { flex: 1; min-height: 40px; padding: 0 9px; font-size: .71rem; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .fv-context-link { transition: none; }
+    }
+
+    /* Issue #111: appearance selector does not alter camera data or inference. */
+    .fv-theme-control {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 12px; min-height: 40px; padding: 4px 0 10px;
+      font-size: .78rem; color: var(--text-primary);
+    }
+    .fv-theme-control select { min-width: 122px; min-height: 36px; cursor: pointer; }
+    .fv-theme-control select:focus-visible {
+      outline: 2px solid var(--accent-fg); outline-offset: 2px;
+    }
+    html[data-theme="light"] {
+      color-scheme: light;
+      --bg-primary: #f1f5fb;
+      --bg-secondary: #ffffff;
+      --bg-tertiary: #eaf1fa;
+      --text-primary: #172c46;
+      --text-secondary: #405a77;
+      --text-dim: #526782;
+      --border-color: rgba(38, 68, 101, .20);
+      --accent: #126bb9;
+      --accent-fg: #125ea7;
+      --accent-strong: #0a4c88;
+      --accent-10: rgba(18, 107, 185, .09);
+      --accent-15: rgba(18, 107, 185, .15);
+      --accent-25: rgba(18, 107, 185, .28);
+      --accent-35: rgba(18, 107, 185, .36);
+      --surface-hover: rgba(32, 88, 150, .055);
+      --surface-hover-strong: rgba(32, 88, 150, .11);
+      --success: #007b52;
+      --danger: #b42335;
+      --warning: #a65b00;
+      --chart-timeline: #4749ae;
+      --chart-objects: #9b5b00;
+      --chart-all: #405c7b;
+    }
+    html[data-theme="light"] body {
+      background: radial-gradient(ellipse 1050px 580px at 70% -350px, rgba(126, 180, 244, .19), transparent 72%), var(--bg-primary);
+    }
+    html[data-theme="light"] header {
+      background: rgba(253, 254, 255, .97);
+      border-bottom-color: rgba(38, 68, 101, .18);
+    }
+    html[data-theme="light"] .cam-chip { background: #e7f1ff; border-color: #b8d5f5; color: #12548e; }
+    html[data-theme="light"] .search-trigger { background: #f4f8fe; border-color: #c4d6e9; }
+    html[data-theme="light"] .tab-group { background: #e8eff8; }
+    html[data-theme="light"] aside .sidebar-section { background: #fff; border-color: #d4e0ed; }
+    html[data-theme="light"] aside .sidebar-item.active { background: #e4f0ff; }
+    html[data-theme="light"] .fv-context-bar {
+      background: linear-gradient(112deg, #edf5ff, #fff);
+      border-color: #cfdfef; box-shadow: 0 8px 24px rgba(40, 66, 98, .06);
+    }
+    html[data-theme="light"] .fv-eyebrow { color: #185d9c; }
+    html[data-theme="light"] .fv-beacon { background: #00835d; }
+    html[data-theme="light"] .fv-context-link {
+      background: #155f9d; border-color: #155f9d; color: white;
+    }
+    html[data-theme="light"] .fv-context-link:hover { background: #0a4d84; }
+    html[data-theme="light"] .fv-context-link--subtle {
+      background: #f8fbff; color: #194d7d; border-color: #bed3e8;
+    }
+    html[data-theme="light"] .fv-context-link--subtle:hover { background: #eaf4ff; }
+    html[data-theme="light"] .activity-chart-container { background: #fff; border-color: #d1dfed; }
+    html[data-theme="light"] .image-card {
+      background: #fff; border-color: #c8d7e7;
+      box-shadow: 0 8px 24px rgba(36, 59, 83, .07);
+    }
+    html[data-theme="light"] .image-card:hover {
+      border-color: #448aca; box-shadow: 0 12px 30px rgba(36, 59, 83, .13);
+    }
+    html[data-theme="light"] .live-badge { background: #e7f8f0; color: #006a4b; }
+    html[data-theme="light"] .live-badge.poll { background: #fff2dc; color: #865000; }
+    html[data-theme="light"] .live-badge.stale { background: #ffe9eb; color: #ad2435; }
+    html[data-theme="light"] .blacklist-dropdown,
+    html[data-theme="light"] .menu,
+    html[data-theme="light"] .search-popup-inner {
+      background: #fff; border-color: #c9d9e9; color: var(--text-primary);
+    }
+    html[data-theme="light"] .menu-field { background: #f4f8fe; }
+    html[data-theme="light"] .trends-summary-hint { color: var(--text-secondary); }
+
+    /* Month-at-a-time calendar (#113): same per-day filtering, bounded height. */
+    #date-list.fv-calendar-host {
+      display: block; max-height: none; overflow: visible;
+      width: 100%; padding: 0; min-width: 0;
+    }
+    .fv-calendar { display: flex; flex-direction: column; gap: 9px; min-width: 0; }
+    .fv-cal-all {
+      display: flex; align-items: center; justify-content: space-between; gap: 6px;
+      min-height: 38px; padding: 5px 10px; width: 100%;
+      border: 1px solid var(--border-color); border-radius: 9px;
+      background: var(--surface-hover); color: var(--text-primary);
+      cursor: pointer; font: inherit; font-size: .77rem; text-align: left;
+    }
+    .fv-cal-all.is-selected { background: var(--accent-15); color: var(--accent-fg); border-color: var(--accent-35); }
+    .fv-cal-navigation { display: grid; grid-template-columns: 32px minmax(0, 1fr) 32px; align-items: center; gap: 4px; }
+    .fv-cal-arrow {
+      width: 32px; height: 34px; padding: 0; font-size: 1.5rem; line-height: 1;
+      border: 1px solid var(--border-color); border-radius: 8px;
+      background: var(--surface-hover); color: var(--text-primary); cursor: pointer;
+    }
+    .fv-cal-arrow:disabled { opacity: .35; cursor: default; }
+    .fv-cal-month {
+      width: 100%; min-width: 0; height: 34px; padding: 0 3px;
+      background: var(--bg-secondary); color: var(--text-primary);
+      border: 1px solid var(--border-color); border-radius: 8px;
+      font-size: .73rem; font-weight: 700; text-align: center;
+      color-scheme: inherit;
+    }
+    .fv-cal-weekdays, .fv-cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; }
+    .fv-cal-weekdays span {
+      text-align: center; font-size: .63rem; font-weight: 700;
+      color: var(--text-secondary); padding: 2px 0;
+    }
+    .fv-cal-blank { display: block; min-width: 0; }
+    .fv-cal-day {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 2px; position: relative; min-width: 0; width: 100%; min-height: 38px;
+      padding: 3px 0; background: transparent; color: var(--text-secondary);
+      border: 1px solid transparent; border-radius: 8px;
+      font-size: .72rem; font-weight: 650; font-family: inherit;
+    }
+    .fv-cal-day:disabled { opacity: .38; }
+    .fv-cal-day.has-recordings { color: var(--text-primary); cursor: pointer; background: var(--surface-hover); }
+    .fv-cal-day.has-recordings:hover { background: var(--surface-hover-strong); border-color: var(--accent-25); }
+    .fv-cal-day.is-selected { background: var(--accent-15); border-color: var(--accent-35); color: var(--accent-fg); }
+    .fv-cal-day.is-today:not(.is-selected) { border-color: var(--accent-35); }
+    .fv-cal-marker { width: 5px; height: 5px; background: var(--accent-fg); border-radius: 50%; }
+    .fv-cal-day.is-selected .fv-cal-marker { background: currentColor; }
+    .fv-cal-summary { margin: 0; text-align: center; font-size: .66rem; line-height: 1.5; color: var(--text-secondary); }
+    .fv-cal-day:focus-visible, .fv-cal-arrow:focus-visible,
+    .fv-cal-month:focus-visible, .fv-cal-all:focus-visible {
+      outline: 2px solid var(--accent-fg); outline-offset: 2px;
+    }
+    @media (max-width: 992px) {
+      #date-list.fv-calendar-host { overflow-x: visible; padding-bottom: 0; }
+      .fv-calendar { max-width: 420px; margin-inline: auto; }
+      .fv-cal-day { min-height: 42px; font-size: .8rem; }
+    }
   </style>
 </head>
 <body>
@@ -2752,9 +2986,9 @@
     <header>
       <div class="header-content">
         <div class="logo-area">
-          <button class="btn" id="sidebar-toggle" aria-label="Show or hide the dates & saved panels" aria-pressed="false" title="Dates &amp; saved panels">
+          <button class="btn" id="sidebar-toggle" aria-label="Show or hide calendar and saved searches" aria-pressed="false" title="Dates &amp; saved panels">
             <i data-lucide="panel-left"></i>
-            <span class="sidebar-toggle-label">Panels</span>
+            <span class="sidebar-toggle-label">Calendar</span>
           </button>
           <div class="logo-icon">
             <i data-lucide="camera"></i>
@@ -2822,7 +3056,16 @@
                 <span>Settings</span>
               </button>
               <div class="blacklist-dropdown" id="blacklist-dropdown" role="dialog" aria-label="Detection settings">
-              <div class="menu-section-title">Grid size</div>
+              <div class="menu-section-title" id="fv-appearance-heading">Appearance</div>
+              <label class="fv-theme-control" for="fv-theme-select">
+                <span>Colour theme</span>
+                <select class="menu-field" id="fv-theme-select" aria-label="Colour theme">
+                  <option value="system">System</option>
+                  <option value="light">Light</option>
+                  <option value="dark">Dark</option>
+                </select>
+              </label>
+              <div class="menu-section-title with-gap">Grid size</div>
               <div class="segmented view-toggles" id="view-toggles">
               <button class="view-btn" data-view="small" aria-label="Small Cards" aria-pressed="false" title="Small Cards">
                 <i data-lucide="layout-grid"></i>
@@ -3015,9 +3258,9 @@
       <aside>
         <!-- Date Timeline section -->
         <div class="sidebar-section">
-          <h3><i data-lucide="calendar"></i> Dates</h3>
-          <div class="date-list" id="date-list">
-            <div class="sidebar-item active"><span>Loading...</span></div>
+          <h3><i data-lucide="calendar"></i> Calendar</h3>
+          <div class="date-list fv-calendar-host" id="date-list" aria-label="Camera archive calendar">
+            <span class="fv-cal-loading">Loading calendar…</span>
           </div>
         </div>
 
@@ -3032,6 +3275,19 @@
 
       <!-- Main feeds area -->
       <div class="content-area">
+
+        <!-- Operations UI: contextual framing; no synthetic counts or surveillance data. -->
+        <section class="fv-context-bar" aria-labelledby="fv-context-title">
+          <div class="fv-context-copy">
+            <span class="fv-eyebrow"><span class="fv-beacon" aria-hidden="true"></span> CAMERA ACTIVITY</span>
+            <h2 id="fv-context-title">What happened on camera?</h2>
+            <p>Follow visits, detections, and motion across your camera archive.</p>
+          </div>
+          <div class="fv-context-links" role="group" aria-label="Explore camera activity">
+            <button type="button" class="fv-context-link" id="fv-all-cameras"><i data-lucide="layout-dashboard" aria-hidden="true"></i> All cameras</button>
+            <a class="fv-context-link fv-context-link--subtle" href="#image-grid"><i data-lucide="images" aria-hidden="true"></i> Browse snapshots</a>
+          </div>
+        </section>
         <!-- Trends: the day planner and the hour histogram, above the feed.
              This was the sidebar's "Motion" section; the rail is display:none
              below 992px, so the app's only trends surface did not exist on a
@@ -3269,6 +3525,13 @@
       applyRoute(route);
     }
 
+    // The operations overview uses the same client router as the camera menu.
+    // A button avoids a second document navigation and keeps asset manifests
+    // independent from the SPA's virtual /cameras/ route.
+    document.getElementById('fv-all-cameras')?.addEventListener('click', () =>
+      pushRoute({ view: ROUTE_DASHBOARD, cameraId: null })
+    );
+
     // Paint the view for a route. Called from init, popstate, and after
     // pushRoute — pushState does NOT fire popstate, so routing here must be
     // explicit rather than relying on the back/forward listener alone.
@@ -3398,6 +3661,8 @@
       stickySelect: JSON.parse(localStorage.getItem('webcam_sticky_filters') || 'false'),
       filtersHidden: JSON.parse(localStorage.getItem('webcam_filters_hidden') || 'false'),
       activeDateFilter: 'all', // set to today on first catalog load; all = explicit
+      calendarMonth: null, // visible archive month (YYYY-MM), independent of day selection
+      calendarLastActiveDate: null, // notice external changes from Trends/saved views
       dateUserSet: false,     // user picked All Dates / a day / a saved search
       timeStart: 0,
       timeEnd: 23,
@@ -4264,52 +4529,159 @@
       }
     }
 
-    // Render left Date Navigation
+    // Bounded month navigator. Date filtering remains the existing per-camera
+    // activeDateFilter pipeline, without fetching any extra camera/model data.
     function renderDateSidebar() {
-      const dateCounts = {};
-      state.allImages.forEach(filename => {
+      const dateCounts = Object.create(null);
+      for (const filename of state.allImages) {
         const dateStr = parseFilenameFields(filename).dateStr;
-        if (dateStr !== 'Unknown') {
-          dateCounts[dateStr] = dateCounts[dateStr] || { count: 0, sample: filename };
-          dateCounts[dateStr].count++;
+        if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+          dateCounts[dateStr] = (dateCounts[dateStr] || 0) + 1;
         }
-      });
-      
+      }
+      const dates = Object.keys(dateCounts).sort();
+      const months = [...new Set(dates.map(d => d.slice(0, 7)))];
+      const selected = state.activeDateFilter;
+      const selectedMonth = /^\d{4}-\d{2}-\d{2}$/.test(selected) ? selected.slice(0, 7) : null;
+      // React to changes from Trends, saved searches and camera changes,
+      // but leave browsing month alone during next/previous navigation.
+      if (state.calendarLastActiveDate !== selected || !months.includes(state.calendarMonth)) {
+        state.calendarMonth = (selectedMonth && months.includes(selectedMonth) ? selectedMonth : months[months.length - 1])
+          || todayDateStr(new Date(), DISPLAY_TZ).slice(0, 7);
+        state.calendarLastActiveDate = selected;
+      }
       const sidebarList = document.getElementById('date-list');
-      sidebarList.innerHTML = '';
-      
-      // All Dates option
-      const allItem = document.createElement('div');
-      allItem.className = `sidebar-item ${state.activeDateFilter === 'all' ? 'active' : ''}`;
-      allItem.innerHTML = `<span>All Dates</span><span class="count-badge">${state.allImages.length}</span>`;
-      bindActivatable(allItem, () => {
+      if (!sidebarList) return;
+      sidebarList.replaceChildren();
+
+      const calendar = document.createElement('div');
+      calendar.className = 'fv-calendar';
+      const allItem = document.createElement('button');
+      allItem.type = 'button';
+      allItem.className = 'fv-cal-all' + (selected === 'all' ? ' is-selected' : '');
+      allItem.setAttribute('aria-pressed', String(selected === 'all'));
+      allItem.innerHTML = '<span>All dates</span><span class="count-badge">' + state.allImages.length.toLocaleString('en-AU') + '</span>';
+      allItem.addEventListener('click', () => {
         state.activeDateFilter = 'all';
         state.dateUserSet = true;
-        document.querySelectorAll('.sidebar-item').forEach(el => el.classList.remove('active'));
-        allItem.classList.add('active');
+        renderDateSidebar();
         applyFiltersAndSearch();
       });
-      sidebarList.appendChild(allItem);
-      
-      // Sort and list dates ("Today"/"Yesterday" prefix for the recent ones)
-      const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: DISPLAY_TZ });
-      const sortedDates = Object.keys(dateCounts).sort().reverse();
-      sortedDates.forEach(dateStr => {
-        const item = document.createElement('div');
-        item.className = `sidebar-item ${state.activeDateFilter === dateStr ? 'active' : ''}`;
-        const rel = dayLabel(dateStr, todayStr);
-        const pretty = parseFilename(dateCounts[dateStr].sample).formattedDate || dateStr;
-        const label = rel ? `${rel} · ${pretty}` : pretty;
-        item.innerHTML = `<span>${escapeHtml(label)}</span><span class="count-badge">${dateCounts[dateStr].count}</span>`;
-        bindActivatable(item, () => {
-          state.activeDateFilter = dateStr;
-          state.dateUserSet = true;
-          document.querySelectorAll('.sidebar-item').forEach(el => el.classList.remove('active'));
-          item.classList.add('active');
-          applyFiltersAndSearch();
-        });
-        sidebarList.appendChild(item);
+      calendar.appendChild(allItem);
+
+      const nav = document.createElement('div');
+      nav.className = 'fv-cal-navigation';
+      const idx = months.indexOf(state.calendarMonth);
+      const prev = document.createElement('button');
+      prev.type = 'button';
+      prev.className = 'fv-cal-arrow';
+      prev.textContent = '‹';
+      prev.setAttribute('aria-label', 'Previous recorded month');
+      prev.disabled = idx <= 0;
+      prev.addEventListener('click', () => {
+        state.calendarMonth = months[idx - 1];
+        renderDateSidebar();
       });
+      const choose = document.createElement('select');
+      choose.className = 'fv-cal-month';
+      choose.setAttribute('aria-label', 'Browse archive month');
+      const monthName = month => new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)) - 1, 1))
+        .toLocaleDateString('en-AU', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+      if (months.length) {
+        months.forEach(month => {
+          const option = document.createElement('option');
+          option.value = month;
+          option.textContent = monthName(month);
+          choose.appendChild(option);
+        });
+        choose.value = state.calendarMonth;
+      } else {
+        const option = document.createElement('option');
+        option.textContent = 'No recordings';
+        option.value = '';
+        choose.appendChild(option);
+        choose.disabled = true;
+      }
+      choose.addEventListener('change', () => {
+        if (!months.includes(choose.value)) return;
+        state.calendarMonth = choose.value;
+        renderDateSidebar();
+      });
+      const next = document.createElement('button');
+      next.type = 'button';
+      next.className = 'fv-cal-arrow';
+      next.textContent = '›';
+      next.setAttribute('aria-label', 'Next recorded month');
+      next.disabled = idx < 0 || idx >= months.length - 1;
+      next.addEventListener('click', () => {
+        state.calendarMonth = months[idx + 1];
+        renderDateSidebar();
+      });
+      nav.append(prev, choose, next);
+      calendar.appendChild(nav);
+
+      const weekdays = document.createElement('div');
+      weekdays.className = 'fv-cal-weekdays';
+      weekdays.setAttribute('aria-hidden', 'true');
+      ['M', 'T', 'W', 'T', 'F', 'S', 'S'].forEach(label => {
+        const el = document.createElement('span');
+        el.textContent = label;
+        weekdays.appendChild(el);
+      });
+      calendar.appendChild(weekdays);
+
+      const grid = document.createElement('div');
+      grid.className = 'fv-cal-grid';
+      grid.setAttribute('role', 'group');
+      grid.setAttribute('aria-label', 'Recordings in ' + monthName(state.calendarMonth));
+      const [year, month] = state.calendarMonth.split('-').map(Number);
+      const firstDay = (new Date(Date.UTC(year, month - 1, 1)).getUTCDay() + 6) % 7;
+      const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+      for (let n = 0; n < firstDay; n++) {
+        const blank = document.createElement('span');
+        blank.className = 'fv-cal-blank';
+        blank.setAttribute('aria-hidden', 'true');
+        grid.appendChild(blank);
+      }
+      const todayStr = todayDateStr(new Date(), DISPLAY_TZ);
+      for (let day = 1; day <= daysInMonth; day++) {
+        const dateStr = state.calendarMonth + '-' + String(day).padStart(2, '0');
+        const count = dateCounts[dateStr] || 0;
+        const fullName = new Date(Date.UTC(year, month - 1, day))
+          .toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'fv-cal-day' + (count ? ' has-recordings' : '') +
+          (selected === dateStr ? ' is-selected' : '') + (todayStr === dateStr ? ' is-today' : '');
+        button.textContent = String(day);
+        button.disabled = !count;
+        button.setAttribute('aria-label', fullName + ', ' + count + ' snapshot' + (count === 1 ? '' : 's'));
+        if (count) {
+          button.setAttribute('aria-pressed', String(selected === dateStr));
+          button.title = fullName + ': ' + count + ' snapshots';
+          const dot = document.createElement('span');
+          dot.className = 'fv-cal-marker';
+          dot.setAttribute('aria-hidden', 'true');
+          button.appendChild(dot);
+          button.addEventListener('click', () => {
+            state.activeDateFilter = dateStr;
+            state.dateUserSet = true;
+            renderDateSidebar();
+            applyFiltersAndSearch();
+          });
+        }
+        grid.appendChild(button);
+      }
+      calendar.appendChild(grid);
+
+      const summary = document.createElement('p');
+      summary.className = 'fv-cal-summary';
+      const activeDays = dates.filter(d => d.startsWith(state.calendarMonth)).length;
+      summary.textContent = months.length
+        ? activeDays + ' recorded day' + (activeDays === 1 ? '' : 's') + ' · Select a marked date'
+        : 'No snapshots in this camera archive';
+      calendar.appendChild(summary);
+      sidebarList.appendChild(calendar);
     }
 
     // Render the trends panel charts:
@@ -7759,6 +8131,40 @@
 
     // Load initial triggers on DOM Loaded
     document.addEventListener('DOMContentLoaded', async () => {
+      // UI-only theme preference: no API or inference dependencies.
+      const fvThemeKey = 'funes-vision.theme';
+      const fvThemeMedia = window.matchMedia('(prefers-color-scheme: light)');
+      const fvThemeSelect = document.getElementById('fv-theme-select');
+      let fvThemeChoice = 'system';
+      try {
+        const saved = window.localStorage.getItem(fvThemeKey);
+        if (['system', 'light', 'dark'].includes(saved)) fvThemeChoice = saved;
+      } catch (_) { /* storage can be restricted */ }
+      const renderFvTheme = () => {
+        const resolved = fvThemeChoice === 'system'
+          ? (fvThemeMedia.matches ? 'light' : 'dark') : fvThemeChoice;
+        document.documentElement.dataset.theme = resolved;
+        document.documentElement.style.colorScheme = resolved;
+        if (fvThemeSelect) fvThemeSelect.value = fvThemeChoice;
+        const meta = document.querySelector('meta[name="theme-color"]');
+        if (meta) meta.content = resolved === 'light' ? '#f1f5fb' : '#07111e';
+      };
+      fvThemeSelect?.addEventListener('change', () => {
+        if (!['system', 'light', 'dark'].includes(fvThemeSelect.value)) return;
+        fvThemeChoice = fvThemeSelect.value;
+        try { window.localStorage.setItem(fvThemeKey, fvThemeChoice); } catch (_) {}
+        renderFvTheme();
+      });
+      const systemSchemeChanged = () => {
+        if (fvThemeChoice === 'system') renderFvTheme();
+      };
+      if (typeof fvThemeMedia.addEventListener === 'function') {
+        fvThemeMedia.addEventListener('change', systemSchemeChanged);
+      } else if (typeof fvThemeMedia.addListener === 'function') {
+        fvThemeMedia.addListener(systemSchemeChanged);
+      }
+      renderFvTheme();
+
       // Resolve the camera registry first so getFeedProfile() derives the
       // feed kind from configured metadata instead of guessing from the host.
       // cameras() never throws — it returns the embedded fallback on failure.
