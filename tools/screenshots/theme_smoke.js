@@ -23,7 +23,7 @@ async function run() {
       });
       const page = await ctx.newPage();
       await page.goto(ORIGIN, { waitUntil: 'domcontentloaded' });
-      await page.waitForSelector('#fv-theme-select');
+      await page.waitForSelector('#fv-theme-select', { state: 'attached' });
       const theme = () => page.locator('html').getAttribute('data-theme');
       await page.waitForFunction(() => document.documentElement.dataset.theme === 'light');
       assert.strictEqual(await theme(), 'light', 'system light (' + name + ')');
@@ -33,7 +33,7 @@ async function run() {
       await page.keyboard.press('Escape');
       await page.screenshot({ path: path.join(OUT, name + '-dark.png'), animations: 'disabled' });
       await page.reload({ waitUntil: 'domcontentloaded' });
-      await page.waitForSelector('#fv-theme-select');
+      await page.waitForSelector('#fv-theme-select', { state: 'attached' });
       assert.strictEqual(await theme(), 'dark', 'dark persists after reload (' + name + ')');
       await page.locator('#btn-manage-blacklist').click();
       await page.locator('#fv-theme-select').selectOption('light');
