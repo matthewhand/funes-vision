@@ -2839,6 +2839,86 @@
     @media (prefers-reduced-motion: reduce) {
       .fv-context-link { transition: none; }
     }
+
+    /* Issue #111: appearance selector does not alter camera data or inference. */
+    .fv-theme-control {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 12px; min-height: 40px; padding: 4px 0 10px;
+      font-size: .78rem; color: var(--text-primary);
+    }
+    .fv-theme-control select { min-width: 122px; min-height: 36px; cursor: pointer; }
+    .fv-theme-control select:focus-visible {
+      outline: 2px solid var(--accent-fg); outline-offset: 2px;
+    }
+    html[data-theme="light"] {
+      color-scheme: light;
+      --bg-primary: #f1f5fb;
+      --bg-secondary: #ffffff;
+      --bg-tertiary: #eaf1fa;
+      --text-primary: #172c46;
+      --text-secondary: #405a77;
+      --text-dim: #526782;
+      --border-color: rgba(38, 68, 101, .20);
+      --accent: #126bb9;
+      --accent-fg: #125ea7;
+      --accent-strong: #0a4c88;
+      --accent-10: rgba(18, 107, 185, .09);
+      --accent-15: rgba(18, 107, 185, .15);
+      --accent-25: rgba(18, 107, 185, .28);
+      --accent-35: rgba(18, 107, 185, .36);
+      --surface-hover: rgba(32, 88, 150, .055);
+      --surface-hover-strong: rgba(32, 88, 150, .11);
+      --success: #007b52;
+      --danger: #b42335;
+      --warning: #a65b00;
+      --chart-timeline: #4749ae;
+      --chart-objects: #9b5b00;
+      --chart-all: #405c7b;
+    }
+    html[data-theme="light"] body {
+      background: radial-gradient(ellipse 1050px 580px at 70% -350px, rgba(126, 180, 244, .19), transparent 72%), var(--bg-primary);
+    }
+    html[data-theme="light"] header {
+      background: rgba(253, 254, 255, .97);
+      border-bottom-color: rgba(38, 68, 101, .18);
+    }
+    html[data-theme="light"] .cam-chip { background: #e7f1ff; border-color: #b8d5f5; color: #12548e; }
+    html[data-theme="light"] .search-trigger { background: #f4f8fe; border-color: #c4d6e9; }
+    html[data-theme="light"] .tab-group { background: #e8eff8; }
+    html[data-theme="light"] aside .sidebar-section { background: #fff; border-color: #d4e0ed; }
+    html[data-theme="light"] aside .sidebar-item.active { background: #e4f0ff; }
+    html[data-theme="light"] .fv-context-bar {
+      background: linear-gradient(112deg, #edf5ff, #fff);
+      border-color: #cfdfef; box-shadow: 0 8px 24px rgba(40, 66, 98, .06);
+    }
+    html[data-theme="light"] .fv-eyebrow { color: #185d9c; }
+    html[data-theme="light"] .fv-beacon { background: #00835d; }
+    html[data-theme="light"] .fv-context-link {
+      background: #155f9d; border-color: #155f9d; color: white;
+    }
+    html[data-theme="light"] .fv-context-link:hover { background: #0a4d84; }
+    html[data-theme="light"] .fv-context-link--subtle {
+      background: #f8fbff; color: #194d7d; border-color: #bed3e8;
+    }
+    html[data-theme="light"] .fv-context-link--subtle:hover { background: #eaf4ff; }
+    html[data-theme="light"] .activity-chart-container { background: #fff; border-color: #d1dfed; }
+    html[data-theme="light"] .image-card {
+      background: #fff; border-color: #c8d7e7;
+      box-shadow: 0 8px 24px rgba(36, 59, 83, .07);
+    }
+    html[data-theme="light"] .image-card:hover {
+      border-color: #448aca; box-shadow: 0 12px 30px rgba(36, 59, 83, .13);
+    }
+    html[data-theme="light"] .live-badge { background: #e7f8f0; color: #006a4b; }
+    html[data-theme="light"] .live-badge.poll { background: #fff2dc; color: #865000; }
+    html[data-theme="light"] .live-badge.stale { background: #ffe9eb; color: #ad2435; }
+    html[data-theme="light"] .blacklist-dropdown,
+    html[data-theme="light"] .menu,
+    html[data-theme="light"] .search-popup-inner {
+      background: #fff; border-color: #c9d9e9; color: var(--text-primary);
+    }
+    html[data-theme="light"] .menu-field { background: #f4f8fe; }
+    html[data-theme="light"] .trends-summary-hint { color: var(--text-secondary); }
   </style>
 </head>
 <body>
@@ -2917,7 +2997,16 @@
                 <span>Settings</span>
               </button>
               <div class="blacklist-dropdown" id="blacklist-dropdown" role="dialog" aria-label="Detection settings">
-              <div class="menu-section-title">Grid size</div>
+              <div class="menu-section-title" id="fv-appearance-heading">Appearance</div>
+              <label class="fv-theme-control" for="fv-theme-select">
+                <span>Colour theme</span>
+                <select class="menu-field" id="fv-theme-select" aria-label="Colour theme">
+                  <option value="system">System</option>
+                  <option value="light">Light</option>
+                  <option value="dark">Dark</option>
+                </select>
+              </label>
+              <div class="menu-section-title with-gap">Grid size</div>
               <div class="segmented view-toggles" id="view-toggles">
               <button class="view-btn" data-view="small" aria-label="Small Cards" aria-pressed="false" title="Small Cards">
                 <i data-lucide="layout-grid"></i>
@@ -7874,6 +7963,40 @@
 
     // Load initial triggers on DOM Loaded
     document.addEventListener('DOMContentLoaded', async () => {
+      // UI-only theme preference: no API or inference dependencies.
+      const fvThemeKey = 'funes-vision.theme';
+      const fvThemeMedia = window.matchMedia('(prefers-color-scheme: light)');
+      const fvThemeSelect = document.getElementById('fv-theme-select');
+      let fvThemeChoice = 'system';
+      try {
+        const saved = window.localStorage.getItem(fvThemeKey);
+        if (['system', 'light', 'dark'].includes(saved)) fvThemeChoice = saved;
+      } catch (_) { /* storage can be restricted */ }
+      const renderFvTheme = () => {
+        const resolved = fvThemeChoice === 'system'
+          ? (fvThemeMedia.matches ? 'light' : 'dark') : fvThemeChoice;
+        document.documentElement.dataset.theme = resolved;
+        document.documentElement.style.colorScheme = resolved;
+        if (fvThemeSelect) fvThemeSelect.value = fvThemeChoice;
+        const meta = document.querySelector('meta[name="theme-color"]');
+        if (meta) meta.content = resolved === 'light' ? '#f1f5fb' : '#07111e';
+      };
+      fvThemeSelect?.addEventListener('change', () => {
+        if (!['system', 'light', 'dark'].includes(fvThemeSelect.value)) return;
+        fvThemeChoice = fvThemeSelect.value;
+        try { window.localStorage.setItem(fvThemeKey, fvThemeChoice); } catch (_) {}
+        renderFvTheme();
+      });
+      const systemSchemeChanged = () => {
+        if (fvThemeChoice === 'system') renderFvTheme();
+      };
+      if (typeof fvThemeMedia.addEventListener === 'function') {
+        fvThemeMedia.addEventListener('change', systemSchemeChanged);
+      } else if (typeof fvThemeMedia.addListener === 'function') {
+        fvThemeMedia.addListener(systemSchemeChanged);
+      }
+      renderFvTheme();
+
       // Resolve the camera registry first so getFeedProfile() derives the
       // feed kind from configured metadata instead of guessing from the host.
       // cameras() never throws — it returns the embedded fallback on failure.
