@@ -113,6 +113,18 @@ jobs:
           A11Y_AUDIT_JSON: ${{ github.workspace }}/a11y-report.json
         run: node tools/screenshots/a11y_audit.js
 
+      - name: Verify responsive light/dark/system themes
+        run: node tools/screenshots/theme_smoke.js
+
+      - name: Upload synthetic theme previews
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: theme-previews
+          path: theme-previews/*.png
+          if-no-files-found: ignore
+          retention-days: 14
+
       - name: Upload the audit report
         if: always()
         uses: actions/upload-artifact@v4
