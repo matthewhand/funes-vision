@@ -75,6 +75,12 @@ async function main() {
           hit: document.elementFromPoint(x,y)?.closest('.image-card') === card };
       });
       assert(reachable.hit, size+' gallery card must be hit-testable after scrolling: '+JSON.stringify(reachable));
+      // Do not mistake a clickable black placeholder for a usable camera
+      // view: lazy-loaded fixture thumbnails must also finish decoding.
+      await page.waitForFunction(() => {
+        const img = document.querySelector('#image-grid .image-card img.card-img');
+        return !!img && img.classList.contains('loaded') && img.naturalWidth > 0;
+      }, null, { timeout: 10000 });
       await page.screenshot({path:path.join(OUT,size+'-gallery-light.png'),animations:'disabled'});
       console.log(size, 'timeline/layout/settings OK, grid=',gridSize);
       await ctx.close();
