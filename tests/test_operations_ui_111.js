@@ -7,8 +7,10 @@ assert.match(html, /<section class="fv-context-bar" aria-labelledby="fv-context-
   'context card needs a named section');
 assert.match(html, /<h2 id="fv-context-title">What happened on camera\?<\/h2>/,
   'context should communicate what this view does');
-assert.match(html, /<a class="fv-context-link" href="\/cameras\/">/,
-  'all-cameras action must point at the existing dashboard route');
+assert.match(html, /<button type="button" class="fv-context-link" id="fv-all-cameras">/,
+  'all-cameras action must be a native button');
+assert.match(html, /document\.getElementById\('fv-all-cameras'\)\?\.addEventListener\('click', \(\) =>[\s\S]*?pushRoute\(\{ view: ROUTE_DASHBOARD, cameraId: null \}\)/,
+  'all-cameras action must call the existing SPA router');
 assert.match(html, /href="#image-grid"/,
   'browse action must target the existing grid');
 assert.match(html, /body\.mode-dashboard \.fv-context-bar\s*\{\s*display:\s*none;/,
