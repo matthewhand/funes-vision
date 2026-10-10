@@ -2919,6 +2919,65 @@
     }
     html[data-theme="light"] .menu-field { background: #f4f8fe; }
     html[data-theme="light"] .trends-summary-hint { color: var(--text-secondary); }
+
+    /* Month-at-a-time calendar (#113): same per-day filtering, bounded height. */
+    #date-list.fv-calendar-host {
+      display: block; max-height: none; overflow: visible;
+      width: 100%; padding: 0; min-width: 0;
+    }
+    .fv-calendar { display: flex; flex-direction: column; gap: 9px; min-width: 0; }
+    .fv-cal-all {
+      display: flex; align-items: center; justify-content: space-between; gap: 6px;
+      min-height: 38px; padding: 5px 10px; width: 100%;
+      border: 1px solid var(--border-color); border-radius: 9px;
+      background: var(--surface-hover); color: var(--text-primary);
+      cursor: pointer; font: inherit; font-size: .77rem; text-align: left;
+    }
+    .fv-cal-all.is-selected { background: var(--accent-15); color: var(--accent-fg); border-color: var(--accent-35); }
+    .fv-cal-navigation { display: grid; grid-template-columns: 32px minmax(0, 1fr) 32px; align-items: center; gap: 4px; }
+    .fv-cal-arrow {
+      width: 32px; height: 34px; padding: 0; font-size: 1.5rem; line-height: 1;
+      border: 1px solid var(--border-color); border-radius: 8px;
+      background: var(--surface-hover); color: var(--text-primary); cursor: pointer;
+    }
+    .fv-cal-arrow:disabled { opacity: .35; cursor: default; }
+    .fv-cal-month {
+      width: 100%; min-width: 0; height: 34px; padding: 0 3px;
+      background: var(--bg-secondary); color: var(--text-primary);
+      border: 1px solid var(--border-color); border-radius: 8px;
+      font-size: .73rem; font-weight: 700; text-align: center;
+      color-scheme: inherit;
+    }
+    .fv-cal-weekdays, .fv-cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; }
+    .fv-cal-weekdays span {
+      text-align: center; font-size: .63rem; font-weight: 700;
+      color: var(--text-secondary); padding: 2px 0;
+    }
+    .fv-cal-blank { display: block; min-width: 0; }
+    .fv-cal-day {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 2px; position: relative; min-width: 0; width: 100%; min-height: 38px;
+      padding: 3px 0; background: transparent; color: var(--text-secondary);
+      border: 1px solid transparent; border-radius: 8px;
+      font-size: .72rem; font-weight: 650; font-family: inherit;
+    }
+    .fv-cal-day:disabled { opacity: .38; }
+    .fv-cal-day.has-recordings { color: var(--text-primary); cursor: pointer; background: var(--surface-hover); }
+    .fv-cal-day.has-recordings:hover { background: var(--surface-hover-strong); border-color: var(--accent-25); }
+    .fv-cal-day.is-selected { background: var(--accent-15); border-color: var(--accent-35); color: var(--accent-fg); }
+    .fv-cal-day.is-today:not(.is-selected) { border-color: var(--accent-35); }
+    .fv-cal-marker { width: 5px; height: 5px; background: var(--accent-fg); border-radius: 50%; }
+    .fv-cal-day.is-selected .fv-cal-marker { background: currentColor; }
+    .fv-cal-summary { margin: 0; text-align: center; font-size: .66rem; line-height: 1.5; color: var(--text-secondary); }
+    .fv-cal-day:focus-visible, .fv-cal-arrow:focus-visible,
+    .fv-cal-month:focus-visible, .fv-cal-all:focus-visible {
+      outline: 2px solid var(--accent-fg); outline-offset: 2px;
+    }
+    @media (max-width: 992px) {
+      #date-list.fv-calendar-host { overflow-x: visible; padding-bottom: 0; }
+      .fv-calendar { max-width: 420px; margin-inline: auto; }
+      .fv-cal-day { min-height: 42px; font-size: .8rem; }
+    }
   </style>
 </head>
 <body>
@@ -2927,9 +2986,9 @@
     <header>
       <div class="header-content">
         <div class="logo-area">
-          <button class="btn" id="sidebar-toggle" aria-label="Show or hide the dates & saved panels" aria-pressed="false" title="Dates &amp; saved panels">
+          <button class="btn" id="sidebar-toggle" aria-label="Show or hide calendar and saved searches" aria-pressed="false" title="Dates &amp; saved panels">
             <i data-lucide="panel-left"></i>
-            <span class="sidebar-toggle-label">Panels</span>
+            <span class="sidebar-toggle-label">Calendar</span>
           </button>
           <div class="logo-icon">
             <i data-lucide="camera"></i>
@@ -3199,9 +3258,9 @@
       <aside>
         <!-- Date Timeline section -->
         <div class="sidebar-section">
-          <h3><i data-lucide="calendar"></i> Dates</h3>
-          <div class="date-list" id="date-list">
-            <div class="sidebar-item active"><span>Loading...</span></div>
+          <h3><i data-lucide="calendar"></i> Calendar</h3>
+          <div class="date-list fv-calendar-host" id="date-list" aria-label="Camera archive calendar">
+            <span class="fv-cal-loading">Loading calendar…</span>
           </div>
         </div>
 
@@ -3602,6 +3661,8 @@
       stickySelect: JSON.parse(localStorage.getItem('webcam_sticky_filters') || 'false'),
       filtersHidden: JSON.parse(localStorage.getItem('webcam_filters_hidden') || 'false'),
       activeDateFilter: 'all', // set to today on first catalog load; all = explicit
+      calendarMonth: null, // visible archive month (YYYY-MM), independent of day selection
+      calendarLastActiveDate: null, // notice external changes from Trends/saved views
       dateUserSet: false,     // user picked All Dates / a day / a saved search
       timeStart: 0,
       timeEnd: 23,
@@ -4468,52 +4529,159 @@
       }
     }
 
-    // Render left Date Navigation
+    // Bounded month navigator. Date filtering remains the existing per-camera
+    // activeDateFilter pipeline, without fetching any extra camera/model data.
     function renderDateSidebar() {
-      const dateCounts = {};
-      state.allImages.forEach(filename => {
+      const dateCounts = Object.create(null);
+      for (const filename of state.allImages) {
         const dateStr = parseFilenameFields(filename).dateStr;
-        if (dateStr !== 'Unknown') {
-          dateCounts[dateStr] = dateCounts[dateStr] || { count: 0, sample: filename };
-          dateCounts[dateStr].count++;
+        if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+          dateCounts[dateStr] = (dateCounts[dateStr] || 0) + 1;
         }
-      });
-      
+      }
+      const dates = Object.keys(dateCounts).sort();
+      const months = [...new Set(dates.map(d => d.slice(0, 7)))];
+      const selected = state.activeDateFilter;
+      const selectedMonth = /^\d{4}-\d{2}-\d{2}$/.test(selected) ? selected.slice(0, 7) : null;
+      // React to changes from Trends, saved searches and camera changes,
+      // but leave browsing month alone during next/previous navigation.
+      if (state.calendarLastActiveDate !== selected || !months.includes(state.calendarMonth)) {
+        state.calendarMonth = (selectedMonth && months.includes(selectedMonth) ? selectedMonth : months[months.length - 1])
+          || todayDateStr(new Date(), DISPLAY_TZ).slice(0, 7);
+        state.calendarLastActiveDate = selected;
+      }
       const sidebarList = document.getElementById('date-list');
-      sidebarList.innerHTML = '';
-      
-      // All Dates option
-      const allItem = document.createElement('div');
-      allItem.className = `sidebar-item ${state.activeDateFilter === 'all' ? 'active' : ''}`;
-      allItem.innerHTML = `<span>All Dates</span><span class="count-badge">${state.allImages.length}</span>`;
-      bindActivatable(allItem, () => {
+      if (!sidebarList) return;
+      sidebarList.replaceChildren();
+
+      const calendar = document.createElement('div');
+      calendar.className = 'fv-calendar';
+      const allItem = document.createElement('button');
+      allItem.type = 'button';
+      allItem.className = 'fv-cal-all' + (selected === 'all' ? ' is-selected' : '');
+      allItem.setAttribute('aria-pressed', String(selected === 'all'));
+      allItem.innerHTML = '<span>All dates</span><span class="count-badge">' + state.allImages.length.toLocaleString('en-AU') + '</span>';
+      allItem.addEventListener('click', () => {
         state.activeDateFilter = 'all';
         state.dateUserSet = true;
-        document.querySelectorAll('.sidebar-item').forEach(el => el.classList.remove('active'));
-        allItem.classList.add('active');
+        renderDateSidebar();
         applyFiltersAndSearch();
       });
-      sidebarList.appendChild(allItem);
-      
-      // Sort and list dates ("Today"/"Yesterday" prefix for the recent ones)
-      const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: DISPLAY_TZ });
-      const sortedDates = Object.keys(dateCounts).sort().reverse();
-      sortedDates.forEach(dateStr => {
-        const item = document.createElement('div');
-        item.className = `sidebar-item ${state.activeDateFilter === dateStr ? 'active' : ''}`;
-        const rel = dayLabel(dateStr, todayStr);
-        const pretty = parseFilename(dateCounts[dateStr].sample).formattedDate || dateStr;
-        const label = rel ? `${rel} · ${pretty}` : pretty;
-        item.innerHTML = `<span>${escapeHtml(label)}</span><span class="count-badge">${dateCounts[dateStr].count}</span>`;
-        bindActivatable(item, () => {
-          state.activeDateFilter = dateStr;
-          state.dateUserSet = true;
-          document.querySelectorAll('.sidebar-item').forEach(el => el.classList.remove('active'));
-          item.classList.add('active');
-          applyFiltersAndSearch();
-        });
-        sidebarList.appendChild(item);
+      calendar.appendChild(allItem);
+
+      const nav = document.createElement('div');
+      nav.className = 'fv-cal-navigation';
+      const idx = months.indexOf(state.calendarMonth);
+      const prev = document.createElement('button');
+      prev.type = 'button';
+      prev.className = 'fv-cal-arrow';
+      prev.textContent = '‹';
+      prev.setAttribute('aria-label', 'Previous recorded month');
+      prev.disabled = idx <= 0;
+      prev.addEventListener('click', () => {
+        state.calendarMonth = months[idx - 1];
+        renderDateSidebar();
       });
+      const choose = document.createElement('select');
+      choose.className = 'fv-cal-month';
+      choose.setAttribute('aria-label', 'Browse archive month');
+      const monthName = month => new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)) - 1, 1))
+        .toLocaleDateString('en-AU', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+      if (months.length) {
+        months.forEach(month => {
+          const option = document.createElement('option');
+          option.value = month;
+          option.textContent = monthName(month);
+          choose.appendChild(option);
+        });
+        choose.value = state.calendarMonth;
+      } else {
+        const option = document.createElement('option');
+        option.textContent = 'No recordings';
+        option.value = '';
+        choose.appendChild(option);
+        choose.disabled = true;
+      }
+      choose.addEventListener('change', () => {
+        if (!months.includes(choose.value)) return;
+        state.calendarMonth = choose.value;
+        renderDateSidebar();
+      });
+      const next = document.createElement('button');
+      next.type = 'button';
+      next.className = 'fv-cal-arrow';
+      next.textContent = '›';
+      next.setAttribute('aria-label', 'Next recorded month');
+      next.disabled = idx < 0 || idx >= months.length - 1;
+      next.addEventListener('click', () => {
+        state.calendarMonth = months[idx + 1];
+        renderDateSidebar();
+      });
+      nav.append(prev, choose, next);
+      calendar.appendChild(nav);
+
+      const weekdays = document.createElement('div');
+      weekdays.className = 'fv-cal-weekdays';
+      weekdays.setAttribute('aria-hidden', 'true');
+      ['M', 'T', 'W', 'T', 'F', 'S', 'S'].forEach(label => {
+        const el = document.createElement('span');
+        el.textContent = label;
+        weekdays.appendChild(el);
+      });
+      calendar.appendChild(weekdays);
+
+      const grid = document.createElement('div');
+      grid.className = 'fv-cal-grid';
+      grid.setAttribute('role', 'group');
+      grid.setAttribute('aria-label', 'Recordings in ' + monthName(state.calendarMonth));
+      const [year, month] = state.calendarMonth.split('-').map(Number);
+      const firstDay = (new Date(Date.UTC(year, month - 1, 1)).getUTCDay() + 6) % 7;
+      const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+      for (let n = 0; n < firstDay; n++) {
+        const blank = document.createElement('span');
+        blank.className = 'fv-cal-blank';
+        blank.setAttribute('aria-hidden', 'true');
+        grid.appendChild(blank);
+      }
+      const todayStr = todayDateStr(new Date(), DISPLAY_TZ);
+      for (let day = 1; day <= daysInMonth; day++) {
+        const dateStr = state.calendarMonth + '-' + String(day).padStart(2, '0');
+        const count = dateCounts[dateStr] || 0;
+        const fullName = new Date(Date.UTC(year, month - 1, day))
+          .toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'fv-cal-day' + (count ? ' has-recordings' : '') +
+          (selected === dateStr ? ' is-selected' : '') + (todayStr === dateStr ? ' is-today' : '');
+        button.textContent = String(day);
+        button.disabled = !count;
+        button.setAttribute('aria-label', fullName + ', ' + count + ' snapshot' + (count === 1 ? '' : 's'));
+        if (count) {
+          button.setAttribute('aria-pressed', String(selected === dateStr));
+          button.title = fullName + ': ' + count + ' snapshots';
+          const dot = document.createElement('span');
+          dot.className = 'fv-cal-marker';
+          dot.setAttribute('aria-hidden', 'true');
+          button.appendChild(dot);
+          button.addEventListener('click', () => {
+            state.activeDateFilter = dateStr;
+            state.dateUserSet = true;
+            renderDateSidebar();
+            applyFiltersAndSearch();
+          });
+        }
+        grid.appendChild(button);
+      }
+      calendar.appendChild(grid);
+
+      const summary = document.createElement('p');
+      summary.className = 'fv-cal-summary';
+      const activeDays = dates.filter(d => d.startsWith(state.calendarMonth)).length;
+      summary.textContent = months.length
+        ? activeDays + ' recorded day' + (activeDays === 1 ? '' : 's') + ' · Select a marked date'
+        : 'No snapshots in this camera archive';
+      calendar.appendChild(summary);
+      sidebarList.appendChild(calendar);
     }
 
     // Render the trends panel charts:
