@@ -119,6 +119,18 @@ jobs:
       - name: Verify desktop/mobile archive calendar
         run: node tools/screenshots/calendar_smoke.js
 
+      - name: Verify gallery layout and mobile sheets across viewports
+        run: node tools/screenshots/layout_regression_smoke.js
+
+      - name: Upload synthetic layout previews
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: layout-previews
+          path: layout-previews/*.png
+          if-no-files-found: ignore
+          retention-days: 14
+
       - name: Upload synthetic calendar previews
         if: always()
         uses: actions/upload-artifact@v4
