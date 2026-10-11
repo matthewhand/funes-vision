@@ -2940,7 +2940,7 @@
       border: 1px solid var(--border-color); border-radius: 8px;
       background: var(--surface-hover); color: var(--text-primary); cursor: pointer;
     }
-    .fv-cal-arrow:disabled { opacity: .35; cursor: default; }
+    .fv-cal-arrow:disabled { opacity: 1; color: var(--text-secondary); cursor: default; }
     .fv-cal-month {
       width: 100%; min-width: 0; height: 34px; padding: 0 3px;
       background: var(--bg-secondary); color: var(--text-primary);
@@ -2961,7 +2961,7 @@
       border: 1px solid transparent; border-radius: 8px;
       font-size: .72rem; font-weight: 650; font-family: inherit;
     }
-    .fv-cal-day:disabled { opacity: .38; }
+    .fv-cal-day:disabled { opacity: 1; color: var(--text-secondary); font-weight: 450; }
     .fv-cal-day.has-recordings { color: var(--text-primary); cursor: pointer; background: var(--surface-hover); }
     .fv-cal-day.has-recordings:hover { background: var(--surface-hover-strong); border-color: var(--accent-25); }
     .fv-cal-day.is-selected { background: var(--accent-15); border-color: var(--accent-35); color: var(--accent-fg); }
@@ -9218,7 +9218,7 @@
             apiFetch('/api/status', {}, true),
             apiFetch('/api/inference_log')
           ]);
-          const ok = v => v ? '<span style="color:#10b981;">&#10003;</span>' : '<span style="color:#ef4444;">&#10007;</span>';
+          const ok = v => v ? '<span style="color:var(--success);">&#10003;</span>' : '<span style="color:#ef4444;">&#10007;</span>';
 
           // Live inference state
           let inferHtml;
@@ -9237,7 +9237,7 @@
             // green "idle" state when the inference model is unreachable.
             inferHtml = '<span style="color:var(--text-secondary);">&#9679;</span> <b>Inference:</b> unavailable (existing recordings remain browsable)';
           } else {
-            inferHtml = `<span style="color:#10b981;">&#9679;</span> <b>Inference:</b> idle`;
+            inferHtml = `<span style="color:var(--success);">&#9679;</span> <b>Inference:</b> idle`;
           }
 
           // Audit trail (last 15)
@@ -9311,7 +9311,7 @@
                  : `<span style="color:#ef4444;">${fmtDur(s.trigger.last_sweep_age_s)} ago — stalled?</span>`)}</div>
             <div style="margin-top:8px;font-weight:700;text-transform:uppercase;font-size:0.7rem;color:var(--text-secondary);border-bottom:1px solid var(--border-color);padding-bottom:3px;">Cameras</div>
             ${(s.cameras || []).map(c => {
-              const dot = c.stale ? '<span style="color:#ef4444;">&#9679;</span>' : '<span style="color:#10b981;">&#9679;</span>';
+              const dot = c.stale ? '<span style="color:var(--danger);">&#9679;</span>' : '<span style="color:var(--success);">&#9679;</span>';
               const age = c.last_frame_age_s == null ? 'no frames' : fmtDur(c.last_frame_age_s) + ' ago';
               const pct = c.budget_pct == null ? '' : ` <span style="color:${c.budget_pct > 85 ? '#ef4444' : 'inherit'};">(${c.budget_pct}%)</span>`;
               return `<div>${dot} <b>${escapeHtml(cameraDisplayName(c.name))}</b>: last frame ${age} &middot; ${formatGb(c.bytes, 'B')}${pct} &middot; ${formatCount(c.images)} imgs</div>`;
