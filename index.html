@@ -3006,7 +3006,7 @@
     @media (max-width: 768px) {
       #sidebar-scrim { position: fixed; inset: 0; z-index: 59; background: rgba(4, 8, 15, .6); }
       #sidebar-scrim[hidden] { display: none; }
-      .workspace:not(.sidebar-collapsed) aside {
+      .workspace:not(.sidebar-collapsed):not(.mode-dashboard) aside {
         position: fixed; z-index: 60;
         left: 8px; right: 8px; bottom: 8px; top: auto;
         width: auto; max-width: none;
@@ -4645,12 +4645,17 @@
       }
       const sidebarList = document.getElementById('date-list');
       if (!sidebarList) return;
+      // #119: every interaction rebuilds the list, so the focused control is
+      // destroyed mid-keystroke. Remember WHICH control had focus by its
+      // data-cal-focus key and give it back below, once the new list is live.
+      const focusKey = sidebarList.contains(document.activeElement) ? (document.activeElement.dataset.calFocus || null) : null;
       sidebarList.replaceChildren();
 
       const calendar = document.createElement('div');
       calendar.className = 'fv-calendar';
       const allItem = document.createElement('button');
       allItem.type = 'button';
+      allItem.dataset.calFocus = 'all';
       allItem.className = 'fv-cal-all' + (selected === 'all' ? ' is-selected' : '');
       allItem.setAttribute('aria-pressed', String(selected === 'all'));
       allItem.innerHTML = '<span>All dates</span><span class="count-badge">' + state.allImages.length.toLocaleString('en-AU') + '</span>';
@@ -4659,6 +4664,7 @@
         state.dateUserSet = true;
         renderDateSidebar();
         applyFiltersAndSearch();
+        if (window.closeCalendarDrawer) window.closeCalendarDrawer();
       });
       calendar.appendChild(allItem);
 
@@ -4667,6 +4673,7 @@
       const idx = months.indexOf(state.calendarMonth);
       const prev = document.createElement('button');
       prev.type = 'button';
+      prev.dataset.calFocus = 'prev';
       prev.className = 'fv-cal-arrow';
       prev.textContent = '‹';
       prev.setAttribute('aria-label', 'Previous recorded month');
@@ -4676,6 +4683,7 @@
         renderDateSidebar();
       });
       const choose = document.createElement('select');
+      choose.dataset.calFocus = 'month';
       choose.className = 'fv-cal-month';
       choose.setAttribute('aria-label', 'Browse archive month');
       const monthName = month => new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)) - 1, 1))
@@ -4702,6 +4710,7 @@
       });
       const next = document.createElement('button');
       next.type = 'button';
+      next.dataset.calFocus = 'next';
       next.className = 'fv-cal-arrow';
       next.textContent = '›';
       next.setAttribute('aria-label', 'Next recorded month');
@@ -4744,6 +4753,7 @@
           .toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
         const button = document.createElement('button');
         button.type = 'button';
+        button.dataset.calFocus = 'day-' + day;
         button.className = 'fv-cal-day' + (count ? ' has-recordings' : '') +
           (selected === dateStr ? ' is-selected' : '') + (todayStr === dateStr ? ' is-today' : '');
         button.textContent = String(day);
@@ -4761,6 +4771,7 @@
             state.dateUserSet = true;
             renderDateSidebar();
             applyFiltersAndSearch();
+            if (window.closeCalendarDrawer) window.closeCalendarDrawer();
           });
         }
         grid.appendChild(button);
@@ -4775,6 +4786,17 @@
         : 'No snapshots in this camera archive';
       calendar.appendChild(summary);
       sidebarList.appendChild(calendar);
+      // #119: hand focus back to the control the user was on. A target that no
+      // longer exists (its day left the month, or the arrow ran out) falls back
+      // to the nearest control that did survive, so Tab resumes at the
+      // calendar rather than at the top of the document.
+      if (focusKey) {
+        let t = calendar.querySelector('[data-cal-focus="' + focusKey + '"]');
+        if (!t || t.disabled) t = (focusKey === 'prev' || focusKey === 'next')
+          ? calendar.querySelector('[data-cal-focus="month"]')
+          : (calendar.querySelector('.fv-cal-day.is-selected') || calendar.querySelector('[data-cal-focus="all"]'));
+        if (t && !t.disabled) t.focus({ preventScroll: true });
+      }
     }
 
     // Render the trends panel charts:

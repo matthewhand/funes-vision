@@ -50,7 +50,7 @@ function check(html, label) {
   const body = L.markup();
 
   // ---- 1. the host is in the content column, not in the rail ----------------
-  const aside = body.match(/<aside>[\s\S]*?<\/aside>/);
+  const aside = body.match(/<aside(?:\s[^>]*)?>[\s\S]*?<\/aside>/);
   assert.ok(aside, `${label}: no <aside> to check the rail against`);
   assert.ok(
     !/activity-chart-container/.test(aside[0]),
@@ -105,7 +105,12 @@ function check(html, label) {
   // Selector, not body: rule() splits a comma list and hands back each part's
   // body, so `aside, .activity-chart-container { display:none }` would read here
   // as the same `display:none` on `aside` alone.
-  const collapseRules = L.cssRules().filter((r) => /\.sidebar-collapsed/.test(r.selector));
+  // #115: the drawer's own rule, `.workspace:not(.sidebar-collapsed) aside`, is
+  // the rail's EXPANDED state on a phone (a fixed bottom sheet that must stay
+  // visible), not a collapse rule, so it is the one `.sidebar-collapsed`
+  // selector that is exempt from the hide requirement.
+  const collapseRules = L.cssRules().filter((r) =>
+    /\.sidebar-collapsed/.test(r.selector) && !/:not\(\.sidebar-collapsed\)/.test(r.selector));
   assert.ok(
     collapseRules.length,
     `${label}: the rule that collapses the rail on small screens is gone, so the ` +

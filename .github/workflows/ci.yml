@@ -122,6 +122,9 @@ jobs:
       - name: Verify gallery layout and mobile sheets across viewports
         run: node tools/screenshots/layout_regression_smoke.js
 
+      - name: Verify mobile calendar drawer, targets and focus retention
+        run: SCREENSHOT_OUT=layout-previews/calendar node tools/screenshots/mobile_calendar_smoke.js
+
       - name: Upload synthetic layout previews
         if: always()
         uses: actions/upload-artifact@v4
