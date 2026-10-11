@@ -1188,6 +1188,15 @@
       color: var(--accent-fg); font-size: var(--fs-chip); font-weight: 600;
     }
     .filter-active-banner[hidden] { display: none !important; }
+    /* #136: on phones the controls row is nowrap, so an active search/filter chip
+       (~110px) squeezed the search trigger to 24px, wrapped the chip onto three
+       lines and pushed the Live badge past the viewport at 320px. Only while a
+       filter is active, let the row wrap so the search takes the full width. */
+    @media (max-width: 480px) {
+      .controls-wrapper:has(.filter-active-banner:not([hidden])) { flex-wrap: wrap; }
+      .controls-wrapper:has(.filter-active-banner:not([hidden])) .toolbar-actions { flex: 1 1 auto; }
+      .filter-active-banner { white-space: nowrap; }
+    }
     .filter-active-banner .chip__x {
       color: var(--accent-fg); font-weight: 700; padding: 0 4px;
     }
