@@ -985,6 +985,37 @@ async function runAudit(opts) {
       await page.waitForTimeout(200);
     }
 
+    // ---- Dark theme: verify real contrast, not just the System/light default.
+    // Every audit context is still bound to the loopback synthetic fixture.
+    stateRef.name = 'dark/load';
+    const dark = await newPage(browser, { viewport, deviceScaleFactor: 1 });
+    watch(dark.page, net, () => stateRef.name);
+    await dark.ctx.addInitScript(() => localStorage.setItem('funes-vision.theme', 'dark'));
+    await dark.page.goto(url, { waitUntil: 'domcontentloaded' });
+    await dark.page.waitForSelector('#filter-tabs, .image-card, .visit-card, .card', { timeout: 10000 }).catch(() => {});
+    await settle(dark.page);
+    for (const state of STATES) {
+      const label = 'dark/' + state.name;
+      stateRef.name = label;
+      await state.setup(dark.page);
+      await settle(dark.page);
+      const targets = stamp(await call(dark.page, 'collectTargets'), label);
+      const text = stamp(await call(dark.page, 'collectText'), label);
+      const images = stamp(await call(dark.page, 'collectImages'), label);
+      net.targets.push(...targets);
+      net.text.push(...text);
+      net.images.push(...images);
+      coverage[label] = summarise({ targets, text, images });
+      if (coverage[label].textChecked === 0) failures.push(fail('text-contrast', label, 'body',
+        'contrast audit measured zero rendered text nodes in dark theme',
+        'fix the audit coverage rather than ignoring dark-theme text'));
+      if (state.teardown) await state.teardown(dark.page);
+      await dark.page.waitForTimeout(200);
+    }
+    tearingDown = true;
+    await dark.ctx.close();
+    tearingDown = false;
+
     // ---- horizontal overflow at every width ----------------------------
     for (const view of OVERFLOW_VIEWS) {
       stateRef.name = 'overflow/' + view.name;
