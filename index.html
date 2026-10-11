@@ -2718,8 +2718,11 @@
          measured 63.8x38, the icon chips ~32px tall), so the min-44px floor is
          applied to the hit area, not the paint. */
       #sidebar-toggle, #btn-switch-feed, #time-chip, #search-trigger,
-      #btn-system-status, #live-toggle, #fv-all-cameras, a.fv-context-link,
-      .trend-view-btn { min-height: 44px; min-width: 44px; }
+      #btn-system-status, #fv-all-cameras, a.fv-context-link,
+      .trend-view-btn, .segmented > .trend-view-btn { min-height: 44px; min-width: 44px; }
+      /* The live badge is already at the edge of the 320px header: grow it
+         vertically only, or it pushes the page 10px wider than the viewport. */
+      #live-toggle { min-height: 44px; }
     }
     /* Status panel disclosure rows ("LLM Prompt & Schema", "AI Audit Trail")
        are real tap targets, but they are painted as bare 0.7rem text and
