@@ -131,6 +131,9 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
+      - name: Verify multi-year calendar and keyboard focus
+        run: node tools/screenshots/calendar_navigation_smoke.js
+
       - name: Upload synthetic calendar previews
         if: always()
         uses: actions/upload-artifact@v4
