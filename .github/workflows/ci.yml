@@ -122,6 +122,18 @@ jobs:
       - name: Verify gallery layout and mobile sheets across viewports
         run: node tools/screenshots/layout_regression_smoke.js
 
+      - name: Verify gallery without Ollama inference
+        run: node tools/screenshots/offline_inference_smoke.js
+
+      - name: Upload synthetic Ollama-off previews
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ollama-off-previews
+          path: offline-previews/*.png
+          if-no-files-found: ignore
+          retention-days: 14
+
       - name: Upload synthetic layout previews
         if: always()
         uses: actions/upload-artifact@v4
