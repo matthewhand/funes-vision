@@ -47,14 +47,19 @@ async function run() {
    await prev.focus();
    await page.keyboard.press('Enter');
    assert.equal(await chooser.inputValue(),'2025-02');
+   assert(await prev.evaluate(el=>document.activeElement===el),
+     'previous arrow must preserve focus while still enabled');
+   await page.keyboard.press('Enter');
+   assert.equal(await chooser.inputValue(),'2024-12');
    assert(await chooser.evaluate(el=>document.activeElement===el),
-     'when an arrow becomes disabled, focus must move to month chooser');
+     'when the previous arrow becomes disabled, focus moves to month chooser');
    const next=page.locator('.fv-cal-arrow[data-cal-action="next"]');
    await next.focus();
    await page.keyboard.press('Enter');
-   assert.equal(await chooser.inputValue(),'2026-02');
+   assert.equal(await chooser.inputValue(),'2025-02');
    assert(await next.evaluate(el=>document.activeElement===el),
      'next arrow must preserve focus when still enabled');
+   await chooser.selectOption('2026-02');
    const feb=page.locator('.fv-cal-day');
    assert.equal(await feb.count(),28,'non-leap February');
    const mar=page.locator('.fv-cal-arrow[data-cal-action="next"]');
