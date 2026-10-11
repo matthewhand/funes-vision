@@ -858,7 +858,10 @@
        small screens (where the sidebar otherwise stacks on top and buries the
        feed); the content area reclaims the full width. */
     .workspace.sidebar-collapsed aside { display: none; }
-    #sidebar-toggle[aria-pressed="true"] { color: var(--accent); border-color: var(--accent-25); }
+    /* One state, one attribute: aria-expanded says whether the rail the toggle
+       controls is open, on every viewport (#115/#119). It used to be
+       aria-pressed="true" while collapsed, i.e. the opposite of aria-expanded. */
+    #sidebar-toggle[aria-expanded="true"] { color: var(--accent); border-color: var(--accent-25); }
 
     .sidebar-section {
       background: transparent;
@@ -2970,13 +2973,66 @@
     .fv-cal-day.is-selected .fv-cal-marker { background: currentColor; }
     .fv-cal-summary { margin: 0; text-align: center; font-size: .66rem; line-height: 1.5; color: var(--text-secondary); }
     .fv-cal-day:focus-visible, .fv-cal-arrow:focus-visible,
-    .fv-cal-month:focus-visible, .fv-cal-all:focus-visible {
+    .fv-cal-month:focus-visible, .fv-cal-all:focus-visible,
+    .fv-cal-close:focus-visible {
       outline: 2px solid var(--accent-fg); outline-offset: 2px;
     }
+    /* Section header row: the h3 plus the drawer's close button. */
+    .fv-cal-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .fv-cal-head h3 { margin-bottom: 0; }
+    .fv-cal-close {
+      display: none; /* only the phone drawer has a close button of its own */
+      flex: none; align-items: center; justify-content: center;
+      width: 44px; height: 44px; padding: 0;
+      border: 1px solid var(--border-color); border-radius: 10px;
+      background: var(--surface-hover); color: var(--text-primary); cursor: pointer;
+    }
+    .fv-cal-close i { width: 18px; height: 18px; }
+    /* Weekday row + day grid share one horizontal scroller, so a 320px phone
+       cannot push the page sideways (the grid needs 7*44px to keep every day a
+       44x44 target) and the weekday letters scroll with the days under them. */
+    .fv-cal-weeks { min-width: 0; overflow-x: auto; scrollbar-width: thin; }
     @media (max-width: 992px) {
       #date-list.fv-calendar-host { overflow-x: visible; padding-bottom: 0; }
       .fv-calendar { max-width: 420px; margin-inline: auto; }
       .fv-cal-day { min-height: 42px; font-size: .8rem; }
+    }
+
+    /* #115: the phone drawer. On a phone the expanded rail sat in flow ABOVE
+       the gallery and pushed it ~1100px down a 844px viewport, so nothing
+       about camera activity was above the fold. As a fixed bottom sheet it is
+       out of flow: the gallery keeps its position whether it is open or not.
+       Same one-state toggle as the desktop rail (see the aria-expanded rule). */
+    @media (max-width: 768px) {
+      #sidebar-scrim { position: fixed; inset: 0; z-index: 59; background: rgba(4, 8, 15, .6); }
+      #sidebar-scrim[hidden] { display: none; }
+      .workspace:not(.sidebar-collapsed) aside {
+        position: fixed; z-index: 60;
+        left: 8px; right: 8px; bottom: 8px; top: auto;
+        width: auto; max-width: none;
+        max-height: 80dvh; overflow-y: auto; overscroll-behavior: contain;
+        padding: 12px 12px 14px;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color); border-radius: 16px;
+        box-shadow: 0 18px 48px rgba(2, 6, 17, .55);
+      }
+      /* The desktop pin pushed the Saved strip to the bottom of a 880px panel;
+         in a drawer that leaves a dead gap between the two groups. */
+      .workspace:not(.sidebar-collapsed) aside > :last-child { margin-top: 8px; }
+      .workspace:not(.sidebar-collapsed) aside .fv-cal-close { display: inline-flex; }
+
+      /* #115 target sizes: every calendar control is at least 44x44 CSS px on
+         a touch screen (WCAG 2.5.5/2.5.8, and the platform guidance), which the
+         32x34 arrows and 38px rows were not. */
+      .fv-cal-all { min-height: 44px; }
+      .fv-cal-navigation { grid-template-columns: 44px minmax(0, 1fr) 44px; gap: 6px; }
+      .fv-cal-arrow { width: 44px; height: 44px; }
+      .fv-cal-month { height: 44px; }
+      .fv-cal-day { min-height: 44px; }
+      /* The only way to give a 320px viewport seven 44px columns: let the week
+         rows scroll inside the drawer instead of the whole page. */
+      .fv-cal-weekdays, .fv-cal-grid { grid-template-columns: repeat(7, minmax(44px, 1fr)); }
+      .fv-cal-weekdays, .fv-cal-grid { min-width: calc(7 * 44px + 6 * 2px); }
     }
 
     /* Visibility repairs #121/#115: keep a scrollable gallery regardless of
@@ -3008,7 +3064,7 @@
     <header>
       <div class="header-content">
         <div class="logo-area">
-          <button class="btn" id="sidebar-toggle" aria-label="Show or hide calendar and saved searches" aria-pressed="false" aria-expanded="true" title="Calendar &amp; saved searches">
+          <button class="btn" id="sidebar-toggle" aria-label="Show or hide calendar and saved searches" aria-controls="archive-sidebar" aria-expanded="false" title="Calendar &amp; saved searches">
             <i data-lucide="calendar-days"></i>
             <span class="sidebar-toggle-label">Calendar</span>
           </button>
@@ -3276,11 +3332,21 @@
         <div id="dashboard-grid" class="dashboard-grid"></div>
       </div>
 
-      <!-- Sidebar navigation panel -->
-      <aside>
+      <!-- Sidebar navigation panel. On a phone this whole panel becomes the
+           #115 archive drawer, so it carries the id #sidebar-toggle points at
+           with aria-controls. -->
+      <aside id="archive-sidebar">
         <!-- Date Timeline section -->
         <div class="sidebar-section">
-          <h3><i data-lucide="calendar"></i> Calendar</h3>
+          <div class="fv-cal-head">
+            <h3><i data-lucide="calendar"></i> Calendar</h3>
+            <!-- #115: the drawer's visible close control. Invisible below
+                 768px, where the rail is an in-flow column and the header
+                 toggle already closes it. -->
+            <button type="button" class="fv-cal-close" id="calendar-close" aria-label="Close archive calendar" title="Close archive calendar">
+              <i data-lucide="x"></i>
+            </button>
+          </div>
           <div class="date-list fv-calendar-host" id="date-list" aria-label="Camera archive calendar">
             <span class="fv-cal-loading">Loading calendar…</span>
           </div>
@@ -3397,6 +3463,11 @@
       </div>
     </div>
   </div>
+
+  <!-- #115: the phone archive drawer's backdrop. It is inert by design (no
+       label, no role): the drawer is the dialog, this is only the dimming
+       behind it, and a click on it closes the drawer like a backdrop. -->
+  <div id="sidebar-scrim" hidden></div>
 
   <!-- Lightbox Modal. aria-labelledby points at the title, which openLightbox
        rewrites per frame, so the dialog has a real, current accessible name
@@ -5037,11 +5108,13 @@
 
     // Make an open overlay a focus trap: move focus inside, keep Tab within it,
     // and restore focus to the opener on release. Returns the release function.
-    function trapFocus(overlay) {
+    // `moveFocus` false wires the trap without stealing focus, for a drawer
+    // that is already open when the page loads.
+    function trapFocus(overlay, moveFocus) {
       const prev = document.activeElement;
       const SEL = 'a[href],button:not([disabled]),input:not([disabled]),select,textarea,[tabindex]:not([tabindex="-1"])';
       const focusables = () => [...overlay.querySelectorAll(SEL)].filter(el => el.offsetParent !== null);
-      (focusables()[0] || overlay).focus();
+      if (moveFocus !== false) (focusables()[0] || overlay).focus();
       const onKey = (e) => {
         if (e.key !== 'Tab') return;
         const items = focusables();
@@ -8883,19 +8956,84 @@
       const workspaceEl = document.querySelector('.workspace');
       const sidebarToggle = document.getElementById('sidebar-toggle');
       if (workspaceEl && sidebarToggle) {
-        const applySidebarState = (collapsed) => {
+        // #115/#119: on a phone the expanded rail is a modal drawer rather than
+        // an in-flow column, so opening it must not move the gallery. It is
+        // driven by the same one-state toggle as the desktop rail: the
+        // aria-expanded attribute and the sidebar-collapsed class ARE the state,
+        // and everything below only reflects it.
+        const asideEl = document.querySelector('.workspace aside');
+        const scrimEl = document.getElementById('sidebar-scrim');
+        const drawerMQ = window.matchMedia('(max-width: 768px)');
+        let drawerRelease = null;
+        const drawerOpen = () => !workspaceEl.classList.contains('sidebar-collapsed') && drawerMQ.matches;
+
+        function openDrawer(moveFocus) {
+          if (drawerRelease || !asideEl) return;
+          asideEl.setAttribute('role', 'dialog');
+          asideEl.setAttribute('aria-modal', 'true');
+          asideEl.setAttribute('aria-label', 'Archive calendar');
+          if (scrimEl) scrimEl.hidden = false;
+          // Focus moves into the drawer and Tab stays inside it; the release
+          // below returns focus to whoever opened it (#sidebar-toggle).
+          drawerRelease = trapFocus(asideEl, moveFocus);
+          document.addEventListener('keydown', onDrawerKeydown, true);
+        }
+        function closeDrawer() {
+          const release = drawerRelease;
+          drawerRelease = null;
+          document.removeEventListener('keydown', onDrawerKeydown, true);
+          if (release) release();
+          if (asideEl) {
+            asideEl.removeAttribute('role');
+            asideEl.removeAttribute('aria-modal');
+            asideEl.removeAttribute('aria-label');
+          }
+          if (scrimEl) scrimEl.hidden = true;
+        }
+        function syncDrawer(moveFocus) {
+          if (drawerOpen()) openDrawer(moveFocus); else closeDrawer();
+        }
+        // Escape closes the drawer (a click on the scrim is the pointer path).
+        // Captured on document so it still fires when focus has fallen back to
+        // the body after a backdrop click.
+        function onDrawerKeydown(e) {
+          if (e.key !== 'Escape' || !drawerOpen()) return;
+          e.preventDefault();
+          setSidebarCollapsed(true);
+        }
+
+        const applySidebarState = (collapsed, moveFocus) => {
           workspaceEl.classList.toggle('sidebar-collapsed', collapsed);
-          sidebarToggle.setAttribute('aria-pressed', collapsed ? 'true' : 'false');
+          // aria-pressed is gone from this control (#119): it read "true" while
+          // the rail was collapsed, i.e. the exact opposite of aria-expanded.
           sidebarToggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
           updateActionsOverflow();
+          syncDrawer(moveFocus);
         };
-        const storedSidebar = localStorage.getItem('webcam_sidebar_collapsed');
-        applySidebarState(sidebarDefaultCollapsed(storedSidebar, document.documentElement.clientWidth, 992));
-        sidebarToggle.addEventListener('click', () => {
-          const collapsed = !workspaceEl.classList.contains('sidebar-collapsed');
+        const setSidebarCollapsed = (collapsed) => {
           applySidebarState(collapsed);
           localStorage.setItem('webcam_sidebar_collapsed', String(collapsed));
+        };
+        const storedSidebar = localStorage.getItem('webcam_sidebar_collapsed');
+        // A drawer restored by a stored pref must not steal focus at load, so
+        // the first paint wires the trap without moving the caret.
+        applySidebarState(
+          sidebarDefaultCollapsed(storedSidebar, document.documentElement.clientWidth, 992),
+          false
+        );
+        sidebarToggle.addEventListener('click', () => {
+          setSidebarCollapsed(!workspaceEl.classList.contains('sidebar-collapsed'));
         });
+        const closeBtn = document.getElementById('calendar-close');
+        if (closeBtn) closeBtn.addEventListener('click', () => setSidebarCollapsed(true));
+        if (scrimEl) scrimEl.addEventListener('click', () => setSidebarCollapsed(true));
+        // Crossing the breakpoint turns the drawer into the in-flow rail (and
+        // back), so the dialog/trap state has to be rebuilt, not left stale.
+        drawerMQ.addEventListener('change', syncDrawer);
+        // Close the drawer once a day or "All dates" has been chosen: on a
+        // phone the whole point of opening it was to pick a date.
+        window.calendarDrawerOpen = drawerOpen;
+        window.closeCalendarDrawer = () => { if (drawerOpen()) setSidebarCollapsed(true); };
       }
 
       // Cap the image grid to the visible area so the All tab can't grow the
