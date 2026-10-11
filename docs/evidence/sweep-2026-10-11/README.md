@@ -1,0 +1,1 @@
+Screenshots from the 2026-10-11 defect sweep of #123 (head 3e29721). Synthetic fixtures only (tools/screenshots/proxy.py); the fixture photos look photographic but are fictional. Referenced by the sweep issues; not product documentation.
