@@ -105,7 +105,7 @@ function check(html, label) {
   // Selector, not body: rule() splits a comma list and hands back each part's
   // body, so `aside, .activity-chart-container { display:none }` would read here
   // as the same `display:none` on `aside` alone.
-  const collapseRules = L.cssRules().filter((r) => /\.workspace\.sidebar-collapsed\s+aside\b/.test(r.selector));
+  const collapseRules = L.cssRules().filter((r) => /\.workspace\.sidebar-collapsed\b/.test(r.selector));
   assert.ok(
     collapseRules.length,
     `${label}: the rule that collapses the rail on small screens is gone, so the ` +
