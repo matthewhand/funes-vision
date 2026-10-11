@@ -518,8 +518,18 @@ function inPageCollectText() {
     for (const e of chain) {
       const s = getComputedStyle(e);
       cum *= Number(s.opacity);
-      if (s.backgroundImage && s.backgroundImage !== 'none') hasImage = true;
       const bg = inPageParseColor(s.backgroundColor);
+      // An opaque descendant background hides all imagery and colour below
+      // it. Previously the body's decorative radial gradient made *every*
+      // text node skip contrast measurement, including text on white panels.
+      // Respect paint order: an image on this SAME element still paints
+      // above the background colour, so mark it after clearing old layers.
+      if (bg && bg.a >= 0.999 && cum >= 0.999) {
+        hasImage = false;
+        unparsed = null;
+        layers.length = 0;
+      }
+      if (s.backgroundImage && s.backgroundImage !== 'none') hasImage = true;
       if (!bg) unparsed = String(s.backgroundColor).slice(0, 40);
       else if (bg.a > 0) layers.push({ color: bg, opacity: cum });
     }
@@ -963,6 +973,14 @@ async function runAudit(opts) {
       net.text.push(...text);
       net.images.push(...images);
       coverage[state.name] = summarise({ targets, text, images });
+      // A 'passed' contrast gate that measures zero actual text is invalid.
+      // This protects against future page-wide background gradients or
+      // stylesheet refactors silently turning the audit into a no-op.
+      if (coverage[state.name].textChecked === 0) {
+        failures.push(fail('text-contrast', state.name, 'body',
+          'contrast audit measured zero rendered text nodes',
+          'fix skipped-background handling; do not treat zero coverage as success'));
+      }
       if (state.teardown) await state.teardown(page);
       await page.waitForTimeout(200);
     }
