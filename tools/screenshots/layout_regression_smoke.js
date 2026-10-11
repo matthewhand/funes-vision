@@ -53,7 +53,7 @@ async function main() {
           bottomEdge: el.getBoundingClientRect().bottom,
           rootClass: el.parentElement.className,
         }));
-        assert(aside.bottom >= height-2,
+        assert(aside.y + aside.height >= height-2,
           size+' sheet must be anchored at viewport bottom: '+JSON.stringify({aside,sheetProps}));
         assert(await page.locator('#fv-calendar-close').isVisible(), size+' visible dismiss button');
         // Modal must not push the gallery down the document. Verify keyboard
