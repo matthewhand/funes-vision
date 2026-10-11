@@ -858,7 +858,7 @@
        small screens (where the sidebar otherwise stacks on top and buries the
        feed); the content area reclaims the full width. */
     .workspace.sidebar-collapsed aside { display: none; }
-    #sidebar-toggle[aria-pressed="true"] { color: var(--accent); border-color: var(--accent-25); }
+    #sidebar-toggle[aria-expanded="false"] { color: var(--accent); border-color: var(--accent-25); }
 
     .sidebar-section {
       background: transparent;
@@ -2714,6 +2714,15 @@
          not the paint. */
       .filter-meta-btn { min-height: 44px; }
       .lightbox-btn, .nav-arrow { min-width: 44px; min-height: 44px; width: 44px; height: 44px; }
+      /* Phone header chrome: these paint small on touch (the search trigger
+         measured 63.8x38, the icon chips ~32px tall), so the min-44px floor is
+         applied to the hit area, not the paint. */
+      #sidebar-toggle, #btn-switch-feed, #time-chip, #search-trigger,
+      #btn-system-status, #fv-all-cameras, a.fv-context-link,
+      .trend-view-btn, .segmented > .trend-view-btn { min-height: 44px; min-width: 44px; }
+      /* The live badge is already at the edge of the 320px header: grow it
+         vertically only, or it pushes the page 10px wider than the viewport. */
+      #live-toggle { min-height: 44px; }
     }
     /* Status panel disclosure rows ("LLM Prompt & Schema", "AI Audit Trail")
        are real tap targets, but they are painted as bare 0.7rem text and
@@ -3050,7 +3059,7 @@
     <header>
       <div class="header-content">
         <div class="logo-area">
-          <button class="btn" id="sidebar-toggle" aria-controls="fv-calendar-panel" aria-label="Show or hide calendar and saved searches" aria-pressed="false" aria-expanded="true" title="Calendar &amp; saved searches">
+          <button class="btn" id="sidebar-toggle" aria-controls="fv-calendar-panel" aria-label="Show or hide calendar and saved searches" aria-expanded="true" title="Calendar &amp; saved searches">
             <i data-lucide="calendar-days"></i>
             <span class="sidebar-toggle-label">Calendar</span>
           </button>
@@ -8955,7 +8964,6 @@
           && !workspaceEl.classList.contains('mode-dashboard');
         const applySidebarState = (collapsed, moveFocus = false) => {
           workspaceEl.classList.toggle('sidebar-collapsed', collapsed);
-          sidebarToggle.setAttribute('aria-pressed', collapsed ? 'true' : 'false');
           sidebarToggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
           if (sheet) {
             if (sheetOpen()) {
