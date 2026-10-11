@@ -122,6 +122,9 @@ jobs:
       - name: Verify gallery layout and mobile sheets across viewports
         run: node tools/screenshots/layout_regression_smoke.js
 
+      - name: Verify the phone header with an active search
+        run: node tools/screenshots/header_search_smoke.js
+
       - name: Verify gallery without Ollama inference
         run: node tools/screenshots/offline_inference_smoke.js
 
