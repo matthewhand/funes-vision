@@ -125,6 +125,21 @@ jobs:
       - name: Verify gallery without Ollama inference
         run: node tools/screenshots/offline_inference_smoke.js
 
+      - name: Verify degraded-inference fixture (offline status fixture + 503 health)
+        run: |
+          SCREENSHOT_PORT=8898 SCREENSHOT_API_DIR="$PWD/tools/screenshots/fixtures/api-offline" SCREENSHOT_HEALTH_STATUS=503 python3 tools/screenshots/proxy.py &
+          stub=$!
+          for _ in $(seq 1 40); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8898/api/health || echo 000)
+            if [ "$code" = "503" ]; then break; fi
+            sleep 0.5
+          done
+          [ "$code" = "503" ] || { echo "::error::offline stub never answered 503 on :8898"; kill $stub; exit 1; }
+          rc=0
+          OFFLINE_SMOKE_URL=http://127.0.0.1:8898/ SCREENSHOT_OUT=offline-previews/degraded node tools/screenshots/offline_inference_degraded_smoke.js || rc=$?
+          kill $stub
+          exit $rc
+
       - name: Upload synthetic Ollama-off previews
         if: always()
         uses: actions/upload-artifact@v4

@@ -1,0 +1,7 @@
+{
+  "fast_pass_engine": "yolo",
+  "deep_backfill": false,
+  "deep_passes_enabled": true,
+  "burst_summaries_enabled": false,
+  "idle_sweep_seconds": 60
+}

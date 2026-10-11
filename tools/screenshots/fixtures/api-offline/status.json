@@ -1,0 +1,78 @@
+{
+  "timezone": "Australia/Sydney",
+  "watch_dirs": [
+    "fixtures/gallery"
+  ],
+  "settings": {
+    "fast_pass_engine": "yolo",
+    "deep_backfill": false,
+    "deep_passes_enabled": true,
+    "burst_summaries_enabled": false,
+    "gate_ignore_labels": [
+      "car"
+    ],
+    "max_dir_gb": 5.0,
+    "max_scans_per_image": 2,
+    "model_primary": "gemma4:e2b"
+  },
+  "trigger": {
+    "inotify_active": true,
+    "idle_sweep_seconds": 60,
+    "last_sweep_age_s": 18
+  },
+  "llm": {
+    "model": null,
+    "reachable": false,
+    "allow_cloud": false
+  },
+  "inference": {},
+  "queue": {
+    "images_on_disk": 10,
+    "unanalyzed": 4,
+    "unverified_partials": 6,
+    "awaiting_backfill": 6,
+    "llm_verified": 0,
+    "deep_s_per_frame": null,
+    "deep_eta_s": null
+  },
+  "cameras": [
+    {
+      "name": "front",
+      "images": 6,
+      "bytes": 900000,
+      "budget_pct": 4,
+      "last_frame_age_s": 120,
+      "stale": false
+    },
+    {
+      "name": "back",
+      "images": 4,
+      "bytes": 600000,
+      "budget_pct": 3,
+      "last_frame_age_s": 240,
+      "stale": false
+    }
+  ],
+  "filesystem": {
+    "free_gb": 42.0,
+    "total_gb": 100.0,
+    "used_pct": 58.0
+  },
+  "metrics": {
+    "window_min": 60,
+    "count": 3,
+    "ok": 0,
+    "failures": 3,
+    "success_rate": 0.0,
+    "local": 3,
+    "cloud": 0,
+    "avg_s": 0.0,
+    "p95_s": 0.0
+  },
+  "retention": {
+    "ts": 1787082745,
+    "dir": "fixtures",
+    "count": 0,
+    "bytes_freed": 0
+  }
+}

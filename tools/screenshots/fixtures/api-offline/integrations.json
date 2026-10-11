@@ -1,0 +1,11 @@
+{
+  "slack": {
+    "enabled": false,
+    "has_bot_token": false,
+    "has_app_token": false,
+    "channel_id": "",
+    "public_base_url": "",
+    "notify_mode": "context",
+    "last_delivery": null
+  }
+}
