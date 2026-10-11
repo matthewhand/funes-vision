@@ -959,32 +959,50 @@ npm install --no-save --no-package-lock "playwright@$version"
 npx playwright install --with-deps chromium
 
 python3 tools/screenshots/proxy.py &     # synthetic fixture stub on :8899
-node tools/screenshots/a11y_audit.js     # ~20s, non-zero on any finding
+node tools/screenshots/a11y_audit.js     # ~40s, non-zero on any finding
+node tools/screenshots/a11y_audit.js --theme=light   # one theme only
 ```
 
-It asserts six families — no 4xx/5xx/console/uncaught errors on load, no
-interactive target below 24×24 CSS px (WCAG 2.5.8), no visible text below
-4.5:1 / 3:1 measured against the *composited* background (WCAG 1.4.3), no
-horizontal page overflow at 320–1440px, nothing animating over 50ms under
-`prefers-reduced-motion: reduce`, and every image carrying an `alt` with no
-visible image left broken. Full measurement notes, thresholds and how to add
+It asserts eight families — no 4xx/5xx/console/uncaught errors on load, no
+interactive target below 24×24 CSS px (WCAG 2.5.8), no measured text below
+4.5:1 / 3:1 against the *composited* background including the worst colour stop
+of any gradient behind it (WCAG 1.4.3), a per-state coverage floor of 80% so a
+contrast check can never pass while measuring nothing, no horizontal page
+overflow at 320–1440px, nothing animating over 50ms under
+`prefers-reduced-motion: reduce`, every image carrying an `alt` with no visible
+image left broken, and the page resolving `html[data-theme]` to every requested
+theme (Light and Dark). Full measurement notes, thresholds and how to add
 an assertion: [`tools/screenshots/README.md`](tools/screenshots/README.md).
 
 Two guarantees make the gate trustworthy:
 
 - `--selfcheck` drives the same collectors and checkers over a seeded page
-  (6px target, 3.45:1 text, 2000px block, alt-less and broken images, a
-  refused request, an uncaught exception, a 700ms spin) and fails unless that
-  page **is** caught and a clean page **is not**.
+  (6px target, 3.45:1 text, 3.45:1 text over a gradient, 2000px block,
+  alt-less and broken images, a refused request, an uncaught exception, a
+  700ms spin) and fails unless that page **is** caught and a clean page **is
+  not** — including a page whose every text node is over a `url()` photo, which
+  must trip the contrast-coverage gate rather than pass with nothing measured.
 - `tests/test_a11y_audit_gate.js` (fast, no browser) pins the WCAG thresholds,
   the check registry, the documented carve-outs, and the CI wiring — so the
   gate cannot be emptied, re-thresholded or made non-blocking silently.
+  `tests/test_a11y_coverage_gate.js` pins the gradient measurement and the
+  coverage decision (stop extraction, worst-case compositing, the 0.8 floor
+  and its waivers) the same way.
+
+**Vacuous passes are a defect class.** Issue #116 reported `text-contrast PASS`
+with `textChecked: 0` in every state: PR #112's `radial-gradient` on `<body>`
+gave every text node an ancestor with a background image, and the collector
+skipped all of them. Gradients are now measured (every colour stop composited,
+worst case audited), `summarise()` prints a per-reason skip histogram, and
+`text-contrast-coverage` fails any state that measures nothing or drops under
+`THRESHOLDS.minTextCoverage`.
 
 CI runs it as a **separate `browser-a11y-gate` job**, deliberately not part of
 the fast `test` matrix: a browser flake must never block the Python/Node
 suites. The job installs the version pinned in `requirements-dev.txt`, caches
 `~/.cache/ms-playwright`, runs the self-check, then serves the fixture gallery
-from `tools/screenshots/proxy.py`. The audit refuses to start if the fixtures
+from `tools/screenshots/proxy.py` and audits it with `--theme=both`, so every
+state is measured in Light *and* Dark. The audit refuses to start if the fixtures
 root resolves under `/mnt/models`, if the origin is not loopback, or if
 `/api/health` does not report the fixture stub — it can never read a live
 camera path.

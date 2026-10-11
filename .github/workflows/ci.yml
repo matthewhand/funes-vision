@@ -111,13 +111,42 @@ jobs:
       - name: Audit the fixture gallery
         env:
           A11Y_AUDIT_JSON: ${{ github.workspace }}/a11y-report.json
-        run: node tools/screenshots/a11y_audit.js
+        # Both themes (the default): a gate that only ever measured one of
+        # Light/Dark already missed the gradient skip in issue #116.
+        run: node tools/screenshots/a11y_audit.js --theme=both
 
       - name: Verify responsive light/dark/system themes
         run: node tools/screenshots/theme_smoke.js
 
       - name: Verify desktop/mobile archive calendar
         run: node tools/screenshots/calendar_smoke.js
+
+      - name: Verify gallery layout and mobile sheets across viewports
+        run: node tools/screenshots/layout_regression_smoke.js
+
+      - name: Verify gallery without Ollama inference
+        run: node tools/screenshots/offline_inference_smoke.js
+
+      - name: Upload synthetic Ollama-off previews
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ollama-off-previews
+          path: offline-previews/*.png
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Upload synthetic layout previews
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: layout-previews
+          path: layout-previews/*.png
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Verify multi-year calendar and keyboard focus
+        run: node tools/screenshots/calendar_navigation_smoke.js
 
       - name: Upload synthetic calendar previews
         if: always()

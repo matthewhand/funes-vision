@@ -14,7 +14,7 @@ const fs = require('fs');
 const path = require('path');
 
 const audit = require(path.join(__dirname, '..', 'tools', 'screenshots', 'a11y_audit.js'));
-const { THRESHOLDS, CHECKS, PAGE_CFG, checkHttpClean, checkTargetSize, checkTextContrast, checkOverflow, checkReducedMotion, checkImages, contrastRatio, imageBroken } = audit;
+const { THRESHOLDS, CHECKS, PAGE_CFG, checkHttpClean, checkTargetSize, checkTextContrast, checkTextContrastCoverage, checkOverflow, checkReducedMotion, checkImages, checkThemeApplied, contrastRatio, imageBroken } = audit;
 
 // ---------------------------------------------------------------------------
 // 1. The thresholds are the WCAG numbers. A gate that passes because its
@@ -42,14 +42,25 @@ for (const k of ['largeTextPx', 'largeBoldPx', 'boldWeight', 'overflowToleranceP
 }
 assert.ok(PAGE_CFG.invisibleOpacity > 0 && PAGE_CFG.invisibleOpacity <= 0.25,
   'the "not perceivable" opacity floor must stay small, or dim labels slip through');
+// The coverage floor: the gate must never be allowed to pass while measuring
+// nothing. Issue #116 reported text-contrast PASS with 0 of 84 nodes measured,
+// because a radial-gradient on <body> skipped every one of them.
+assert.strictEqual(THRESHOLDS.minTextCoverage, 0.8, 'the contrast coverage floor is 0.8');
+assert.ok(THRESHOLDS.minTextCoverage > 0 && THRESHOLDS.minTextCoverage < 1,
+  'a 0 or 1 coverage floor would make the gate vacuous or unusable');
+assert.deepStrictEqual([...THRESHOLDS.themes], ['light', 'dark'],
+  'the audit must run every state under BOTH Light and Dark, not one of them');
+assert.strictEqual(THRESHOLDS.themeStorageKey, 'funes-vision.theme',
+  'the theme seeded before load must be the key index.html reads');
 
 // ---------------------------------------------------------------------------
-// 2. The check registry: exactly the six assertion families, each with an id,
-//    a human description and a runner.
+// 2. The check registry: the assertion families, each with an id, a human
+//    description and a runner.
 // ---------------------------------------------------------------------------
 assert.deepStrictEqual(CHECKS.map((c) => c.id), [
-  'http-clean', 'target-size', 'text-contrast', 'h-overflow', 'reduced-motion', 'image-alt',
-], 'the gate must keep all six assertion families');
+  'http-clean', 'target-size', 'text-contrast', 'text-contrast-coverage',
+  'h-overflow', 'reduced-motion', 'image-alt', 'theme-applied',
+], 'the gate must keep every assertion family, including the contrast coverage gate');
 for (const c of CHECKS) {
   assert.strictEqual(typeof c.run, 'function', `${c.id} needs a runner`);
   assert.ok(c.what && c.why, `${c.id} needs a what/why so a failure is explainable`);
@@ -131,8 +142,26 @@ assert.ok(/measured 4\.21:1/.test(contrastFindings[0].detail), 'the finding must
 assert.ok(/required 4\.5:1/.test(contrastFindings[0].detail), 'the finding must carry the threshold');
 assert.deepStrictEqual(checkTextContrast([Object.assign({}, dimmed, { large: true })]), [],
   'the same pair at large-text scale passes the 3:1 floor');
-assert.deepStrictEqual(checkTextContrast([Object.assign({}, dimmed, { skip: 'background-image' })]), [],
-  'a skipped record (e.g. text over a gradient) must not be reported as a failure');
+// A url() photo is the one skip that survives: not a contrast failure, but it
+// has to cost the state coverage, or the gate goes vacuous again (#116).
+assert.deepStrictEqual(checkTextContrast([Object.assign({}, dimmed, { skip: 'background-url-image' })]), [],
+  'a skipped record (text over a url() photo) must not be reported as a failure');
+// Text over a gradient is MEASURED, not skipped (#116): the worst stop is the
+// number that counts, whichever one it is.
+const goodText = mkText('#94a3b8', '#1e293b', { fgRgb: [148, 163, 184], bgRgb: [30, 41, 59] });
+const okStops = [
+  { fg: '#94a3b8', bg: '#1e293b', fgRgb: [148, 163, 184], bgRgb: [30, 41, 59] },
+  { fg: '#94a3b8', bg: '#0f172a', fgRgb: [148, 163, 184], bgRgb: [15, 23, 42] },
+];
+const badStops = okStops.concat([
+  { fg: '#94a3b8', bg: '#ffffff', fgRgb: [148, 163, 184], bgRgb: [255, 255, 255] },
+]);
+assert.deepStrictEqual(checkTextContrast([Object.assign({}, goodText, { bgVariants: okStops })]), [],
+  'a passing pair over both gradient stops must pass');
+assert.strictEqual(checkTextContrast([Object.assign({}, goodText, { bgVariants: badStops })]).length, 1,
+  'the worst of the gradient stops must fail when it is the failing one');
+assert.ok(/2\.5[0-9]:1/.test(checkTextContrast([Object.assign({}, goodText, { bgVariants: badStops })])[0].detail),
+  'the finding must quote the worst stop, not the best one');
 // The WCAG formula itself, against the canonical black/white and mid-grey pairs.
 assert.strictEqual(contrastRatio([0, 0, 0], [255, 255, 255]).toFixed(2), '21.00');
 assert.strictEqual(contrastRatio([255, 255, 255], [255, 255, 255]).toFixed(2), '1.00');
@@ -199,6 +228,48 @@ assert.deepStrictEqual(checkImages([mkImg({ naturalWidth: 0, shown: false })]), 
 assert.strictEqual(imageBroken(mkImg({ naturalWidth: 0 })), true, 'imageBroken() is the shared predicate');
 assert.strictEqual(imageBroken(mkImg({ naturalWidth: 0, shown: false })), false);
 
+// -- text-contrast-coverage ----------------------------------------------
+// The check that stops a contrast check passing while measuring nothing.
+const mkCover = (over) => Object.assign({
+  state: 'light/timeline', selector: 'p#hint', text: 'label', fontSize: 12, large: false,
+}, over);
+const covRecs = (n, factory) => Array.from({ length: n }, factory);
+const skipPhoto = (i) => mkCover({ skip: 'background-url-image', selector: 'p.photo' + i });
+const measured = () => mkCover({ ratio: 9, bgVariants: [{ fgRgb: [255, 255, 255], bgRgb: [0, 0, 0], fg: '#fff', bg: '#000' }] });
+const covFailures = checkTextContrastCoverage(covRecs(84, skipPhoto));
+assert.strictEqual(covFailures.length, 1, 'a state where EVERY node is skipped must fail the coverage gate');
+assert.strictEqual(covFailures[0].check, 'text-contrast-coverage');
+assert.ok(/measured 0 of 84/.test(covFailures[0].detail), 'the finding must carry the numbers');
+assert.ok(/background-url-image/.test(covFailures[0].detail),
+  'the finding must carry the skip-reason histogram');
+assert.ok(/80%/.test(covFailures[0].fix), 'the fix must name the floor');
+assert.strictEqual(checkTextContrastCoverage([]).length, 0, 'no text nodes is no coverage finding');
+assert.strictEqual(checkTextContrastCoverage(covRecs(20, () => measured())).length, 0,
+  'a state that measures everything must pass');
+assert.strictEqual(checkTextContrastCoverage(covRecs(20, (_, i) => (i < 4 ? skipPhoto(i) : measured()))).length, 0,
+  '16 of 20 measured is exactly the 0.8 floor and must pass');
+assert.strictEqual(checkTextContrastCoverage(covRecs(20, (_, i) => (i < 5 ? skipPhoto(i) : measured()))).length, 1,
+  '15 of 20 measured is 75% and must fail the 0.8 floor');
+// The documented exception list is the only waiver, and only for url() photos.
+const waiver = [{ selector: '.photo7', why: 'caption painted over the full-size url() photo' }];
+assert.strictEqual(
+  checkTextContrastCoverage(covRecs(3, (_, i) => mkCover({ skip: 'background-url-image', selector: '.photo7' })), waiver).length, 0,
+  'a documented url()-photo exception must waive the node');
+assert.strictEqual(
+  checkTextContrastCoverage(covRecs(3, (_, i) => mkCover({ skip: 'unparsed-background', selector: '.photo7' })), waiver).length, 1,
+  'an unparsed colour is not waivable, even on the same selector');
+assert.deepStrictEqual(audit.SKIP_EXCEPTIONS, [],
+  'the shipped exception list must be explicit and currently empty');
+
+// -- theme-applied -------------------------------------------------------
+const mkTheme = (theme, applied) => ({ state: 'theme/' + theme, theme, applied });
+assert.deepStrictEqual(checkThemeApplied([mkTheme('dark', 'dark'), mkTheme('light', 'light')]), [],
+  'a page that resolved both requested themes must pass');
+const themeFinding = checkThemeApplied([mkTheme('dark', 'light')]);
+assert.strictEqual(themeFinding.length, 1, 'a page that resolved the wrong theme must fail');
+assert.ok(/resolved "light"/.test(themeFinding[0].detail), 'the finding must say what the page resolved');
+assert.strictEqual(themeFinding[0].check, 'theme-applied');
+
 // ---------------------------------------------------------------------------
 // 4. The in-page bundle must ship a collector for every check that needs one,
 //    and must not depend on module scope (page.evaluate drops free variables,
@@ -208,12 +279,24 @@ const bundle = audit.inPageBundleSource();
 for (const fn of ['inPageCollectTargets', 'inPageCollectText', 'inPageCollectOverflow', 'inPageCollectMotion', 'inPageCollectImages']) {
   assert.ok(bundle.indexOf('function ' + fn + '(') !== -1, `the page bundle must define ${fn}`);
 }
+// The gradient helpers must ship too: the browser is the only place the
+// collector runs, and a missing one silently restores the #116 skip.
+for (const fn of ['inPageGradientStops', 'inPageBgImageLayers', 'inPageBgLayer',
+  'inPagePaintLayers', 'inPageCompositeLayer', 'inPageBgVariants']) {
+  assert.ok(bundle.indexOf('function ' + fn + '(') !== -1, `the page bundle must define ${fn}`);
+}
 assert.ok(bundle.indexOf('window.__a11yAudit = {') !== -1, 'the bundle must publish its collectors on window');
 assert.ok(bundle.indexOf(JSON.stringify(PAGE_CFG)) !== -1,
   'the bundle must be generated from PAGE_CFG, or the page measures with stale numbers');
+assert.ok(bundle.indexOf('bgVariants') !== -1,
+  'the collector must ship the gradient candidates back to Node for the ratio');
 for (const fn of ['checkHttpClean', 'checkTargetSize', 'checkTextContrast', 'checkOverflow', 'checkReducedMotion', 'checkImages']) {
   assert.strictEqual(typeof audit[fn], 'function', `${fn} must stay exported for the tests`);
 }
+assert.strictEqual(typeof audit.checkTextContrastCoverage, 'function',
+  'checkTextContrastCoverage must stay exported for the tests');
+assert.strictEqual(typeof audit.checkThemeApplied, 'function',
+  'checkThemeApplied must stay exported for the tests');
 
 // ---------------------------------------------------------------------------
 // 5. The CI wiring. A gate nobody runs is a gate that does not exist, and a
@@ -251,6 +334,8 @@ assert.ok(/actions\/cache@v4/.test(jobBody) && jobBody.includes('~/.cache/ms-pla
   'the ~170MB browser must be cached, or every run re-downloads it');
 assert.ok(jobBody.includes('a11y_audit.js --selfcheck'),
   'the job must run the non-vacuity self-check before trusting the gate');
+assert.ok(jobBody.includes('a11y_audit.js --theme=both'),
+  'the job must audit BOTH themes -- a light/dark-only run is how a themed defect hides');
 assert.ok(jobBody.includes('tools/screenshots/proxy.py'),
   'the job must serve the audit from the synthetic fixture stub');
 const auditStep = jobBody.slice(jobBody.indexOf('name: Audit the fixture gallery'));

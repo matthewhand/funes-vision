@@ -2940,7 +2940,7 @@
       border: 1px solid var(--border-color); border-radius: 8px;
       background: var(--surface-hover); color: var(--text-primary); cursor: pointer;
     }
-    .fv-cal-arrow:disabled { opacity: .35; cursor: default; }
+    .fv-cal-arrow:disabled { opacity: 1; color: var(--text-secondary); cursor: default; }
     .fv-cal-month {
       width: 100%; min-width: 0; height: 34px; padding: 0 3px;
       background: var(--bg-secondary); color: var(--text-primary);
@@ -2961,7 +2961,7 @@
       border: 1px solid transparent; border-radius: 8px;
       font-size: .72rem; font-weight: 650; font-family: inherit;
     }
-    .fv-cal-day:disabled { opacity: .38; }
+    .fv-cal-day:disabled { opacity: 1; color: var(--text-secondary); font-weight: 450; }
     .fv-cal-day.has-recordings { color: var(--text-primary); cursor: pointer; background: var(--surface-hover); }
     .fv-cal-day.has-recordings:hover { background: var(--surface-hover-strong); border-color: var(--accent-25); }
     .fv-cal-day.is-selected { background: var(--accent-15); border-color: var(--accent-35); color: var(--accent-fg); }
@@ -2978,6 +2978,70 @@
       .fv-calendar { max-width: 420px; margin-inline: auto; }
       .fv-cal-day { min-height: 42px; font-size: .8rem; }
     }
+
+    /* Visibility repairs #121/#115: keep a scrollable gallery regardless of
+       short/tall header, landscape orientation, or the expanded calendar.
+       The grid remains the IntersectionObserver root for lazy image paging. */
+    @media (max-width: 992px) {
+      .workspace:not(.mode-dashboard) aside {
+        width: 100%; max-width: 100%; min-width: 0;
+      }
+      .image-grid:has(.image-card, .visit-log) {
+        min-height: min(60dvh, 320px);
+        max-height: max(min(60dvh, 320px), calc(100dvh - var(--grid-top-offset, 200px)));
+      }
+    }
+    /* #122: a backdrop-filtered sticky header is the containing block of
+       fixed-position Settings/Filters. Disabling it on mobile restores the
+       intended viewport sheet dimensions; the header is already opaque. */
+    @media (max-width: 768px) {
+      header { backdrop-filter: none; -webkit-backdrop-filter: none; }
+      /* #117: this higher-specificity rule wins over the later generic
+         .sidebar-toggle-label{display:none} utility at narrow widths. */
+      .logo-area #sidebar-toggle .sidebar-toggle-label { display: inline; }
+    }
+
+    /* #120: keep the intentionally-off inference state readable in the
+       narrow action rail instead of showing 'AI' over 'off' on two lines. */
+    #ai-live-label { white-space: nowrap; }
+    @media (max-width: 480px) {
+      #btn-system-status { font-size: .68rem; }
+    }
+
+    /* #115: mobile calendar behaves as a dismissible bottom sheet; it must
+       never push camera activity below the fold or reserve a narrow column. */
+    .fv-calendar-backdrop, .fv-cal-close { display: none; }
+    @media (max-width: 992px) {
+      .workspace:not(.mode-dashboard):not(.sidebar-collapsed) .fv-calendar-backdrop {
+        display: block; position: fixed; inset: 0; z-index: 85;
+        background: rgba(3, 12, 25, .62);
+      }
+      .workspace:not(.mode-dashboard):not(.sidebar-collapsed) > aside {
+        display: flex; position: fixed; z-index: 86;
+        top: auto; left: 0; right: 0; bottom: 0;
+        width: 100%; max-width: 100%; min-width: 0;
+        max-height: min(78dvh, 660px);
+        overflow-y: auto; overscroll-behavior: contain;
+        box-sizing: border-box;
+        padding: 12px max(14px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom));
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color); border-radius: 20px 20px 0 0;
+        box-shadow: 0 -12px 48px rgba(0,0,0,.28);
+      }
+      .fv-cal-close {
+        display: flex; align-items: center; justify-content: space-between;
+        flex: none; width: 100%; min-height: 42px; padding: 8px 12px;
+        border: 1px solid var(--border-color); border-radius: 10px;
+        color: var(--text-primary); background: var(--surface-hover);
+        font: inherit; font-size: .83rem; font-weight: 650; cursor: pointer;
+      }
+      .fv-cal-close span { font-size: 1.3rem; line-height: 1; }
+      .fv-cal-close:focus-visible {
+        outline: 2px solid var(--accent-fg); outline-offset: 2px;
+      }
+      .fv-calendar { max-width: 420px; margin-inline: auto; width: 100%; }
+      .workspace:not(.mode-dashboard):not(.sidebar-collapsed) aside > :last-child { margin-top: 0; }
+    }
   </style>
 </head>
 <body>
@@ -2986,8 +3050,8 @@
     <header>
       <div class="header-content">
         <div class="logo-area">
-          <button class="btn" id="sidebar-toggle" aria-label="Show or hide calendar and saved searches" aria-pressed="false" title="Dates &amp; saved panels">
-            <i data-lucide="panel-left"></i>
+          <button class="btn" id="sidebar-toggle" aria-controls="fv-calendar-panel" aria-label="Show or hide calendar and saved searches" aria-pressed="false" aria-expanded="true" title="Calendar &amp; saved searches">
+            <i data-lucide="calendar-days"></i>
             <span class="sidebar-toggle-label">Calendar</span>
           </button>
           <div class="logo-icon">
@@ -3254,8 +3318,10 @@
         <div id="dashboard-grid" class="dashboard-grid"></div>
       </div>
 
-      <!-- Sidebar navigation panel -->
-      <aside>
+      <!-- Small-screen calendar drawer lives outside the header to avoid fixed containing blocks. -->
+      <div id="fv-calendar-backdrop" class="fv-calendar-backdrop" aria-hidden="true"></div>
+      <aside id="fv-calendar-panel" aria-label="Calendar and saved searches">
+        <button id="fv-calendar-close" class="fv-cal-close" type="button" aria-label="Close calendar">Close <span aria-hidden="true">×</span></button>
         <!-- Date Timeline section -->
         <div class="sidebar-section">
           <h3><i data-lucide="calendar"></i> Calendar</h3>
@@ -4552,6 +4618,13 @@
       }
       const sidebarList = document.getElementById('date-list');
       if (!sidebarList) return;
+      // A calendar redraw should never strand keyboard focus on document.body.
+      const oldFocus = sidebarList.contains(document.activeElement) ? document.activeElement : null;
+      const focusKey = !oldFocus ? null
+        : oldFocus.classList.contains('fv-cal-day') ? 'day:' + oldFocus.dataset.date
+        : oldFocus.classList.contains('fv-cal-all') ? 'all'
+        : oldFocus.classList.contains('fv-cal-arrow') ? oldFocus.dataset.calAction
+        : oldFocus.classList.contains('fv-cal-month') ? 'month' : null;
       sidebarList.replaceChildren();
 
       const calendar = document.createElement('div');
@@ -4566,6 +4639,7 @@
         state.dateUserSet = true;
         renderDateSidebar();
         applyFiltersAndSearch();
+        window.closeCalendarSheet?.();
       });
       calendar.appendChild(allItem);
 
@@ -4575,6 +4649,7 @@
       const prev = document.createElement('button');
       prev.type = 'button';
       prev.className = 'fv-cal-arrow';
+      prev.dataset.calAction = 'prev';
       prev.textContent = '‹';
       prev.setAttribute('aria-label', 'Previous recorded month');
       prev.disabled = idx <= 0;
@@ -4610,6 +4685,7 @@
       const next = document.createElement('button');
       next.type = 'button';
       next.className = 'fv-cal-arrow';
+      next.dataset.calAction = 'next';
       next.textContent = '›';
       next.setAttribute('aria-label', 'Next recorded month');
       next.disabled = idx < 0 || idx >= months.length - 1;
@@ -4654,6 +4730,7 @@
         button.className = 'fv-cal-day' + (count ? ' has-recordings' : '') +
           (selected === dateStr ? ' is-selected' : '') + (todayStr === dateStr ? ' is-today' : '');
         button.textContent = String(day);
+        button.dataset.date = dateStr;
         button.disabled = !count;
         button.setAttribute('aria-label', fullName + ', ' + count + ' snapshot' + (count === 1 ? '' : 's'));
         if (count) {
@@ -4668,6 +4745,7 @@
             state.dateUserSet = true;
             renderDateSidebar();
             applyFiltersAndSearch();
+            window.closeCalendarSheet?.();
           });
         }
         grid.appendChild(button);
@@ -4682,6 +4760,14 @@
         : 'No snapshots in this camera archive';
       calendar.appendChild(summary);
       sidebarList.appendChild(calendar);
+      if (focusKey) {
+        const destination = focusKey === 'all' ? allItem
+          : focusKey === 'month' ? choose
+          : focusKey.startsWith('day:') ? [...grid.querySelectorAll('.fv-cal-day')].find(b => b.dataset.date === focusKey.slice(4))
+          : focusKey === 'prev' ? prev : focusKey === 'next' ? next : null;
+        const replacement = destination && !destination.disabled ? destination : choose;
+        if (replacement && !replacement.disabled) replacement.focus({ preventScroll: true });
+      }
     }
 
     // Render the trends panel charts:
@@ -6522,6 +6608,10 @@
         list.appendChild(more);
       }
       grid.appendChild(list);
+      // Timeline appends its visit list after restoring the sentinel. Re-home
+      // the sentinel *now* so the visit rows occupy the first grid row.
+      // Otherwise grid-auto-rows reserves a large blank row before the visits.
+      moveSentinelToEnd();
       list.querySelectorAll('img.card-img').forEach(img => imageObserver.observe(img));
     }
 
@@ -8857,17 +8947,74 @@
       const workspaceEl = document.querySelector('.workspace');
       const sidebarToggle = document.getElementById('sidebar-toggle');
       if (workspaceEl && sidebarToggle) {
-        const applySidebarState = (collapsed) => {
+        const sheet = document.getElementById('fv-calendar-panel');
+        const closeButton = document.getElementById('fv-calendar-close');
+        const backdrop = document.getElementById('fv-calendar-backdrop');
+        const mobileSheet = () => window.matchMedia('(max-width: 992px)').matches;
+        const sheetOpen = () => mobileSheet() && !workspaceEl.classList.contains('sidebar-collapsed')
+          && !workspaceEl.classList.contains('mode-dashboard');
+        const applySidebarState = (collapsed, moveFocus = false) => {
           workspaceEl.classList.toggle('sidebar-collapsed', collapsed);
           sidebarToggle.setAttribute('aria-pressed', collapsed ? 'true' : 'false');
+          sidebarToggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+          if (sheet) {
+            if (sheetOpen()) {
+              sheet.setAttribute('role', 'dialog');
+              sheet.setAttribute('aria-modal', 'true');
+              sheet.setAttribute('aria-label', 'Archive calendar and saved searches');
+              if (moveFocus && closeButton) closeButton.focus({ preventScroll: true });
+            } else {
+              sheet.removeAttribute('role');
+              sheet.removeAttribute('aria-modal');
+            }
+          }
+          if (moveFocus && collapsed) sidebarToggle.focus({ preventScroll: true });
+          if (window.syncGridOffset) window.syncGridOffset();
           updateActionsOverflow();
         };
         const storedSidebar = localStorage.getItem('webcam_sidebar_collapsed');
-        applySidebarState(sidebarDefaultCollapsed(storedSidebar, document.documentElement.clientWidth, 992));
+        // Never auto-open a modal sheet on page load, even when a desktop
+        // preference previously stored the sidebar as expanded.
+        applySidebarState(mobileSheet() ? true
+          : sidebarDefaultCollapsed(storedSidebar, document.documentElement.clientWidth, 992));
+        const closeSheet = () => {
+          if (!sheetOpen()) return;
+          applySidebarState(true, true);
+          try { localStorage.setItem('webcam_sidebar_collapsed', 'true'); } catch (_) {}
+        };
+        window.closeCalendarSheet = closeSheet;
         sidebarToggle.addEventListener('click', () => {
           const collapsed = !workspaceEl.classList.contains('sidebar-collapsed');
-          applySidebarState(collapsed);
-          localStorage.setItem('webcam_sidebar_collapsed', String(collapsed));
+          applySidebarState(collapsed, true);
+          try { localStorage.setItem('webcam_sidebar_collapsed', String(collapsed)); } catch (_) {}
+        });
+        closeButton?.addEventListener('click', closeSheet);
+        backdrop?.addEventListener('click', closeSheet);
+        document.addEventListener('keydown', (event) => {
+          if (!sheetOpen()) return;
+          if (event.key === 'Escape') {
+            event.preventDefault();
+            closeSheet();
+          } else if (event.key === 'Tab' && sheet) {
+            const focusable = [...sheet.querySelectorAll('button:not(:disabled), select:not(:disabled), a[href], input:not(:disabled)')]
+              .filter(el => el.getClientRects().length > 0);
+            if (!focusable.length) { event.preventDefault(); return; }
+            const first = focusable[0], last = focusable[focusable.length - 1];
+            if (!sheet.contains(document.activeElement)) {
+              event.preventDefault(); first.focus();
+            } else if (event.shiftKey && document.activeElement === first) {
+              event.preventDefault(); last.focus();
+            } else if (!event.shiftKey && document.activeElement === last) {
+              event.preventDefault(); first.focus();
+            }
+          }
+        }, true);
+        window.addEventListener('resize', () => {
+          if (sheetOpen() && !mobileSheet()) closeSheet();
+          if (sheet) {
+            if (sheetOpen()) { sheet.setAttribute('role', 'dialog'); sheet.setAttribute('aria-modal', 'true'); }
+            else { sheet.removeAttribute('role'); sheet.removeAttribute('aria-modal'); }
+          }
         });
       }
 
@@ -9078,7 +9225,7 @@
             apiFetch('/api/status', {}, true),
             apiFetch('/api/inference_log')
           ]);
-          const ok = v => v ? '<span style="color:#10b981;">&#10003;</span>' : '<span style="color:#ef4444;">&#10007;</span>';
+          const ok = v => v ? '<span style="color:var(--success);">&#10003;</span>' : '<span style="color:#ef4444;">&#10007;</span>';
 
           // Live inference state
           let inferHtml;
@@ -9092,8 +9239,12 @@
             if (s.inference.partial) {
               inferHtml += `<br>&nbsp;&nbsp;<span style="color:var(--text-secondary);font-style:italic;">“${escapeHtml(s.inference.partial)}”</span>`;
             }
+          } else if (s.llm && s.llm.reachable === false) {
+            // Ollama/System1 may be intentionally stopped. Never paint a
+            // green "idle" state when the inference model is unreachable.
+            inferHtml = '<span style="color:var(--text-secondary);">&#9679;</span> <b>Inference:</b> unavailable (existing recordings remain browsable)';
           } else {
-            inferHtml = `<span style="color:#10b981;">&#9679;</span> <b>Inference:</b> idle`;
+            inferHtml = `<span style="color:var(--success);">&#9679;</span> <b>Inference:</b> idle`;
           }
 
           // Audit trail (last 15)
@@ -9167,7 +9318,7 @@
                  : `<span style="color:#ef4444;">${fmtDur(s.trigger.last_sweep_age_s)} ago — stalled?</span>`)}</div>
             <div style="margin-top:8px;font-weight:700;text-transform:uppercase;font-size:0.7rem;color:var(--text-secondary);border-bottom:1px solid var(--border-color);padding-bottom:3px;">Cameras</div>
             ${(s.cameras || []).map(c => {
-              const dot = c.stale ? '<span style="color:#ef4444;">&#9679;</span>' : '<span style="color:#10b981;">&#9679;</span>';
+              const dot = c.stale ? '<span style="color:var(--danger);">&#9679;</span>' : '<span style="color:var(--success);">&#9679;</span>';
               const age = c.last_frame_age_s == null ? 'no frames' : fmtDur(c.last_frame_age_s) + ' ago';
               const pct = c.budget_pct == null ? '' : ` <span style="color:${c.budget_pct > 85 ? '#ef4444' : 'inherit'};">(${c.budget_pct}%)</span>`;
               return `<div>${dot} <b>${escapeHtml(cameraDisplayName(c.name))}</b>: last frame ${age} &middot; ${formatGb(c.bytes, 'B')}${pct} &middot; ${formatCount(c.images)} imgs</div>`;
@@ -9296,6 +9447,10 @@ const props = schemaObj.properties || {};
             const inferMeta = parseFilename(s.inference.image);
             const inferNice = lightboxTitle(inferMeta) || s.inference.image;
             btnSystemStatus.title = `Analyzing ${inferNice} (${s.inference.trigger}) - tap for details`;
+          } else if (s.llm && s.llm.reachable === false) {
+            dot.className = '';
+            label.textContent = 'AI off';
+            btnSystemStatus.title = 'Inference model unavailable; archive and detections remain viewable';
           } else {
             dot.className = 'idle';
             label.textContent = 'AI';
