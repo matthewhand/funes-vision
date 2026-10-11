@@ -130,7 +130,7 @@ jobs:
           SCREENSHOT_PORT=8898 SCREENSHOT_API_DIR="$PWD/tools/screenshots/fixtures/api-offline" SCREENSHOT_HEALTH_STATUS=503 python3 tools/screenshots/proxy.py &
           stub=$!
           for _ in $(seq 1 40); do
-            code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8898/api/health || true)
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8898/api/health || echo 000)
             if [ "$code" = "503" ]; then break; fi
             sleep 0.5
           done
