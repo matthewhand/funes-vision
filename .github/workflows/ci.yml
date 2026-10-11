@@ -134,6 +134,9 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
+      - name: Verify calendar navigation across years and archive shapes
+        run: SCREENSHOT_OUT=layout-previews/calendar-nav node tools/screenshots/calendar_nav_smoke.js
+
       - name: Upload synthetic layout previews
         if: always()
         uses: actions/upload-artifact@v4
