@@ -38,9 +38,15 @@ async function main() {
           'latest recorded date should be selected');
         assert.strictEqual(await page.locator('#date-list .fv-cal-day.has-recordings').count(), 1);
         await page.locator('#date-list .fv-cal-all').click();
+        if (w <= 992) {
+          assert.strictEqual(await page.locator('#sidebar-toggle').getAttribute('aria-expanded'), 'false',
+            'selecting All dates dismisses mobile sheet');
+          await page.locator('#sidebar-toggle').click();
+        }
         assert.strictEqual(await page.locator('#date-list .fv-cal-all').getAttribute('aria-pressed'), 'true',
           'All dates should clear day selection');
         await page.locator('#date-list .fv-cal-day.has-recordings').click();
+        if (w <= 992) await page.locator('#sidebar-toggle').click();
         assert.strictEqual(await page.locator('#date-list .fv-cal-all').getAttribute('aria-pressed'), 'false',
           'choosing a recorded day restores date filter');
         assert.strictEqual(await page.locator('html').getAttribute('data-theme'), theme);

@@ -238,7 +238,7 @@ assert.ok(hasId('date-list') && hasId('stats-label'),
   'the sidebar list and the header count keep their ids (renderSidebar / the ' +
     'grid counter both write into them)');
 // The pinned child really is the Saved disclosure, i.e. a control, not a spacer.
-const asideTail = markup().match(/<aside>[\s\S]*?<\/aside>/)[0].trimEnd();
+const asideTail = markup().match(/<aside(?:\s[^>]*)?>[\s\S]*?<\/aside>/)[0].trimEnd();
 assert.ok(
   /<summary><h3><i data-lucide="bookmark"><\/i> Saved<\/h3><\/summary>/.test(
     asideTail.slice(-400)
