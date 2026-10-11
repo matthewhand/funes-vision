@@ -18,7 +18,7 @@ assert.match(fn, /state\.activeDateFilter = dateStr/, 'use original date filter 
 assert.match(fn, /applyFiltersAndSearch\(\)/, 'render same gallery filters after clicking');
 assert.doesNotMatch(fn, /sortedDates\.forEach/, 'no unbounded vertical date list');
 assert.match(html, /id="date-list" aria-label="Camera archive calendar"/, 'labeled calendar region');
-assert.match(html, /id="sidebar-toggle" aria-label="Show or hide calendar/, 'mobile discovery');
+assert.match(html, /id="sidebar-toggle" aria-controls="fv-calendar-panel" aria-label="Show or hide calendar/, 'mobile discovery');
 assert.match(html, /#date-list\.fv-calendar-host\s*\{/, 'old mobile strip replaced');
 assert.match(html, /\.fv-cal-day:focus-visible/, 'keyboard focus visible');
 assert.match(html, /@media \(max-width: 992px\)[\s\S]*?\.fv-calendar\s*\{\s*max-width:\s*420px/, 'mobile size bound');
