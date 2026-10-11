@@ -162,7 +162,7 @@ that can fall behind the SPA:
 | `/api/catalogs` | `images.json` / `analysis.json` / `bursts.json` / `pins.json` grouped per camera |
 | `/api/settings`, `/api/status`, `/api/inference_log`, `/api/integrations`, `/api/llm-schema` | `fixtures/api/*.json` |
 | `/api/pins` | `fixtures/gallery/pins.json` |
-| `/api/health` | literal `{"status":"ok","fixture":true}` |
+| `/api/health` | literal `{"status":"ok","fixture":true}`; with `SCREENSHOT_HEALTH_STATUS=503`, HTTP 503 + a degraded body mirroring `health_summary()` |
 | `/api/events` | held open, `event: ping` every `SSE_STUB_INTERVAL` |
 | every `POST /api/*` | `{"ok":true,"fixture":true}` — never mutates disk |
 
@@ -254,6 +254,8 @@ the write run prints into `COMMITTED_SHA256`).
 | Var | Default | Meaning |
 |-----|---------|---------|
 | `SCREENSHOT_ROOT` | `tools/screenshots/fixtures/gallery` | Static gallery tree |
+| `SCREENSHOT_API_DIR` | `tools/screenshots/fixtures/api` | JSON payloads for `/api/settings`, `/api/status`, `/api/inference_log`, `/api/integrations`, `/api/llm-schema` |
+| `SCREENSHOT_HEALTH_STATUS` | `200` | `503` answers `/api/health` degraded (`llm_reachable: false`), like a down Ollama; anything else means 200 |
 | `SCREENSHOT_INDEX` | repo `index.html` | Overlay working-copy UI |
 | `SCREENSHOT_API` | `stub` | `stub` (safe) or `live` (`:8190`) |
 | `SCREENSHOT_PORT` | `8899` | Local origin |

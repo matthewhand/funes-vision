@@ -27,6 +27,29 @@ ROOT = os.path.realpath(os.environ.get("SCREENSHOT_ROOT", DEFAULT_ROOT))
 API_MODE = os.environ.get("SCREENSHOT_API", "stub").strip().lower() or "stub"
 LIVE_API = os.environ.get("SCREENSHOT_LIVE_API", "http://localhost:8190")
 API_DIR = os.path.realpath(os.environ.get("SCREENSHOT_API_DIR", DEFAULT_API_DIR))
+# Issue #120: the SPA has to stay usable when the inference backend (Ollama) is
+# down, and a stub that always answers `{"status":"ok"}` cannot prove it. Set
+# SCREENSHOT_HEALTH_STATUS=503 to make /api/health answer degraded, exactly like
+# api_server.py's health_summary() -> 503 path. Only the exact "503" is honoured;
+# anything else (a typo, "", "503 ") falls back to 200 so a misspelling cannot
+# silently turn the audit gate's health check into a failure.
+HEALTH_STATUS = os.environ.get("SCREENSHOT_HEALTH_STATUS", "200").strip()
+if HEALTH_STATUS not in ("200", "503"):
+    HEALTH_STATUS = "200"
+# Mirrors api_server.py health_summary() with an unreachable LLM. The real
+# handler returns 503 whenever status != ok. "fixture" stays true: the a11y
+# audit refuses to run against an origin whose health does not report the stub.
+HEALTH_DEGRADED = {
+    "status": "degraded",
+    "fixture": True,
+    "checks": {
+        "inotify": True,
+        "llm_reachable": False,
+        "recent_sweep": True,
+        "disk_space": True,
+    },
+    "cameras": [],
+}
 INDEX_OVERRIDE = os.environ.get("SCREENSHOT_INDEX") or os.path.join(REPO, "index.html")
 STATIC_DIR = os.environ.get("SCREENSHOT_STATIC") or REPO
 PORT = int(os.environ.get("SCREENSHOT_PORT", "8899"))
@@ -164,6 +187,8 @@ class H(SimpleHTTPRequestHandler):
             self.send_error(404)
             return
         if path == "/api/health":
+            if HEALTH_STATUS == "503":
+                return self._send(503, HEALTH_DEGRADED, "application/json")
             return self._send(200, b'{"status":"ok","fixture":true}', "application/json")
         # Camera registry, derived from the fixture stills rather than
         # hardcoded, so it cannot claim a camera the gallery cannot load.
