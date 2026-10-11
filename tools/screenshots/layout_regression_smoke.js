@@ -45,7 +45,16 @@ async function main() {
         assert.equal(await calendar.getAttribute('aria-expanded'),'true');
         const aside = await page.locator('.workspace aside').boundingBox();
         assert(aside.width >= width-2, size+' calendar sheet must occupy viewport width');
-        assert(aside.bottom >= height-2, size+' sheet must be anchored at viewport bottom');
+        const sheetProps = await page.locator('.workspace aside').evaluate(el => ({
+          position: getComputedStyle(el).position,
+          bottom: getComputedStyle(el).bottom,
+          height: window.innerHeight,
+          top: el.getBoundingClientRect().top,
+          bottomEdge: el.getBoundingClientRect().bottom,
+          rootClass: el.parentElement.className,
+        }));
+        assert(aside.bottom >= height-2,
+          size+' sheet must be anchored at viewport bottom: '+JSON.stringify({aside,sheetProps}));
         assert(await page.locator('#fv-calendar-close').isVisible(), size+' visible dismiss button');
         // Modal must not push the gallery down the document. Verify keyboard
         // close and focus restoration before interacting with the real feed.
