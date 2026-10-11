@@ -44,7 +44,7 @@ probability bar.
 
 ## 3. Pipeline stages (in order) and the states they produce
 
-1. **Motion trigger** – the camera writes a `…_MOTDEC.jpg` frame; State: *pending* (row absent, `status.queue.unanalyzed` counts these).
+1. **Motion trigger** – the camera writes a `…_MOTDEC.jpg` frame. State: *pending* (row absent, `status.queue.unanalyzed` counts these).
 2. **Fast pass (detector, YOLO by default; `settings.fast_pass_engine`)** – sets boolean labels or `fast_pass: "negative"`. 
 3. **System 1 / LLM pass (Gemma, `gemma4:e2b`)** – runs on `person/dog/cat/bird/face/body` hits except `GATE_IGNORE_LABELS` (default `car`); front vs back schema; result merged into the row; (see events below). If skipped/failed: `_llm_skip` set and `fast_pass:"partial"` (skip with reason).
 4. **Burst summary** – optional (`burst_summaries_enabled`): caption per burst; emits `new-burst`.
