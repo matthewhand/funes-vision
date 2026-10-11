@@ -3000,6 +3000,41 @@
          .sidebar-toggle-label{display:none} utility at narrow widths. */
       .logo-area #sidebar-toggle .sidebar-toggle-label { display: inline; }
     }
+
+    /* #115: mobile calendar behaves as a dismissible bottom sheet; it must
+       never push camera activity below the fold or reserve a narrow column. */
+    .fv-calendar-backdrop, .fv-cal-close { display: none; }
+    @media (max-width: 992px) {
+      .workspace:not(.mode-dashboard):not(.sidebar-collapsed) .fv-calendar-backdrop {
+        display: block; position: fixed; inset: 0; z-index: 85;
+        background: rgba(3, 12, 25, .62);
+      }
+      .workspace:not(.mode-dashboard):not(.sidebar-collapsed) > aside {
+        display: flex; position: fixed; z-index: 86;
+        top: auto; left: 0; right: 0; bottom: 0;
+        width: 100%; max-width: 100%; min-width: 0;
+        max-height: min(78dvh, 660px);
+        overflow-y: auto; overscroll-behavior: contain;
+        box-sizing: border-box;
+        padding: 12px max(14px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom));
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color); border-radius: 20px 20px 0 0;
+        box-shadow: 0 -12px 48px rgba(0,0,0,.28);
+      }
+      .fv-cal-close {
+        display: flex; align-items: center; justify-content: space-between;
+        flex: none; width: 100%; min-height: 42px; padding: 8px 12px;
+        border: 1px solid var(--border-color); border-radius: 10px;
+        color: var(--text-primary); background: var(--surface-hover);
+        font: inherit; font-size: .83rem; font-weight: 650; cursor: pointer;
+      }
+      .fv-cal-close span { font-size: 1.3rem; line-height: 1; }
+      .fv-cal-close:focus-visible {
+        outline: 2px solid var(--accent-fg); outline-offset: 2px;
+      }
+      .fv-calendar { max-width: 420px; margin-inline: auto; width: 100%; }
+      .workspace:not(.mode-dashboard):not(.sidebar-collapsed) aside > :last-child { margin-top: 0; }
+    }
   </style>
 </head>
 <body>
@@ -3008,7 +3043,7 @@
     <header>
       <div class="header-content">
         <div class="logo-area">
-          <button class="btn" id="sidebar-toggle" aria-label="Show or hide calendar and saved searches" aria-pressed="false" aria-expanded="true" title="Calendar &amp; saved searches">
+          <button class="btn" id="sidebar-toggle" aria-controls="fv-calendar-panel" aria-label="Show or hide calendar and saved searches" aria-pressed="false" aria-expanded="true" title="Calendar &amp; saved searches">
             <i data-lucide="calendar-days"></i>
             <span class="sidebar-toggle-label">Calendar</span>
           </button>
@@ -3276,8 +3311,10 @@
         <div id="dashboard-grid" class="dashboard-grid"></div>
       </div>
 
-      <!-- Sidebar navigation panel -->
-      <aside>
+      <!-- Small-screen calendar drawer lives outside the header to avoid fixed containing blocks. -->
+      <div id="fv-calendar-backdrop" class="fv-calendar-backdrop" aria-hidden="true"></div>
+      <aside id="fv-calendar-panel" aria-label="Calendar and saved searches">
+        <button id="fv-calendar-close" class="fv-cal-close" type="button" aria-label="Close calendar">Close <span aria-hidden="true">×</span></button>
         <!-- Date Timeline section -->
         <div class="sidebar-section">
           <h3><i data-lucide="calendar"></i> Calendar</h3>
@@ -4574,6 +4611,13 @@
       }
       const sidebarList = document.getElementById('date-list');
       if (!sidebarList) return;
+      // A calendar redraw should never strand keyboard focus on document.body.
+      const oldFocus = sidebarList.contains(document.activeElement) ? document.activeElement : null;
+      const focusKey = !oldFocus ? null
+        : oldFocus.classList.contains('fv-cal-day') ? 'day:' + oldFocus.dataset.date
+        : oldFocus.classList.contains('fv-cal-all') ? 'all'
+        : oldFocus.classList.contains('fv-cal-arrow') ? oldFocus.dataset.calAction
+        : oldFocus.classList.contains('fv-cal-month') ? 'month' : null;
       sidebarList.replaceChildren();
 
       const calendar = document.createElement('div');
@@ -4588,6 +4632,7 @@
         state.dateUserSet = true;
         renderDateSidebar();
         applyFiltersAndSearch();
+        window.closeCalendarSheet?.();
       });
       calendar.appendChild(allItem);
 
@@ -4597,6 +4642,7 @@
       const prev = document.createElement('button');
       prev.type = 'button';
       prev.className = 'fv-cal-arrow';
+      prev.dataset.calAction = 'prev';
       prev.textContent = '‹';
       prev.setAttribute('aria-label', 'Previous recorded month');
       prev.disabled = idx <= 0;
@@ -4632,6 +4678,7 @@
       const next = document.createElement('button');
       next.type = 'button';
       next.className = 'fv-cal-arrow';
+      next.dataset.calAction = 'next';
       next.textContent = '›';
       next.setAttribute('aria-label', 'Next recorded month');
       next.disabled = idx < 0 || idx >= months.length - 1;
@@ -4676,6 +4723,7 @@
         button.className = 'fv-cal-day' + (count ? ' has-recordings' : '') +
           (selected === dateStr ? ' is-selected' : '') + (todayStr === dateStr ? ' is-today' : '');
         button.textContent = String(day);
+        button.dataset.date = dateStr;
         button.disabled = !count;
         button.setAttribute('aria-label', fullName + ', ' + count + ' snapshot' + (count === 1 ? '' : 's'));
         if (count) {
@@ -4690,6 +4738,7 @@
             state.dateUserSet = true;
             renderDateSidebar();
             applyFiltersAndSearch();
+            window.closeCalendarSheet?.();
           });
         }
         grid.appendChild(button);
@@ -4704,6 +4753,14 @@
         : 'No snapshots in this camera archive';
       calendar.appendChild(summary);
       sidebarList.appendChild(calendar);
+      if (focusKey) {
+        const destination = focusKey === 'all' ? allItem
+          : focusKey === 'month' ? choose
+          : focusKey.startsWith('day:') ? [...grid.querySelectorAll('.fv-cal-day')].find(b => b.dataset.date === focusKey.slice(4))
+          : focusKey === 'prev' ? prev : focusKey === 'next' ? next : null;
+        const replacement = destination && !destination.disabled ? destination : choose;
+        if (replacement && !replacement.disabled) replacement.focus({ preventScroll: true });
+      }
     }
 
     // Render the trends panel charts:
@@ -8883,18 +8940,74 @@
       const workspaceEl = document.querySelector('.workspace');
       const sidebarToggle = document.getElementById('sidebar-toggle');
       if (workspaceEl && sidebarToggle) {
-        const applySidebarState = (collapsed) => {
+        const sheet = document.getElementById('fv-calendar-panel');
+        const closeButton = document.getElementById('fv-calendar-close');
+        const backdrop = document.getElementById('fv-calendar-backdrop');
+        const mobileSheet = () => window.matchMedia('(max-width: 992px)').matches;
+        const sheetOpen = () => mobileSheet() && !workspaceEl.classList.contains('sidebar-collapsed')
+          && !workspaceEl.classList.contains('mode-dashboard');
+        const applySidebarState = (collapsed, moveFocus = false) => {
           workspaceEl.classList.toggle('sidebar-collapsed', collapsed);
           sidebarToggle.setAttribute('aria-pressed', collapsed ? 'true' : 'false');
           sidebarToggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+          if (sheet) {
+            if (sheetOpen()) {
+              sheet.setAttribute('role', 'dialog');
+              sheet.setAttribute('aria-modal', 'true');
+              sheet.setAttribute('aria-label', 'Archive calendar and saved searches');
+              if (moveFocus && closeButton) closeButton.focus({ preventScroll: true });
+            } else {
+              sheet.removeAttribute('role');
+              sheet.removeAttribute('aria-modal');
+            }
+          }
+          if (moveFocus && collapsed) sidebarToggle.focus({ preventScroll: true });
+          if (window.syncGridOffset) window.syncGridOffset();
           updateActionsOverflow();
         };
         const storedSidebar = localStorage.getItem('webcam_sidebar_collapsed');
-        applySidebarState(sidebarDefaultCollapsed(storedSidebar, document.documentElement.clientWidth, 992));
+        // Never auto-open a modal sheet on page load, even when a desktop
+        // preference previously stored the sidebar as expanded.
+        applySidebarState(mobileSheet() ? true
+          : sidebarDefaultCollapsed(storedSidebar, document.documentElement.clientWidth, 992));
+        const closeSheet = () => {
+          if (!sheetOpen()) return;
+          applySidebarState(true, true);
+          try { localStorage.setItem('webcam_sidebar_collapsed', 'true'); } catch (_) {}
+        };
+        window.closeCalendarSheet = closeSheet;
         sidebarToggle.addEventListener('click', () => {
           const collapsed = !workspaceEl.classList.contains('sidebar-collapsed');
-          applySidebarState(collapsed);
-          localStorage.setItem('webcam_sidebar_collapsed', String(collapsed));
+          applySidebarState(collapsed, true);
+          try { localStorage.setItem('webcam_sidebar_collapsed', String(collapsed)); } catch (_) {}
+        });
+        closeButton?.addEventListener('click', closeSheet);
+        backdrop?.addEventListener('click', closeSheet);
+        document.addEventListener('keydown', (event) => {
+          if (!sheetOpen()) return;
+          if (event.key === 'Escape') {
+            event.preventDefault();
+            closeSheet();
+          } else if (event.key === 'Tab' && sheet) {
+            const focusable = [...sheet.querySelectorAll('button:not(:disabled), select:not(:disabled), a[href], input:not(:disabled)')]
+              .filter(el => el.getClientRects().length > 0);
+            if (!focusable.length) { event.preventDefault(); return; }
+            const first = focusable[0], last = focusable[focusable.length - 1];
+            if (!sheet.contains(document.activeElement)) {
+              event.preventDefault(); first.focus();
+            } else if (event.shiftKey && document.activeElement === first) {
+              event.preventDefault(); last.focus();
+            } else if (!event.shiftKey && document.activeElement === last) {
+              event.preventDefault(); first.focus();
+            }
+          }
+        }, true);
+        window.addEventListener('resize', () => {
+          if (sheetOpen() && !mobileSheet()) closeSheet();
+          if (sheet) {
+            if (sheetOpen()) { sheet.setAttribute('role', 'dialog'); sheet.setAttribute('aria-modal', 'true'); }
+            else { sheet.removeAttribute('role'); sheet.removeAttribute('aria-modal'); }
+          }
         });
       }
 
