@@ -50,7 +50,7 @@ function check(html, label) {
   const body = L.markup();
 
   // ---- 1. the host is in the content column, not in the rail ----------------
-  const aside = body.match(/<aside>[\s\S]*?<\/aside>/);
+  const aside = body.match(/<aside(?:\s[^>]*)?>[\s\S]*?<\/aside>/);
   assert.ok(aside, `${label}: no <aside> to check the rail against`);
   assert.ok(
     !/activity-chart-container/.test(aside[0]),
