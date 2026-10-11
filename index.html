@@ -3001,6 +3001,13 @@
       .logo-area #sidebar-toggle .sidebar-toggle-label { display: inline; }
     }
 
+    /* #120: keep the intentionally-off inference state readable in the
+       narrow action rail instead of showing 'AI' over 'off' on two lines. */
+    #ai-live-label { white-space: nowrap; }
+    @media (max-width: 480px) {
+      #btn-system-status { font-size: .68rem; }
+    }
+
     /* #115: mobile calendar behaves as a dismissible bottom sheet; it must
        never push camera activity below the fold or reserve a narrow column. */
     .fv-calendar-backdrop, .fv-cal-close { display: none; }
