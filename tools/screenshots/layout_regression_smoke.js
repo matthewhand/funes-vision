@@ -44,7 +44,15 @@ async function main() {
         if (collapsed === 'false') await calendar.evaluate(el => el.click());
         assert.equal(await calendar.getAttribute('aria-expanded'),'true');
         const aside = await page.locator('.workspace aside').boundingBox();
-        assert(aside.width >= Math.min(width-48, 260), size+' calendar rail should use mobile width');
+        assert(aside.width >= width-2, size+' calendar sheet must occupy viewport width');
+        assert(aside.bottom >= height-2, size+' sheet must be anchored at viewport bottom');
+        assert(await page.locator('#fv-calendar-close').isVisible(), size+' visible dismiss button');
+        // Modal must not push the gallery down the document. Verify keyboard
+        // close and focus restoration before interacting with the real feed.
+        await page.keyboard.press('Escape');
+        assert.equal(await calendar.getAttribute('aria-expanded'),'false');
+        assert(await calendar.evaluate(el => document.activeElement === el), size+' Escape restores opener focus');
+        assert(!await page.locator('#fv-calendar-close').isVisible(), size+' sheet dismissed');
       }
       await page.locator('#filter-tabs [data-filter="all"]').evaluate(el=>el.click());
       await page.locator('#image-grid .image-card').first().waitFor({state:'attached',timeout:15000});
@@ -64,7 +72,7 @@ async function main() {
       }
       await page.screenshot({path:path.join(OUT,size+'-light.png'),animations:'disabled'});
       // A nonzero scroll region alone is not enough: the gallery must be
-      // reachable even when a short screen starts with Calendar expanded.
+      // reachable on short screens after dismissing the calendar sheet.
       const firstCard = page.locator('#image-grid .image-card').first();
       await firstCard.scrollIntoViewIfNeeded({timeout:7000});
       const reachable = await firstCard.evaluate(card => {
