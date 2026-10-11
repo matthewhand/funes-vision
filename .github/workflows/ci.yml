@@ -122,6 +122,9 @@ jobs:
       - name: Verify gallery layout and mobile sheets across viewports
         run: node tools/screenshots/layout_regression_smoke.js
 
+      - name: Verify the event feed is on the first screen (short and small viewports)
+        run: node tools/screenshots/first_screen_smoke.js
+
       - name: Verify gallery without Ollama inference
         run: node tools/screenshots/offline_inference_smoke.js
 
