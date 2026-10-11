@@ -54,15 +54,17 @@ node tools/screenshots/a11y_audit.js         # exits non-zero on any finding
 echo $?
 ```
 
-One navigation, six application states (Timeline, Objects, Motion, the
-lightbox, Settings, System status) plus three views re-measured at eight
-widths and a second context with `prefers-reduced-motion: reduce`. A full run
-takes ~20s. Useful knobs:
+One navigation **per theme** (Light and Dark by default), six application
+states (Timeline, Objects, Motion, the lightbox, Settings, System status) in
+each, plus three views re-measured at eight widths and a second context with
+`prefers-reduced-motion: reduce`. A full both-theme run takes ~40s. Useful
+knobs:
 
 | Var / flag | Default | Meaning |
 |------------|---------|---------|
 | `A11Y_AUDIT_URL` / `--url` | `http://127.0.0.1:8899/` | Origin to audit (loopback only) |
 | `A11Y_AUDIT_FIXTURES` / `--fixtures` | `tools/screenshots/fixtures/gallery` | Fixture root; **refuses to run if it resolves under `/mnt/models`** |
+| `A11Y_AUDIT_THEME` / `--theme=light\|dark\|both` | `both` | Which theme(s) every state is audited under |
 | `A11Y_AUDIT_JSON` | unset | Also write the full report as JSON (CI uploads it) |
 | `A11Y_AUDIT_ALLOW_REMOTE` | unset | Escape hatch for a non-loopback origin |
 | `--selfcheck` | – | Non-vacuity proof (below); no proxy needed |
@@ -73,10 +75,12 @@ takes ~20s. Useful knobs:
 |-------|---------|-----------|
 | `http-clean` | no response ≥ 400, no failed request, no `console.error`, no uncaught exception | – |
 | `target-size` | every rendered interactive target | ≥ 24×24 CSS px (WCAG 2.5.8 AA) |
-| `text-contrast` | every visible text node against its **composited** background | ≥ 4.5:1 body, ≥ 3:1 large (WCAG 1.4.3 AA) |
+| `text-contrast` | every measured text node against its **composited** background | ≥ 4.5:1 body, ≥ 3:1 large (WCAG 1.4.3 AA) |
+| `text-contrast-coverage` | every audited state measures ≥ 80% of its own text nodes | 0.8 floor |
 | `h-overflow` | no sideways page scroll at 320/360/390/414/768/1024/1280/1440 | 1px tolerance |
 | `reduced-motion` | under `prefers-reduced-motion: reduce`, nothing animates | ≤ 50ms per iteration |
 | `image-alt` | every `<img>`/`input[type=image]` has `alt`; no **visible** image is broken (`complete && naturalWidth === 0`) | – |
+| `theme-applied` | the page resolved `html[data-theme]` to every requested theme | Light and Dark |
 
 Measurement notes, because these are the parts that are easy to get wrong:
 
@@ -87,9 +91,28 @@ Measurement notes, because these are the parts that are easy to get wrong:
   static colour pair is 5.7:1, the *painted* pair is 4.21:1, and only the
   composited number is the one a user sees. A text node whose effective
   opacity is below 0.1 is treated as not painted (the hidden toast, a
-  crossfaded frame), and text over a `background-image` or an unparseable
-  colour is reported in the per-state `coverage` line as a skip rather than
-  guessed at.
+  crossfaded frame).
+- **Gradients are measured, not skipped** (issue #116). A
+  `background-image` that is only `linear-`/`radial-`/`conic-gradient` has
+  every colour stop extracted — `rgb`/`rgba`/`hsl`/hex, and the usual
+  `transparent` tail, which composites to the colour beneath it. Each stop is
+  composited over the layers under it and the **worst-case** ratio across the
+  plain background colour and all the stops is the one the gate acts on, so
+  text is checked against the part of the gradient it is actually worst on.
+  Only a real raster `url()` image (a photo) still skips, as
+  `background-url-image` — and those nodes are exactly what the coverage gate
+  counts.
+- **Coverage gate.** Each state's text nodes are counted and the check fails
+  when `textChecked === 0` or `textChecked / textNodes < 0.8`. The failure
+  message names the per-reason skip histogram (printed in the coverage line and
+  in `A11Y_AUDIT_JSON`), and the only waiver is a documented
+  `SKIP_EXCEPTIONS` entry: `{ selector, why }`, e.g. a caption painted over a
+  full-size url() photo. A contrast check that skipped every node in a state
+  used to report PASS over 0 measurements; that is what this gate kills.
+- **Themes.** `--theme` (default `both`) seeds `localStorage
+  funes-vision.theme` with an init script before the page loads, runs every
+  state under Light and Dark, and the run fails if `html[data-theme]` does not
+  resolve to the theme that was asked for. Coverage is reported per theme.
 - **Target size** skips what is not a target: no layout box (`display:none`, a
   closed `<details>`), `visibility:hidden`, effective opacity 0,
   `pointer-events:none`, `aria-hidden`, and a link in a run of prose (the
@@ -119,18 +142,27 @@ node tools/screenshots/a11y_audit.js --selfcheck
 ```
 
 Runs the same collectors and the same checkers in a real browser over inline
-pages and asserts the outcome: a seeded page (6×6 target, 3.45:1 text pair,
-2000px block, `<img>` with no `alt`, a broken image, a refused request, an
-uncaught exception, a 700ms spin under reduced motion) **must** fail, a clean
-page **must** pass, and the 0.001ms reduced-motion override **must** pass. CI
-runs this before the real audit.
+pages and asserts the outcome: a seeded page (6×6 target, 3.45:1 text pair on a
+flat background **and** 3.45:1 text over a `linear-gradient` — the case issue
+#116 silently skipped — 2000px block, `<img>` with no `alt`, a broken image, a
+refused request, an uncaught exception, a 700ms spin under reduced motion)
+**must** fail, a clean page (including readable text over a gradient) **must**
+pass, the 0.001ms reduced-motion override **must** pass, and a page whose every
+text node is over a `url()` photo **must** trip the coverage gate — unless the
+nodes are on the documented exception list. CI runs this before the real audit.
 
 `tests/test_a11y_audit_gate.js` (fast, no browser) pins the same contract from
-the other side: the thresholds are the WCAG values, all six checks are
+the other side: the thresholds are the WCAG values, all eight checks are
 registered, each check fails on a seeded violation and passes on a compliant
 record, the carve-outs still work, the WCAG formula matches the repo's existing
 static a11y test, and the CI job cannot lose the pin, the self-check, or its
 own ability to fail.
+
+`tests/test_a11y_coverage_gate.js` (fast, no browser) pins the coverage gate
+itself: gradient stop extraction (rgb/rgba/hsl/hex/transparent, and a refusal
+for colour spaces it cannot read), worst-case compositing across the stops, the
+0.8 floor's decision function including the documented waivers, and that the
+in-page bundle still ships the helpers that do the measuring.
 
 ### Adding an assertion
 

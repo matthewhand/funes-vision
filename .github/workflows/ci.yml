@@ -111,7 +111,9 @@ jobs:
       - name: Audit the fixture gallery
         env:
           A11Y_AUDIT_JSON: ${{ github.workspace }}/a11y-report.json
-        run: node tools/screenshots/a11y_audit.js
+        # Both themes (the default): a gate that only ever measured one of
+        # Light/Dark already missed the gradient skip in issue #116.
+        run: node tools/screenshots/a11y_audit.js --theme=both
 
       - name: Verify responsive light/dark/system themes
         run: node tools/screenshots/theme_smoke.js
