@@ -9232,6 +9232,10 @@
             if (s.inference.partial) {
               inferHtml += `<br>&nbsp;&nbsp;<span style="color:var(--text-secondary);font-style:italic;">“${escapeHtml(s.inference.partial)}”</span>`;
             }
+          } else if (s.llm && s.llm.reachable === false) {
+            // Ollama/System1 may be intentionally stopped. Never paint a
+            // green "idle" state when the inference model is unreachable.
+            inferHtml = '<span style="color:var(--text-secondary);">&#9679;</span> <b>Inference:</b> unavailable (existing recordings remain browsable)';
           } else {
             inferHtml = `<span style="color:#10b981;">&#9679;</span> <b>Inference:</b> idle`;
           }
@@ -9436,6 +9440,10 @@ const props = schemaObj.properties || {};
             const inferMeta = parseFilename(s.inference.image);
             const inferNice = lightboxTitle(inferMeta) || s.inference.image;
             btnSystemStatus.title = `Analyzing ${inferNice} (${s.inference.trigger}) - tap for details`;
+          } else if (s.llm && s.llm.reachable === false) {
+            dot.className = '';
+            label.textContent = 'AI off';
+            btnSystemStatus.title = 'Inference model unavailable; archive and detections remain viewable';
           } else {
             dot.className = 'idle';
             label.textContent = 'AI';
