@@ -1784,7 +1784,8 @@
          made the page body jump by thousands of pixels. Capping it here keeps
          the viewport stable across tab switches; the sentinel lives inside the
          grid so infinite scroll still fires as you scroll the grid. */
-      max-height: calc(100dvh - var(--grid-top-offset, 200px));
+      max-height: max(min(60dvh, 320px), calc(100dvh - var(--grid-top-offset, 200px)));
+      min-height: min(60dvh, 320px);
       overflow-y: auto;
       overflow-x: hidden;
       scroll-padding: var(--grid-gap);
@@ -2797,6 +2798,9 @@
     .fv-beacon { width: 7px; height: 7px; border-radius: 50%; background: #3de1a0; box-shadow: 0 0 0 3px rgba(61, 225, 160, .12); }
     .fv-context-bar h2 { margin: 0; font-size: clamp(1.15rem, 1.8vw, 1.55rem); font-weight: 750; line-height: 1.25; letter-spacing: -.035em; }
     .fv-context-bar p { margin: 4px 0 0; color: var(--text-secondary); font-size: .79rem; line-height: 1.5; }
+    @media (max-height: 700px) {
+      .fv-context-bar { display: none; }
+    }
     .fv-context-links { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
     .fv-context-link {
       display: inline-flex; align-items: center; justify-content: center; gap: 8px;
@@ -9016,6 +9020,12 @@
             else { sheet.removeAttribute('role'); sheet.removeAttribute('aria-modal'); }
           }
         });
+      }
+
+      const tp = document.querySelector('details.trends-panel');
+      if (tp) {
+        if (window.matchMedia('(max-height: 700px)').matches) tp.removeAttribute('open');
+        tp.addEventListener('toggle', syncGridOffset);
       }
 
       // Cap the image grid to the visible area so the All tab can't grow the
