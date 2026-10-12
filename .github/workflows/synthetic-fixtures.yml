@@ -1,0 +1,14 @@
+name: Synthetic demo integrity
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify synthetic-only asset allowlist and digest manifest
+        run: python3 tests/check_synthetic_assets.py

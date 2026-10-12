@@ -10,4 +10,10 @@ The forthcoming sample gallery will use **synthetic, AI-generated demonstration 
 
 ## Status
 
-**Early preview — not yet installable.** An offline demonstration uses fictional, AI-generated camera imagery. Camera ingestion and optional local analysis are planned for a later release.
+**Early preview — not yet installable.** Explore the fictional camera images in the offline gallery below. The full capture and analysis service is not part of this demonstration.
+
+## Synthetic CCTV-style demonstration
+
+Explore a self-contained, offline [synthetic camera gallery](demo/index.html). Its images are AI-generated illustrations, **not authentic CCTV recordings**. No cameras, accounts, or model services are needed.
+
+The bundled imagery is documented in [`manifest.json`](manifest.json).
