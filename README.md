@@ -10,6 +10,41 @@
 
 **All imagery in the animation and demo is AI-generated and fictional.** It does not show real CCTV events or indicate that a detector, inference model or live camera has run.
 
+## How Funes Vision works
+
+**The camera performs motion detection.** Funes Vision does not need a continuous
+video feed or run its own motion detection: a motion-detecting IP camera first
+saves a JPEG when it notices activity, into a folder Funes Vision watches.
+Cameras can upload those stills over FTP/SFTP or another supported local copy
+workflow. Funes Vision then processes the saved images.
+
+```mermaid
+flowchart TD
+    A["Motion-detecting camera<br/>Camera detects movement"]
+    B["Watched folder<br/>Motion-triggered JPEG stills"]
+    C["File watcher + image catalog"]
+    D["Fast object detection<br/>YOLO: person, car, animal"]
+    E{"Relevant object for<br/>deeper context?"}
+    F["Detector-only / motion event"]
+    G["Optional vision decision model / LLM<br/>Structured scene context"]
+    H["Combine contextual flags<br/>Keep detector labels"]
+    I["Group events into visits<br/>Store local catalog"]
+    J["Funes Vision gallery<br/>Timeline, filters, playback"]
+
+    A -->|Saved JPEG| B
+    B --> C --> D --> E
+    E -->|No| F --> I
+    E -->|Yes, if enabled| G --> H --> I
+    I --> J
+```
+
+The object detector identifies candidate subjects; the optional decision/vision
+LLM adds structured context for selected candidates, rather than replacing the
+detector's labels. If optional analysis is disabled or unavailable, the image
+archive can still operate. **The public preview below currently simulates this
+flow with fictional data; the live watcher/detector/LLM backend is not included
+yet.**
+
 ## Try the synthetic frontend preview
 
 This pre-release project currently provides two sample experiences: an accessible standalone [synthetic stills gallery](demo/index.html) and the more complete [Refined Current frontend](frontend/index.html), which demonstrates the timeline, camera switching, archive and inspection UI. Both run entirely against supplied fictional fixtures.
