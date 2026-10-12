@@ -1,7 +1,9 @@
-# Allowlist build context. Never send Git history, local configs or camera data.
+# Strict build context allowlist; never include real camera data or Git objects.
 *
-!package.json
-!server.mjs
+!funes/
+!funes/**
+!activity/
+!activity/**
 !frontend/
 !frontend/**
 !demo/
@@ -10,8 +12,12 @@
 !demo-frames/**
 !demo-thumbs/
 !demo-thumbs/**
+!tools/
+!tools/synthetic_scenarios.json
 !docs/
 !docs/evidence/
 !docs/evidence/**
 !docs/architecture-overview.svg
 !manifest.json
+!package.json
+!server.mjs

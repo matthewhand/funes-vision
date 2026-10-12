@@ -41,3 +41,50 @@ jobs:
           grep -q 'SYNTHETIC DEMO' /tmp/funes-preview.html
           test "$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:8000/.git/config)" = 404
           test "$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:8000/api/status)" = 404
+  python-single-origin:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      matrix:
+        python-version: ['3.10', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Verify watched-folder ingestion and single-origin API
+        run: python3 -m unittest discover -s tests -p test_watched_folder.py
+      - name: Verify all synthetic sample images
+        run: python3 tests/check_synthetic_assets.py
+  python-single-origin-docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare only synthetic motion JPEGs
+        run: python3 tools/seed_synthetic_watch.py
+      - name: Start single-origin Python container and prove watched-folder flow
+        shell: bash
+        run: |
+          set -euo pipefail
+          trap 'docker compose down --remove-orphans' EXIT
+          docker compose up --build --detach
+          for attempt in {1..20}; do
+            if curl --fail --silent http://127.0.0.1:8000/api/activity -o /tmp/funes-activity.json; then break; fi
+            sleep 1
+          done
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          data=json.loads(Path('/tmp/funes-activity.json').read_text())
+          assert (data['count'],data['visit_count']) == (10,7), data
+          assert data['inference']['object_detector']=='not run'
+          assert any(v['frame_count']==3 and v['objects']==['person'] for v in data['visits'])
+          print('PASS: 10 camera JPEGs in watch folder → 7 grouped visits, no inference')
+          PY
+          curl --fail --silent http://127.0.0.1:8000/activity/index.html -o /tmp/funes-activity.html
+          grep -q 'SYNTHETIC PROOF MODE' /tmp/funes-activity.html
+          curl --fail --silent http://127.0.0.1:8000/frontend/index.html -o /tmp/funes-frontend.html
+          grep -q 'SYNTHETIC DEMO' /tmp/funes-frontend.html
+          test "$(curl --silent -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/.git/config)" = 404
+          test "$(curl --silent -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/funes/server.py)" = 404

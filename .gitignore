@@ -1,0 +1,13 @@
+# Local runtime snapshots: personal camera footage never enters source history.
+/runtime/
+**/.env
+**/.env.*
+!**/.env.example
+**/settings.json
+**/analysis.json
+**/events.jsonl
+**/*.sqlite
+**/*.db
+**/.htpasswd
+__pycache__/
+.pytest_cache/

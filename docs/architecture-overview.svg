@@ -57,14 +57,14 @@
       <text x="70" y="256">Motion detected</text>
       <text x="389" y="256">JPEG saved</text>
       <text x="708" y="256">Object detection</text>
-      <text x="1068" y="256">Searchable visits</text>
+      <text x="1068" y="256">Grouped visits</text>
     </g>
     <g fill="#b9cad9" font-size="14">
       <text x="70" y="281">By the camera itself</text>
       <text x="70" y="301">No continuous stream needed</text>
       <text x="389" y="281">FTP, SFTP, or local copy</text>
       <text x="389" y="301">New images trigger indexing</text>
-      <text x="708" y="281">Fast YOLO pass</text>
+      <text x="708" y="281">Fast YOLO pass per frame</text>
       <text x="708" y="301">Person · vehicle · animal</text>
       <text x="1068" y="281">Timeline · filters · playback</text>
       <text x="1068" y="301">Local event catalog</text>
@@ -80,8 +80,8 @@
     <path d="M1119 401h81v-63" fill="none" stroke="#c4aaed" stroke-width="3" stroke-linejoin="round" marker-end="url(#arrAlt)"/>
     <rect x="684" y="358" width="430" height="102" rx="16" fill="url(#violet)" stroke="#9480be" stroke-width="1.4"/>
     <text x="706" y="383" font-size="12" fill="#cdbef0" font-weight="700" letter-spacing="1.2">OPTIONAL · IF ENABLED</text>
-    <text x="706" y="413" font-size="19" fill="#f5efff" font-weight="720">Vision decision model / LLM</text>
-    <text x="706" y="438" font-size="13.5" fill="#d6cdec">Adds scene context; retains detector labels</text>
+    <text x="706" y="413" font-size="19" fill="#f5efff" font-weight="720">System1 decision / vision LLM</text>
+    <text x="706" y="438" font-size="13.5" fill="#d6cdec">Selected frames / visit sequence; preserves labels</text>
 
     <rect x="46" y="377" width="572" height="83" rx="16" fill="#142235" stroke="#3c526c"/>
     <circle cx="72" cy="400" r="6" fill="#7de1be"/>
