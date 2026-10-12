@@ -1,0 +1,178 @@
+{
+  "cameras": [
+    {
+      "id": "DemoFront",
+      "index": 0,
+      "kind": "front",
+      "label": "Front sample",
+      "source_dir": "synthetic-only"
+    },
+    {
+      "id": "DemoBack",
+      "index": 1,
+      "kind": "back",
+      "label": "Back sample",
+      "source_dir": "synthetic-only"
+    }
+  ],
+  "catalogs": {
+    "DemoBack": {
+      "analysis": {
+        "demo-back_01_20261012080000000_MOTDEC.jpg": {
+          "description": "Synthetic illustration: quiet garden. Not an inference result.",
+          "fast_pass": "synthetic_fixture"
+        },
+        "demo-back_01_20261012120000000_MOTDEC.jpg": {
+          "bird": true,
+          "description": "Synthetic illustration: fictional bird in garden. Not an inference result.",
+          "fast_pass": "synthetic_fixture"
+        },
+        "demo-back_01_20261012143010000_MOTDEC.jpg": {
+          "description": "Synthetic illustration: fictional dog in garden. Not an inference result.",
+          "dog": true,
+          "fast_pass": "synthetic_fixture"
+        },
+        "demo-back_01_20261012143028000_MOTDEC.jpg": {
+          "description": "Synthetic illustration: fictional dog by fence. Not an inference result.",
+          "dog": true,
+          "fast_pass": "synthetic_fixture"
+        }
+      },
+      "bursts": {},
+      "images": [
+        "demo-back_01_20261012080000000_MOTDEC.jpg",
+        "demo-back_01_20261012120000000_MOTDEC.jpg",
+        "demo-back_01_20261012143010000_MOTDEC.jpg",
+        "demo-back_01_20261012143028000_MOTDEC.jpg"
+      ],
+      "pins": [],
+      "thumbUrl": "thumbs/demo-back_01_20261012080000000_MOTDEC.jpg"
+    },
+    "DemoFront": {
+      "analysis": {
+        "demo-front_01_20261012070200000_MOTDEC.jpg": {
+          "description": "Synthetic illustration: empty entrance. Not an inference result.",
+          "fast_pass": "synthetic_fixture"
+        },
+        "demo-front_01_20261012093015000_MOTDEC.jpg": {
+          "car": true,
+          "description": "Synthetic illustration: fictional arriving vehicle. Not an inference result.",
+          "fast_pass": "synthetic_fixture"
+        },
+        "demo-front_01_20261012101418112_MOTDEC.jpg": {
+          "description": "Synthetic illustration: fictional pedestrian. Not an inference result.",
+          "fast_pass": "synthetic_fixture",
+          "person": true
+        },
+        "demo-front_01_20261012101445190_MOTDEC.jpg": {
+          "description": "Synthetic illustration: fictional person near entrance. Not an inference result.",
+          "fast_pass": "synthetic_fixture",
+          "person": true
+        },
+        "demo-front_01_20261012101522301_MOTDEC.jpg": {
+          "description": "Synthetic illustration: fictional visitor leaving. Not an inference result.",
+          "fast_pass": "synthetic_fixture",
+          "person": true
+        },
+        "demo-front_01_20261012170000000_MOTDEC.jpg": {
+          "description": "Synthetic illustration: quiet entrance. Not an inference result.",
+          "fast_pass": "synthetic_fixture"
+        }
+      },
+      "bursts": {},
+      "images": [
+        "demo-front_01_20261012070200000_MOTDEC.jpg",
+        "demo-front_01_20261012093015000_MOTDEC.jpg",
+        "demo-front_01_20261012101418112_MOTDEC.jpg",
+        "demo-front_01_20261012101445190_MOTDEC.jpg",
+        "demo-front_01_20261012101522301_MOTDEC.jpg",
+        "demo-front_01_20261012170000000_MOTDEC.jpg"
+      ],
+      "pins": [],
+      "thumbUrl": "thumbs/demo-front_01_20261012070200000_MOTDEC.jpg"
+    }
+  },
+  "inference_log": [],
+  "integrations": {},
+  "llm_schema": {},
+  "settings": {
+    "allow_cloud": false,
+    "burst_summaries_enabled": false,
+    "decision_backend": "disabled",
+    "deep_backfill": false,
+    "deep_passes_enabled": false,
+    "fast_pass_engine": "synthetic_fixture",
+    "idle_sweep_seconds": 0,
+    "timezone": "UTC",
+    "watch_dirs": []
+  },
+  "status": {
+    "cameras": [
+      {
+        "kind": "front",
+        "last_frame_age_s": null,
+        "name": "DemoFront",
+        "stale": false
+      },
+      {
+        "kind": "back",
+        "last_frame_age_s": null,
+        "name": "DemoBack",
+        "stale": false
+      }
+    ],
+    "filesystem": {
+      "free_gb": null
+    },
+    "inference": {},
+    "llm": {
+      "allow_cloud": false,
+      "backend": "disabled",
+      "model": null,
+      "reachable": false
+    },
+    "metrics": {
+      "avg_s": null,
+      "cloud": 0,
+      "local": 0,
+      "p95_s": null
+    },
+    "queue": {
+      "awaiting_backfill": 0,
+      "images_on_disk": 10,
+      "llm_verified": 0,
+      "synthetic": true,
+      "unanalyzed": 0,
+      "unverified_partials": 0
+    },
+    "retention": null,
+    "settings": {
+      "allow_cloud": false,
+      "burst_summaries_enabled": false,
+      "decision_backend": "disabled",
+      "deep_backfill": false,
+      "deep_passes_enabled": false,
+      "fast_pass_engine": "synthetic_fixture",
+      "idle_sweep_seconds": 0,
+      "timezone": "UTC",
+      "watch_dirs": []
+    },
+    "synthetic_fixture": true,
+    "timezone": "UTC",
+    "trigger": {
+      "idle_sweep_seconds": 0,
+      "inotify_active": false,
+      "last_sweep_age_s": null
+    }
+  },
+  "taxonomy": {
+    "dropped_flags": [],
+    "ha_flag_keys": [],
+    "ha_string_parents": {},
+    "ha_string_sentinels": [
+      "",
+      "none",
+      "unknown"
+    ]
+  }
+}

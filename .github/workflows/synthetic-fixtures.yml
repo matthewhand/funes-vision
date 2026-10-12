@@ -11,4 +11,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Verify synthetic-only asset allowlist and digest manifest
-        run: python3 tests/check_synthetic_assets.py
+        run: |
+          python3 tests/check_synthetic_assets.py
+          python3 tests/check_refined_frontend.py
+      - name: Verify standalone frontend syntax
+        run: |
+          node --check frontend/static/fixture-api.js
+          node tests/check_refined_frontend_inline.cjs

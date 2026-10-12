@@ -1,0 +1,49 @@
+{
+  "demo-back_01_20261012080000000_MOTDEC.jpg": {
+    "description": "Synthetic illustration: quiet garden. Not an inference result.",
+    "fast_pass": "synthetic_fixture"
+  },
+  "demo-back_01_20261012120000000_MOTDEC.jpg": {
+    "bird": true,
+    "description": "Synthetic illustration: fictional bird in garden. Not an inference result.",
+    "fast_pass": "synthetic_fixture"
+  },
+  "demo-back_01_20261012143010000_MOTDEC.jpg": {
+    "description": "Synthetic illustration: fictional dog in garden. Not an inference result.",
+    "dog": true,
+    "fast_pass": "synthetic_fixture"
+  },
+  "demo-back_01_20261012143028000_MOTDEC.jpg": {
+    "description": "Synthetic illustration: fictional dog by fence. Not an inference result.",
+    "dog": true,
+    "fast_pass": "synthetic_fixture"
+  },
+  "demo-front_01_20261012070200000_MOTDEC.jpg": {
+    "description": "Synthetic illustration: empty entrance. Not an inference result.",
+    "fast_pass": "synthetic_fixture"
+  },
+  "demo-front_01_20261012093015000_MOTDEC.jpg": {
+    "car": true,
+    "description": "Synthetic illustration: fictional arriving vehicle. Not an inference result.",
+    "fast_pass": "synthetic_fixture"
+  },
+  "demo-front_01_20261012101418112_MOTDEC.jpg": {
+    "description": "Synthetic illustration: fictional pedestrian. Not an inference result.",
+    "fast_pass": "synthetic_fixture",
+    "person": true
+  },
+  "demo-front_01_20261012101445190_MOTDEC.jpg": {
+    "description": "Synthetic illustration: fictional person near entrance. Not an inference result.",
+    "fast_pass": "synthetic_fixture",
+    "person": true
+  },
+  "demo-front_01_20261012101522301_MOTDEC.jpg": {
+    "description": "Synthetic illustration: fictional visitor leaving. Not an inference result.",
+    "fast_pass": "synthetic_fixture",
+    "person": true
+  },
+  "demo-front_01_20261012170000000_MOTDEC.jpg": {
+    "description": "Synthetic illustration: quiet entrance. Not an inference result.",
+    "fast_pass": "synthetic_fixture"
+  }
+}
