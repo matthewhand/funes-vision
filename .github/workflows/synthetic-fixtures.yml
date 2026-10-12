@@ -82,7 +82,9 @@ jobs:
           assert any(v['frame_count']==3 and v['objects']==['person'] for v in data['visits'])
           print('PASS: 10 camera JPEGs in watch folder → 7 grouped visits, no inference')
           PY
-          curl --fail --silent http://127.0.0.1:8000/activity/index.html | grep -q 'SYNTHETIC PROOF MODE'
-          curl --fail --silent http://127.0.0.1:8000/frontend/index.html | grep -q 'SYNTHETIC DEMO'
+          curl --fail --silent http://127.0.0.1:8000/activity/index.html -o /tmp/funes-activity.html
+          grep -q 'SYNTHETIC PROOF MODE' /tmp/funes-activity.html
+          curl --fail --silent http://127.0.0.1:8000/frontend/index.html -o /tmp/funes-frontend.html
+          grep -q 'SYNTHETIC DEMO' /tmp/funes-frontend.html
           test "$(curl --silent -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/.git/config)" = 404
           test "$(curl --silent -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/funes/server.py)" = 404
