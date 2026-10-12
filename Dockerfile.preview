@@ -1,0 +1,15 @@
+# Static, synthetic-only public preview. No camera mounts, Python, or model runtime.
+FROM node:22-alpine
+WORKDIR /app
+COPY package.json server.mjs ./
+COPY frontend/ ./frontend/
+COPY demo/ ./demo/
+COPY demo-frames/ ./demo-frames/
+COPY demo-thumbs/ ./demo-thumbs/
+COPY docs/evidence/ ./docs/evidence/
+COPY docs/architecture-overview.svg ./docs/architecture-overview.svg
+COPY manifest.json ./manifest.json
+USER node
+ENV FUNES_PREVIEW_CONTAINER=1
+EXPOSE 8000
+CMD ["node", "server.mjs"]

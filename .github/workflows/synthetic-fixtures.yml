@@ -14,7 +14,30 @@ jobs:
         run: |
           python3 tests/check_synthetic_assets.py
           python3 tests/check_refined_frontend.py
-      - name: Verify standalone frontend syntax
+      - name: Verify standalone frontend and Node preview syntax
         run: |
           node --check frontend/static/fixture-api.js
+          node --check server.mjs
           node tests/check_refined_frontend_inline.cjs
+      - name: Smoke-test dependency-free Node preview
+        run: npm run test:preview
+      - name: Validate Docker preview configuration without starting it
+        run: docker compose -f compose.preview.yml config --quiet
+  docker-preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Boot isolated Docker synthetic preview and smoke-test it
+        shell: bash
+        run: |
+          set -euo pipefail
+          trap 'docker compose -f compose.preview.yml down --remove-orphans' EXIT
+          docker compose -f compose.preview.yml up --build --detach
+          for attempt in {1..20}; do
+            if curl --fail --silent http://127.0.0.1:8000/frontend/index.html -o /tmp/funes-preview.html; then break; fi
+            sleep 1
+          done
+          grep -q 'SYNTHETIC DEMO' /tmp/funes-preview.html
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:8000/.git/config)" = 404
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:8000/api/status)" = 404

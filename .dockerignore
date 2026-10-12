@@ -1,0 +1,17 @@
+# Allowlist build context. Never send Git history, local configs or camera data.
+*
+!package.json
+!server.mjs
+!frontend/
+!frontend/**
+!demo/
+!demo/**
+!demo-frames/
+!demo-frames/**
+!demo-thumbs/
+!demo-thumbs/**
+!docs/
+!docs/evidence/
+!docs/evidence/**
+!docs/architecture-overview.svg
+!manifest.json
