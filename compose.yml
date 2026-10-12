@@ -1,0 +1,18 @@
+name: funes-vision
+services:
+  preview:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "127.0.0.1:${FUNES_PORT:-8000}:8000"
+    volumes:
+      # Local synthetic sample files are the only external runtime input.
+      # No actual camera folders should be mounted to this preview.
+      - ./runtime/incoming:/data/incoming:ro
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    restart: "no"

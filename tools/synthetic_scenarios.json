@@ -1,0 +1,12 @@
+[
+  {"source":"demo-front-01.jpg","timestamp":"2026-10-12T07:02:00+00:00","objects":[],"description":"Illustrative empty front entrance"},
+  {"source":"demo-front-02.jpg","timestamp":"2026-10-12T09:30:15+00:00","objects":["car"],"description":"Illustrative vehicle arriving in front drive"},
+  {"source":"demo-front-03.jpg","timestamp":"2026-10-12T10:14:18+00:00","objects":["person"],"description":"Fictional visitor entering with a parcel"},
+  {"source":"demo-front-04.jpg","timestamp":"2026-10-12T10:14:45+00:00","objects":["person"],"description":"Fictional visitor crossing the driveway"},
+  {"source":"demo-front-05.jpg","timestamp":"2026-10-12T10:15:22+00:00","objects":["person"],"description":"Fictional visitor at the doorway"},
+  {"source":"demo-front-06.jpg","timestamp":"2026-10-12T17:00:00+00:00","objects":[],"description":"Illustrative quiet front entrance"},
+  {"source":"demo-back-01.jpg","timestamp":"2026-10-12T08:00:00+00:00","objects":[],"description":"Illustrative empty back garden"},
+  {"source":"demo-back-02.jpg","timestamp":"2026-10-12T12:00:00+00:00","objects":["bird"],"description":"Fictional bird visiting the garden"},
+  {"source":"demo-back-03.jpg","timestamp":"2026-10-12T14:30:10+00:00","objects":["dog"],"description":"Fictional dog entering the garden"},
+  {"source":"demo-back-04.jpg","timestamp":"2026-10-12T14:30:28+00:00","objects":["dog"],"description":"Fictional dog near the garden fence"}
+]
