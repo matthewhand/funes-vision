@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 528" role="img" aria-labelledby="title description">
+  <title id="title">Funes Vision: from camera motion to searchable visits</title>
+  <desc id="description">The camera detects motion and writes a JPEG to a folder. Funes watches the folder, performs fast YOLO object detection and optionally asks a vision decision model for structured context. Both paths feed an indexed visit timeline. The camera, not Funes, detects motion.</desc>
+  <defs>
+    <linearGradient id="bg" x2="1" y2="1"><stop stop-color="#0b1528"/><stop offset="1" stop-color="#101e30"/></linearGradient>
+    <linearGradient id="header" x2="1"><stop stop-color="#b8ffdb"/><stop offset="1" stop-color="#b0d5ff"/></linearGradient>
+    <linearGradient id="frame" x2="0" y2="1"><stop stop-color="#263952"/><stop offset="1" stop-color="#172538"/></linearGradient>
+    <linearGradient id="green" x2="0" y2="1"><stop stop-color="#214b48"/><stop offset="1" stop-color="#153638"/></linearGradient>
+    <linearGradient id="blue" x2="0" y2="1"><stop stop-color="#1a4153"/><stop offset="1" stop-color="#142e42"/></linearGradient>
+    <linearGradient id="violet" x2="0" y2="1"><stop stop-color="#392f59"/><stop offset="1" stop-color="#292845"/></linearGradient>
+    <filter id="shadow" x="-10%" y="-40%" width="130%" height="180%"><feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#020711" flood-opacity=".3"/></filter>
+    <pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r=".8" fill="#7295af" opacity=".16"/></pattern>
+    <marker id="arr" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M1 1 7 4 1 7" fill="none" stroke="#92b7cb" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker>
+    <marker id="arrAlt" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M1 1 7 4 1 7" fill="none" stroke="#c4aaed" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker>
+  </defs>
+  <rect width="1400" height="528" rx="25" fill="url(#bg)"/>
+  <rect width="1400" height="528" rx="25" fill="url(#dots)"/>
+  <g font-family="system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
+    <text x="50" y="49" font-size="14" font-weight="700" fill="#a9c9d6" letter-spacing="2.3">HOW IT WORKS</text>
+    <text x="50" y="88" font-size="30" font-weight="770" fill="url(#header)">From motion to meaning</text>
+    <text x="1350" y="56" font-size="13" fill="#b6cadd" text-anchor="end">Local-first · Motion-triggered stills</text>
+
+    <!-- Four visually distinct, left-to-right stages. -->
+    <g filter="url(#shadow)">
+      <rect x="46" y="121" width="282" height="208" rx="19" fill="url(#frame)" stroke="#465d79"/>
+      <rect x="365" y="121" width="282" height="208" rx="19" fill="url(#blue)" stroke="#337f91"/>
+      <rect x="684" y="121" width="282" height="208" rx="19" fill="url(#green)" stroke="#3b9181"/>
+      <rect x="1044" y="121" width="310" height="208" rx="19" fill="url(#frame)" stroke="#567d98"/>
+    </g>
+    <!-- Step identifiers -->
+    <g font-size="12" font-weight="700" letter-spacing="1.5">
+      <text x="70" y="150" fill="#aebed0">01 · CAMERA</text>
+      <text x="389" y="150" fill="#89d5e8">02 · WATCHED FOLDER</text>
+      <text x="708" y="150" fill="#86efc3">03 · UNDERSTAND</text>
+      <text x="1068" y="150" fill="#a7c9f3">04 · REVIEW</text>
+    </g>
+    <!-- Camera pictogram -->
+    <g stroke="#dce9ff" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="translate(73 175)">
+      <rect x="0" y="8" width="42" height="34" rx="7"/><circle cx="21" cy="25" r="9"/><path d="M8 8 13 2h17l5 6"/>
+      <path d="M51 25h15m-7-7 7 7-7 7" stroke="#7fe5b9"/>
+    </g>
+    <g stroke="#c8f6ff" stroke-width="2.8" stroke-linejoin="round" fill="none" transform="translate(393 175)">
+      <path d="M0 13q0-5 5-5h16l7 7h26q5 0 5 5v30q0 5-5 5H5q-5 0-5-5Z"/>
+      <path d="M0 23h59"/><path d="M13 37h22" stroke="#7fdedb"/>
+    </g>
+    <g stroke="#b6ffdb" stroke-width="2.6" stroke-linejoin="round" fill="none" transform="translate(711 170)">
+      <rect x="0" y="6" width="56" height="49" rx="10"/>
+      <path d="M12 27h12l7-10 8 22 7-12h10" stroke="#85f0c0"/>
+      <path d="M13 0v6m30-6v6m-30 49v6m30-6v6"/>
+    </g>
+    <g stroke="#d1e6ff" stroke-width="2.6" stroke-linecap="round" fill="none" transform="translate(1070 174)">
+      <rect x="0" y="0" width="59" height="51" rx="8"/><path d="M0 16h59M18 16v35"/>
+      <path d="M29 29h19M29 40h14" stroke="#8cc4ff"/>
+    </g>
+    <!-- Stage titles and supporting lines. -->
+    <g fill="#f5f9ff" font-size="22" font-weight="760">
+      <text x="70" y="256">Motion detected</text>
+      <text x="389" y="256">JPEG saved</text>
+      <text x="708" y="256">Object detection</text>
+      <text x="1068" y="256">Searchable visits</text>
+    </g>
+    <g fill="#b9cad9" font-size="14">
+      <text x="70" y="281">By the camera itself</text>
+      <text x="70" y="301">No continuous stream needed</text>
+      <text x="389" y="281">FTP, SFTP, or local copy</text>
+      <text x="389" y="301">New images trigger indexing</text>
+      <text x="708" y="281">Fast YOLO pass</text>
+      <text x="708" y="301">Person · vehicle · animal</text>
+      <text x="1068" y="281">Timeline · filters · playback</text>
+      <text x="1068" y="301">Local event catalog</text>
+    </g>
+    <!-- Primary sequence connectors. -->
+    <g fill="none" stroke="#92b7cb" stroke-width="3" stroke-linecap="round" marker-end="url(#arr)">
+      <path d="M331 225H355"/>
+      <path d="M650 225H674"/>
+      <path d="M970 225H1034"/>
+    </g>
+    <!-- Optional interpretation lane. -->
+    <path d="M823 332V351" stroke="#c4aaed" stroke-width="3" marker-end="url(#arrAlt)" fill="none"/>
+    <path d="M1119 401h81v-63" fill="none" stroke="#c4aaed" stroke-width="3" stroke-linejoin="round" marker-end="url(#arrAlt)"/>
+    <rect x="684" y="358" width="430" height="102" rx="16" fill="url(#violet)" stroke="#9480be" stroke-width="1.4"/>
+    <text x="706" y="383" font-size="12" fill="#cdbef0" font-weight="700" letter-spacing="1.2">OPTIONAL · IF ENABLED</text>
+    <text x="706" y="413" font-size="19" fill="#f5efff" font-weight="720">Vision decision model / LLM</text>
+    <text x="706" y="438" font-size="13.5" fill="#d6cdec">Adds scene context; retains detector labels</text>
+
+    <rect x="46" y="377" width="572" height="83" rx="16" fill="#142235" stroke="#3c526c"/>
+    <circle cx="72" cy="400" r="6" fill="#7de1be"/>
+    <text x="89" y="406" font-size="16" font-weight="700" fill="#e9f6fc">Motion detection belongs to the camera</text>
+    <text x="69" y="430" font-size="13.5" fill="#adc5d4">Funes starts working after a new image lands in the folder.</text>
+    <text x="69" y="449" font-size="13.5" fill="#adc5d4">Deep scene analysis is optional, not required for indexing.</text>
+
+    <line x1="46" y1="484" x2="1354" y2="484" stroke="#334b64"/>
+    <text x="50" y="506" font-size="12.5" fill="#9bb4c6">PIPELINE DESIGN · The published preview uses fictional AI-generated samples; live ingest and inference are not included yet.</text>
+  </g>
+</svg>

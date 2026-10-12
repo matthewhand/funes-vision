@@ -1,0 +1,14 @@
+{
+  "name": "funes-vision-preview",
+  "version": "0.1.0-preview",
+  "private": true,
+  "type": "module",
+  "description": "Dependency-free synthetic-only Funes Vision frontend preview",
+  "scripts": {
+    "start": "node server.mjs",
+    "test:preview": "node --test tests/preview-server.test.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

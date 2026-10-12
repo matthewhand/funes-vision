@@ -1,0 +1,14 @@
+name: funes-vision-preview
+services:
+  preview:
+    build:
+      context: .
+      dockerfile: Dockerfile.preview
+    ports:
+      - "127.0.0.1:${FUNES_PREVIEW_PORT:-8000}:8000"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    restart: "no"

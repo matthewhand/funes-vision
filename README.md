@@ -1,72 +1,102 @@
 # Funes Vision
 
-> *To remember everything is not the same as understanding what matters.*
->
-> An original epigraph inspired by Jorge Luis Borges's short story *Funes the Memorious*.
+**The camera notices motion. Funes helps you find what mattered.**
 
-**A local-first camera timeline that helps make sense of captured moments.**
+Inspired by *Funes the Memorious*, the short story by Jorge Luis Borges about the burden of remembering everything. Funes Vision is built around a simpler idea: make a camera's many captured moments easier to explore, filter and understand.
 
-![Animated Refined Current UI using entirely synthetic camera-style demonstration images](docs/evidence/refined-current-synthetic-hero.gif)
+![Animated demonstration of the Funes Vision camera timeline, using fictional AI-generated images](docs/evidence/refined-current-synthetic-hero.gif)
 
-**All imagery in the animation and demo is AI-generated and fictional.** It does not show real CCTV events or indicate that a detector, inference model or live camera has run.
+*Real UI, fictional footage. Every image in this preview was AI-generated for demonstration; no real cameras, people or inference results are shown.*
 
-## How Funes Vision works
+## Try the interactive preview
 
-**The camera performs motion detection.** Funes Vision does not need a continuous
-video feed or run its own motion detection: a motion-detecting IP camera first
-saves a JPEG when it notices activity, into a folder Funes Vision watches.
-Cameras can upload those stills over FTP/SFTP or another supported local copy
-workflow. Funes Vision then processes the saved images.
+Browse a camera timeline with two sample camera views, event filters, responsive layouts and image inspection. **This release runs on synthetic data only:** it does not connect to a camera, process motion events or start an AI model.
 
-```mermaid
-flowchart TD
-    A["Motion-detecting camera<br/>Camera detects movement"]
-    B["Watched folder<br/>Motion-triggered JPEG stills"]
-    C["File watcher + image catalog"]
-    D["Fast object detection<br/>YOLO: person, car, animal"]
-    E{"Relevant object for<br/>deeper context?"}
-    F["Detector-only / motion event"]
-    G["Optional vision decision model / LLM<br/>Structured scene context"]
-    H["Combine contextual flags<br/>Keep detector labels"]
-    I["Group events into visits<br/>Store local catalog"]
-    J["Funes Vision gallery<br/>Timeline, filters, playback"]
+Run one of these commands from a clone of the repository:
 
-    A -->|Saved JPEG| B
-    B --> C --> D --> E
-    E -->|No| F --> I
-    E -->|Yes, if enabled| G --> H --> I
-    I --> J
+| Option | Start command | Requirements |
+|---|---|---|
+| **Docker** | `docker compose -f compose.preview.yml up --build` | Docker Engine + Compose |
+| **Node.js** | `npm start` or `node server.mjs` | Node 20+, no npm dependencies |
+| **Python** | `python3 -m http.server 8000 --bind 127.0.0.1` | Python 3 |
+
+For Docker or Node, open **http://127.0.0.1:8000/**. With Python, open **http://127.0.0.1:8000/frontend/index.html**. The sections below explain each method.
+
+<details open>
+<summary><strong>Docker Compose</strong> — build and run the self-contained preview</summary>
+
+Requires Docker Engine and Docker Compose. From the repository directory:
+
+```sh
+docker compose -f compose.preview.yml up --build
 ```
 
-The object detector identifies candidate subjects; the optional decision/vision
-LLM adds structured context for selected candidates, rather than replacing the
-detector's labels. If optional analysis is disabled or unavailable, the image
-archive can still operate. **The public preview below currently simulates this
-flow with fictional data; the live watcher/detector/LLM backend is not included
-yet.**
+Open **http://127.0.0.1:8000/**. Stop with `Ctrl+C`, then use `docker compose -f compose.preview.yml down` if needed. Docker binds only to your own machine's loopback address, runs as a non-root user, and includes only the synthetic public assets. **No camera folder is mounted.**
 
-## Try the synthetic frontend preview
+</details>
 
-This pre-release project currently provides two sample experiences: an accessible standalone [synthetic stills gallery](demo/index.html) and the more complete [Refined Current frontend](frontend/index.html), which demonstrates the timeline, camera switching, archive and inspection UI. Both run entirely against supplied fictional fixtures.
+<details>
+<summary><strong>Node.js 20+</strong> — run without installing packages</summary>
+
+```sh
+npm start
+```
+
+Open **http://127.0.0.1:8000/**. The server uses Node's built-in APIs, so there is **no `npm install` step** and no runtime npm dependencies. Stop with `Ctrl+C`.
+
+</details>
+
+<details>
+<summary><strong>Python 3</strong> — simplest alternative</summary>
 
 ```sh
 python3 -m http.server 8000 --bind 127.0.0.1
 ```
 
-Then open `http://127.0.0.1:8000/frontend/index.html` in a browser, or use `/demo/index.html` for the compact sample gallery. No camera connection, inference runtime, authentication token, or cloud account is required for either demonstration. The preview's API fixture bridge explicitly rejects mutations and does not contact external services.
+Open **http://127.0.0.1:8000/frontend/index.html**. This is a simple local file server. Stop with `Ctrl+C`.
 
-## Project status
+</details>
 
-**Early preview.** The interactive frontend currently runs on fictional, AI-generated sample data. Camera ingestion, live analysis, and production installation are not included in this preview. No local cameras or cloud services are contacted by the demonstration.
+The default browser experience is the **[Refined Current timeline](frontend/index.html)**. For a simpler sample gallery, visit **[the synthetic stills viewer](demo/index.html)**. All three hosting options serve the same fictional sample content and do not start the unpublished camera-analysis backend.
 
-To verify the fixture byte hashes and safe-file rules using only Python's standard library:
+## From motion to meaning
+
+![Architecture overview: a motion-detecting camera writes JPEG images to a watched folder; Funes indexes them, identifies candidate objects with YOLO, optionally adds structured context with a vision model, then groups them into browsable visits](docs/architecture-overview.svg)
+
+**Motion detection happens on the camera, not inside Funes Vision.** The intended live pipeline begins when a motion-detecting camera saves a JPEG to a folder (via FTP, SFTP or another local copy mechanism). Funes then watches that folder, indexes images, and can run a fast YOLO object detector to identify likely people, vehicles or animals.
+
+For selected detections, an **optional vision decision model / LLM** can add structured scene context. It does **not** overwrite object-detector labels. The resulting image records and grouped visits form a searchable timeline. If the decision stage is disabled or unavailable, captured stills can still be indexed and browsed.
+
+The diagram describes the **intended full pipeline**. Only the offline, synthetic frontend demonstration is included in the current public code. A live watched-folder service and inference runtime will be introduced separately.
+
+## What you can explore today
+
+| Timeline and visits | Camera views | Inspect and filter |
+|---|---|---|
+| Browse example events in time order and review captured stills | Switch between fictional front entrance and back garden cameras | Filter scenes, inspect full-size images, and explore the responsive interface |
+
+<details>
+<summary>See the mobile layout</summary>
+
+![Funes Vision mobile timeline with synthetic sample data](docs/evidence/refined-390x844-dark.png)
+
+</details>
+
+## Run the checks
+
+The preview has no installation dependencies beyond your chosen static host. To verify included synthetic assets and the read-only frontend:
 
 ```sh
 python3 tests/check_synthetic_assets.py
 python3 tests/check_refined_frontend.py
 node tests/check_refined_frontend_inline.cjs
+npm run test:preview
 ```
 
-An optional Playwright browser suite is provided in `tests/refined_frontend_browser.cjs` for a reviewer who already has Chromium/Playwright available.
+The last two checks require Node.js; the image/hash and frontend source checks only need Python 3. `tests/refined_frontend_browser.cjs` contains additional optional Playwright browser regressions.
 
-License: MIT. Icons: Lucide (ISC), with details in [third-party notices](THIRD_PARTY_NOTICES.md).
+## Project status and license
+
+**Early preview:** the frontend is interactive and runs locally, but live camera ingestion, YOLO execution, vision-model inference, and production installation are **not included yet**. The demo's subject labels and text are illustrative, not results of a model run.
+
+MIT license. Bundled Lucide icons are ISC-licensed; see [third-party notices](THIRD_PARTY_NOTICES.md). Sample imagery is fictional and AI-generated.
