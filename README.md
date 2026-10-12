@@ -1,28 +1,37 @@
 # Funes Vision
 
-**Local-first camera activity review.**
+> *To remember everything is not the same as understanding what matters.*
+>
+> An original epigraph inspired by Jorge Luis Borges's short story *Funes the Memorious*.
 
-Funes Vision is a camera-event browsing and analysis project focused on an accessible, responsive timeline, transparent analysis states, and operator-controlled inference.
+**A local-first camera timeline that helps make sense of captured moments.**
 
-> **Public MVP preparation:** The public code release is being assembled and independently reviewed. This repository was initialized with a new, separate Git history. Application code and demos will arrive through reviewed pull requests.
+![Animated Refined Current UI using entirely synthetic camera-style demonstration images](docs/evidence/refined-current-synthetic-hero.gif)
 
-## Demonstrations
+**All imagery in the animation and demo is AI-generated and fictional.** It does not show real CCTV events or indicate that a detector, inference model or live camera has run.
 
-The forthcoming sample gallery will use **synthetic, AI-generated demonstration footage**. Images are illustrations of possible camera events, not recordings of real people or actual surveillance.
+## Try the synthetic frontend preview
 
-## Release policy
+This pre-release project currently provides two sample experiences: an accessible standalone [synthetic stills gallery](demo/index.html) and the more complete [Refined Current frontend](frontend/index.html), which demonstrates the timeline, camera switching, archive and inspection UI. Both run entirely against supplied fictional fixtures.
 
-- New work arrives through reviewable pull requests and automated tests.
-- Local configuration, personal camera feeds, credentials, surveillance recordings, and private data must not be included.
-- Examples must work with the synthetic fixture gallery without access to production cameras or model services.
-- Documentation will distinguish measured behavior from unverified model capabilities.
+```sh
+python3 -m http.server 8000 --bind 127.0.0.1
+```
 
-## Status
+Then open `http://127.0.0.1:8000/frontend/index.html` in a browser, or use `/demo/index.html` for the compact sample gallery. No camera connection, inference runtime, authentication token, or cloud account is required for either demonstration. The preview's API fixture bridge explicitly rejects mutations and does not contact external services.
 
-**Pre-release / not yet installable.** The first planned pull request supplies an independently reviewed synthetic gallery and provenance manifest. Runtime and installation documentation will be published as each MVP gate is met.
+## Development and release
 
-## Synthetic CCTV-style demonstration
+The public release is assembled through independently reviewable pull requests. The frontend is currently a **read-only synthetic preview**, not a deployed capture service or complete installable pipeline. Real camera ingestion, optional local inference and production configuration will be released separately after security, dependency and installation review.
 
-A self-contained, entirely offline [interactive synthetic gallery](demo/index.html) is submitted as the first reviewable release candidate. Its images are AI-generated illustrations, **not authentic CCTV recordings**. No server, camera, account, or model is required to inspect the demo.
+To verify the fixture byte hashes and safe-file rules using only Python's standard library:
 
-Image integrity and inclusion are specified in [`manifest.json`](manifest.json); run `python3 tests/check_synthetic_assets.py` to validate the approved sample paths and hashes.
+```sh
+python3 tests/check_synthetic_assets.py
+python3 tests/check_refined_frontend.py
+node tests/check_refined_frontend_inline.cjs
+```
+
+An optional Playwright browser suite is provided in `tests/refined_frontend_browser.cjs` for a reviewer who already has Chromium/Playwright available.
+
+See [public MVP v0.1 milestones](https://github.com/matthewhand/funes-vision/issues/2) for the release gate checklist and [frontend allowlist/provenance notes](docs/FRONTEND_REVIEW.md). License: MIT; the bundled Lucide icon runtime uses ISC.

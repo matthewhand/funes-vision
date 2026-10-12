@@ -1,0 +1,102 @@
+[
+  {
+    "path": "frontend/demo-front_01_20261012070200000_MOTDEC.jpg",
+    "public_demo_source": "demo-frames/demo-front-01.jpg",
+    "sha256": "50dfaaedacf2a10fc92dabb2ad60780218e93008c826cef7c54ec346bdcf2590"
+  },
+  {
+    "path": "frontend/thumbs/demo-front_01_20261012070200000_MOTDEC.jpg",
+    "public_demo_source": "demo-thumbs/demo-front-01.jpg",
+    "sha256": "0265aea3f0f9ec7ff92ffef4476d37154cbc32f13b551cb43144fd11767eccb8"
+  },
+  {
+    "path": "frontend/demo-front_01_20261012093015000_MOTDEC.jpg",
+    "public_demo_source": "demo-frames/demo-front-02.jpg",
+    "sha256": "532b4668d66f2d44c40f625b0520c6a9fbf3f0a59f4d6b9f16cbbc42350eaacf"
+  },
+  {
+    "path": "frontend/thumbs/demo-front_01_20261012093015000_MOTDEC.jpg",
+    "public_demo_source": "demo-thumbs/demo-front-02.jpg",
+    "sha256": "3df01ea0b40a762a5896ce424b584fea8d5a37fc0fbac718a22b546e8ee0368c"
+  },
+  {
+    "path": "frontend/demo-front_01_20261012101418112_MOTDEC.jpg",
+    "public_demo_source": "demo-frames/demo-front-03.jpg",
+    "sha256": "6581e6f135745b95ca704274b8ac6d25cf6662d026f79e9cc66844770abed68e"
+  },
+  {
+    "path": "frontend/thumbs/demo-front_01_20261012101418112_MOTDEC.jpg",
+    "public_demo_source": "demo-thumbs/demo-front-03.jpg",
+    "sha256": "6ce621f54f093258b7e8dcb07fdfb46c365e2f3aa795f1c1c54d9ad146cb94bb"
+  },
+  {
+    "path": "frontend/demo-front_01_20261012101445190_MOTDEC.jpg",
+    "public_demo_source": "demo-frames/demo-front-04.jpg",
+    "sha256": "5b16c2913a6495910d8ea4894a0db7a0394242821be9418cebaeea53e512a1c0"
+  },
+  {
+    "path": "frontend/thumbs/demo-front_01_20261012101445190_MOTDEC.jpg",
+    "public_demo_source": "demo-thumbs/demo-front-04.jpg",
+    "sha256": "bc436b386de949446a42c409f088dde49577d426fa6d8ee059814a64f56d2ad5"
+  },
+  {
+    "path": "frontend/demo-front_01_20261012101522301_MOTDEC.jpg",
+    "public_demo_source": "demo-frames/demo-front-05.jpg",
+    "sha256": "73f055fa38e918bec78545abdcf96480523d1d746985992515162578b551a90b"
+  },
+  {
+    "path": "frontend/thumbs/demo-front_01_20261012101522301_MOTDEC.jpg",
+    "public_demo_source": "demo-thumbs/demo-front-05.jpg",
+    "sha256": "00f99a3061a26a768d07d1f2d5129ee16ca01e8549fba8234e1a533bc65ae607"
+  },
+  {
+    "path": "frontend/demo-front_01_20261012170000000_MOTDEC.jpg",
+    "public_demo_source": "demo-frames/demo-front-06.jpg",
+    "sha256": "134be996d3474175860b370d7ab4c8c25bbeeb090fc6b49f7cc91d9654c0fbaf"
+  },
+  {
+    "path": "frontend/thumbs/demo-front_01_20261012170000000_MOTDEC.jpg",
+    "public_demo_source": "demo-thumbs/demo-front-06.jpg",
+    "sha256": "26a037c99b52d5ef7398aac7ae11a2fb12266cae1ffca2b9f23e03c33b8c96f8"
+  },
+  {
+    "path": "frontend/demo-back_01_20261012080000000_MOTDEC.jpg",
+    "public_demo_source": "demo-frames/demo-back-01.jpg",
+    "sha256": "ec2fea1610e893e5e70bb77b6ee5df5ce97e2789e2cde4cd3e00670d7e346df4"
+  },
+  {
+    "path": "frontend/thumbs/demo-back_01_20261012080000000_MOTDEC.jpg",
+    "public_demo_source": "demo-thumbs/demo-back-01.jpg",
+    "sha256": "808d5343ba55a8b4ced525e6d350354b9c34856a97670447fc68df5685acf62e"
+  },
+  {
+    "path": "frontend/demo-back_01_20261012120000000_MOTDEC.jpg",
+    "public_demo_source": "demo-frames/demo-back-02.jpg",
+    "sha256": "945f1ef35d78b62e648d25ba34086d9016f7f44b506f4a35308ea34d038bff81"
+  },
+  {
+    "path": "frontend/thumbs/demo-back_01_20261012120000000_MOTDEC.jpg",
+    "public_demo_source": "demo-thumbs/demo-back-02.jpg",
+    "sha256": "13fb89a4a9c3414183f34b6a6d9c5a58956ed038292093bad49f4545ec6e71b4"
+  },
+  {
+    "path": "frontend/demo-back_01_20261012143010000_MOTDEC.jpg",
+    "public_demo_source": "demo-frames/demo-back-03.jpg",
+    "sha256": "3671fda49ec4c67af870f934cc3ae775b53910ef8016a533e46f0f8b491e1baa"
+  },
+  {
+    "path": "frontend/thumbs/demo-back_01_20261012143010000_MOTDEC.jpg",
+    "public_demo_source": "demo-thumbs/demo-back-03.jpg",
+    "sha256": "a68a44279027ba7a0577338b40fabb4fc9236762972924cdb637d6ed96cbb757"
+  },
+  {
+    "path": "frontend/demo-back_01_20261012143028000_MOTDEC.jpg",
+    "public_demo_source": "demo-frames/demo-back-04.jpg",
+    "sha256": "f8694dd3d16ee3c7be024f01f1603c78a03cce5c94d61100414a52915f0744dc"
+  },
+  {
+    "path": "frontend/thumbs/demo-back_01_20261012143028000_MOTDEC.jpg",
+    "public_demo_source": "demo-thumbs/demo-back-04.jpg",
+    "sha256": "645d102b1bc88da62858cb0e086ff25741ba73da2d0f0ea2da5b7e1c35db095d"
+  }
+]

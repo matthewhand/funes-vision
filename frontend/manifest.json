@@ -1,0 +1,17 @@
+{
+  "name": "Funes Vision \u2014 Synthetic Preview",
+  "short_name": "Funes Vision",
+  "description": "Fictional sample gallery only; no live camera or inference",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#080c14",
+  "theme_color": "#080c14",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}
