@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#111827">
+<title>Funes Vision — Synthetic Gallery</title>
+<style>
+:root{color-scheme:dark light;font:15px/1.55 system-ui,-apple-system,sans-serif;background:#0c1220;color:#f0f5ff}
+*{box-sizing:border-box}body{margin:0;min-width:280px}main{max-width:1220px;margin:auto;padding:clamp(14px,3vw,35px)}
+header{display:flex;align-items:center;gap:12px;justify-content:space-between;flex-wrap:wrap;padding-bottom:24px;border-bottom:1px solid #334158}
+.brand{font-size:23px;font-weight:750;letter-spacing:-.045em}.eyebrow{font-size:11px;font-weight:650;text-transform:uppercase;letter-spacing:.1em;color:#9bdac8}
+h1{font-size:clamp(28px,5vw,46px);line-height:1.08;letter-spacing:-.04em;margin:28px 0 8px}p{color:#bdc8d8;max-width:72ch}
+.notice{border:1px solid #37677a;background:#153247;border-radius:12px;padding:12px 16px;color:#e8fbff;max-width:720px;font-size:14px}
+nav{display:flex;gap:8px;flex-wrap:wrap;margin:24px 0 16px}button{font:inherit;cursor:pointer;min-height:44px;min-width:44px;border-radius:10px;border:1px solid #53657e;background:#1e2d42;color:#f1f6ff;padding:8px 15px}
+button[aria-pressed="true"]{background:#c7fae8;color:#082f27;border-color:#c7fae8;font-weight:700}button:focus-visible{outline:3px solid #f4c26b;outline-offset:3px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,265px),1fr));gap:16px}.tile{padding:0;text-align:left;border:1px solid #394960;background:#142138;overflow:hidden;border-radius:14px;min-width:0;display:block;width:100%;height:auto}
+.tile[hidden]{display:none}.tile img{width:100%;aspect-ratio:16/9;object-fit:cover;display:block}.info{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px;flex-wrap:wrap}.title{font-size:15px;font-weight:650}.tag{font-size:11px;letter-spacing:.01em;padding:4px 8px;border-radius:20px;background:#284a49;color:#d0f8eb}
+footer{margin:35px 0 6px;border-top:1px solid #334158;padding-top:18px;font-size:13px;color:#bdc8d8}
+dialog{background:#0f1d30;color:#f0f5ff;border:1px solid #7088a5;border-radius:16px;padding:0;width:min(94vw,940px);max-height:90vh;overflow:auto;box-shadow:0 20px 70px #0009}dialog::backdrop{background:#000c}.detail{padding:16px 18px}.detail-head{display:flex;gap:10px;align-items:center;justify-content:space-between}.detail img{display:block;width:100%;max-height:60vh;object-fit:contain;background:#090e16;border-radius:8px}.detail p{font-size:13px}
+@media(prefers-color-scheme:light){:root{background:#f7f9fc;color:#13263c}.brand{color:#13263c}p,footer{color:#40536a}header,footer{border-color:#ccd7e5}.notice{color:#10313e;background:#dceef1;border-color:#86b8c3}button{color:#213a52;background:#fff;border-color:#72859b}.tile{background:#fff;border-color:#d0dbe7;color:#13263c}.tag{color:#104438;background:#dcf7ea}dialog{background:#fff;color:#13263c}button[aria-pressed="true"]{background:#10584b;color:white;border-color:#10584b}}
+</style>
+</head>
+<body>
+<main>
+<header><div class="brand">◈ Funes Vision</div><div class="eyebrow">Public sample / Offline demonstration</div></header>
+<h1>A camera timeline, without a camera.</h1>
+<p>Explore 10 fictional scene examples with an accessible, responsive browser. No API, inference server, permissions, credentials or live camera connection is used.</p>
+<div class="notice"><strong>Synthetic footage.</strong> Every image below was AI-generated for demonstration. These are not real CCTV recordings or actual surveillance events.</div>
+<nav aria-label="Filter demonstration scenes"><button type="button" data-filter="all" aria-pressed="true">All scenes</button><button type="button" data-filter="front" aria-pressed="false">Front entrance</button><button type="button" data-filter="back" aria-pressed="false">Back garden</button></nav>
+<section class="grid" id="gallery" aria-label="Synthetic camera frames"></section>
+<footer>Fictional sample data only · No camera or model services · <a href="../manifest.json" style="color:inherit">SHA-256 asset manifest</a></footer>
+</main>
+<dialog id="scene" aria-label="Enlarged synthetic demonstration image"><div class="detail"><div class="detail-head"><strong id="scene-title"></strong><button id="close" type="button" aria-label="Close image detail">Close ✕</button></div><img id="scene-image" alt=""><p>AI-generated, fictional example frame. Not a recording from a physical camera.</p></div></dialog>
+<script>
+'use strict';
+const descriptions = {
+ front:['Empty driveway','Vehicle approaching','Person passing the entrance','Person near the doorway','Person leaving the entrance','Quiet entrance'],
+ back:['Empty garden','Garden with a bird','Dog walking in garden','Dog near the fence']
+};
+const gallery=document.getElementById('gallery');
+const dialog=document.getElementById('scene');
+const detailImage=document.getElementById('scene-image');
+const detailTitle=document.getElementById('scene-title');
+const closeButton=document.getElementById('close');
+let returnFocus=null;
+for(const [camera, captions] of Object.entries(descriptions)){
+ captions.forEach((caption,idx)=>{
+  const name=`demo-${camera}-${String(idx+1).padStart(2,'0')}.jpg`;
+  const card=document.createElement('button');card.type='button';card.className='tile';card.dataset.camera=camera;
+  card.setAttribute('aria-label',`${caption}. Open synthetic sample image`);
+  const img=document.createElement('img');img.src=`../demo-thumbs/${name}`;img.alt=`AI-generated illustration: ${caption.toLowerCase()}`;img.loading='lazy';
+  const info=document.createElement('span');info.className='info';
+  const title=document.createElement('span');title.className='title';title.textContent=caption;
+  const tag=document.createElement('span');tag.className='tag';tag.textContent='Synthetic';
+  info.append(title,tag);card.append(img,info);
+  card.addEventListener('click',()=>{returnFocus=card;detailTitle.textContent=caption;detailImage.src=`../demo-frames/${name}`;detailImage.alt=`AI-generated illustration: ${caption.toLowerCase()}`;dialog.showModal();closeButton.focus();});
+  gallery.append(card);
+ });
+}
+closeButton.addEventListener('click',()=>dialog.close());
+dialog.addEventListener('close',()=>{if(returnFocus) returnFocus.focus()});
+document.querySelectorAll('[data-filter]').forEach(button=>button.addEventListener('click',()=>{
+ const selected=button.dataset.filter;
+ document.querySelectorAll('[data-filter]').forEach(b=>b.setAttribute('aria-pressed',String(b===button)));
+ gallery.querySelectorAll('.tile').forEach(tile=>{tile.hidden=(selected!=='all'&&tile.dataset.camera!==selected)});
+}));
+</script>
+</body>
+</html>

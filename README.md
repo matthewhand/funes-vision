@@ -20,3 +20,9 @@ The forthcoming sample gallery will use **synthetic, AI-generated demonstration 
 ## Status
 
 **Pre-release / not yet installable.** The first planned pull request supplies an independently reviewed synthetic gallery and provenance manifest. Runtime and installation documentation will be published as each MVP gate is met.
+
+## Synthetic CCTV-style demonstration
+
+A self-contained, entirely offline [interactive synthetic gallery](demo/index.html) is submitted as the first reviewable release candidate. Its images are AI-generated illustrations, **not authentic CCTV recordings**. No server, camera, account, or model is required to inspect the demo.
+
+Image integrity and inclusion are specified in [`manifest.json`](manifest.json); run `python3 tests/check_synthetic_assets.py` to validate the approved sample paths and hashes.
