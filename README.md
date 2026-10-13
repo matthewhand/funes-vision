@@ -38,7 +38,7 @@ The browser polls the local API and should show **10 JPEGs** grouped into **7 vi
 | **Refined Current** (`/frontend/index.html`) | A read-only, more elaborate UI driven by its **own prerecorded fictional dataset**, not by the watched-folder activity API. |
 | **Gallery** (`/demo/index.html`) | Displays the bundled synthetic example stills without a live feed. |
 
-**Preview constraints:** the folder scanner caps its selection at 500 frames; unknown JPEG timestamps come from filesystem modification time; grouping is heuristic rather than a recognized real-world event. This preview has not undergone production authentication, camera-ingestion or resource-limit validation.
+**Preview constraints:** the folder scanner caps its selection at 500 frames; unknown JPEG timestamps come from filesystem modification time; grouping is heuristic rather than a recognized real-world event. On API failure or malformed activity data, the timeline marks existing results **stale** and shows the last successful update rather than presenting them as live; requests time out after 5 seconds. This preview has not undergone production authentication, camera-ingestion or resource-limit validation.
 
 <details>
 <summary><strong>Docker Compose</strong> — same Python API, same port</summary>
@@ -116,6 +116,6 @@ python3 tests/check_refined_frontend.py
 node --test tests/preview-server.test.mjs  # optional Node.js static preview checks
 ```
 
-Optional Node.js tests exercise the **static** preview, not Python folder ingestion. These are local verification instructions: GitHub-hosted CI is not required or requested. Passing synthetic tests does **not** establish production release readiness. Before tagging a stable release, independently verify the live integration, installation, security, licensing, accessibility and small-hardware performance gates tracked in [issue #2](https://github.com/matthewhand/funes-vision/issues/2).
+Optional Node.js tests exercise the **static** preview, not Python folder ingestion. A separate Playwright script, `tests/activity_browser.cjs`, contains synthetic-only browser checks for connection loss, malformed responses and recovery; running it requires locally available Playwright/Chromium, and it is not implied to pass unless executed. These are local verification instructions: GitHub-hosted CI is not required or requested. Passing synthetic tests does **not** establish production release readiness. Before tagging a stable release, independently verify the live integration, installation, security, licensing, accessibility and small-hardware performance gates tracked in [issue #2](https://github.com/matthewhand/funes-vision/issues/2).
 
 MIT license. Bundled Lucide icons are ISC; see [third-party notices](THIRD_PARTY_NOTICES.md). All supplied image examples are fictional and AI-generated.
