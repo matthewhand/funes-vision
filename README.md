@@ -113,9 +113,10 @@ python3 tests/acceptance_from_readme.py
 python3 -m unittest discover -s tests -p test_watched_folder.py
 python3 tests/check_synthetic_assets.py
 python3 tests/check_refined_frontend.py
+node --test tests/activity_status.test.cjs  # optional Node.js synthetic status regression
 node --test tests/preview-server.test.mjs  # optional Node.js static preview checks
 ```
 
-Optional Node.js tests exercise the **static** preview, not Python folder ingestion. A separate Playwright script, `tests/activity_browser.cjs`, contains synthetic-only browser checks for connection loss, malformed responses and recovery; running it requires locally available Playwright/Chromium, and it is not implied to pass unless executed. These are local verification instructions: GitHub-hosted CI is not required or requested. Passing synthetic tests does **not** establish production release readiness. Before tagging a stable release, independently verify the live integration, installation, security, licensing, accessibility and small-hardware performance gates tracked in [issue #2](https://github.com/matthewhand/funes-vision/issues/2).
+Optional Node.js tests exercise the **static** preview, not Python folder ingestion. The dependency-free Node.js activity-status check uses a simulated DOM and mocked API responses. A separate Playwright script, `tests/activity_browser.cjs`, contains synthetic-only browser checks for connection loss, malformed responses and recovery; running it requires locally available Playwright/Chromium, and it is not implied to pass unless executed. These are local verification instructions: GitHub-hosted CI is not required or requested. Passing synthetic tests does **not** establish production release readiness. Before tagging a stable release, independently verify the live integration, installation, security, licensing, accessibility and small-hardware performance gates tracked in [issue #2](https://github.com/matthewhand/funes-vision/issues/2).
 
 MIT license. Bundled Lucide icons are ISC; see [third-party notices](THIRD_PARTY_NOTICES.md). All supplied image examples are fictional and AI-generated.
