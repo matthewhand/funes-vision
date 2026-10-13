@@ -60,10 +60,11 @@ class SnapshotCatalog:
             self._manifest[(item['source'], digest)] = item
 
     def _scan(self):
-        """Return a bounded, deterministic read-only snapshot of candidate JPEGs.
+        """Return a bounded read-only snapshot of candidate JPEGs.
 
-        Folder entries are sampled up to a per-camera cap, then accepted in
-        round-robin order. This is a preview, not a complete archival index.
+        A limited filesystem enumeration is sorted per camera, then accepted
+        round-robin. A capped subset is not necessarily the same after a large
+        directory is reordered; this is not a complete archival index.
         """
         frames = []
         candidate_lists = []
