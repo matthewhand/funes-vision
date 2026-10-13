@@ -29,7 +29,7 @@ function render(data){
  $('visit-list').innerHTML=visits.length?visits.map(v=>`<article class="visit"><span class="count">${v.frame_count} frame${v.frame_count===1?'':'s'}</span><strong>${label(v.camera)}</strong><p>${escapeHtml(v.start.replace('T',' ').slice(0,19))} – ${escapeHtml(v.end.slice(11,19))} UTC</p><div>${v.objects.length?v.objects.map(x=>`<span class="tag">${escapeHtml(x)}</span>`).join(''):'<span class="tag none">No illustrative objects</span>'}</div></article>`).join(''):'<div class="placeholder">No grouped visits yet.</div>';
 }
 function setConnectionStale(isStale){
- if(stale===isStale&&lastGoodAt!==null)return;
+ if(stale===isStale)return;
  stale=isStale;
  $('activity-data').classList.toggle('data-stale',isStale&&lastGoodAt!==null);
  $('stale-notice').hidden=!(isStale&&lastGoodAt!==null);
