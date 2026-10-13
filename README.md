@@ -2,15 +2,19 @@
 
 **The camera notices motion. Funes helps you find what mattered.**
 
+**Release status: Alpha — local synthetic preview, not a production camera-analysis release.** The public app can scan a watched folder, show JPEGs, and group them into visits. Its separate Refined Current dashboard uses prerecorded fictional fixtures. No live camera connection, YOLO object detection, System1/vision-LLM inference, or production deployment is demonstrated.
+
 Inspired by *Funes the Memorious*, the short story by Jorge Luis Borges about remembering too much. Funes Vision aims to turn motion-triggered stills into a useful, browsable history.
 
 ![Actual synthetic end-to-end proof: watched folder starts empty, ten fake camera JPEGs appear, and the visit timeline groups them](docs/evidence/watched-folder-proof.gif)
 
 *Real browser capture of the Python folder-watcher: empty → 10 fictional images → grouped visit filtering. Not real surveillance or model inference.*
 
-## Quick start: one server, one port
+## Try it locally: one server, two terminals
 
-**Python 3.10+ is the canonical MVP preview server.** It serves the browser UI, read-only JSON API and watched JPEG files together on `127.0.0.1:8000`. Node.js is optional for static frontend development—not a second production service.
+**Requirements:** Python 3.10+ and a clean checkout. No Python packages, model weights, camera credentials, or cloud accounts are required for this preview. The Python server serves the activity timeline, read-only `/api/activity` and local JPEG files on `127.0.0.1:8000`.
+
+**Terminal 1 — start the Python preview:**
 
 ```sh
 git clone https://github.com/matthewhand/funes-vision.git
@@ -18,13 +22,23 @@ cd funes-vision
 python3 -m funes.server
 ```
 
-Open **http://127.0.0.1:8000/**. At first, the watched-folder activity view is empty. In **another terminal**, from the same checkout, simulate a motion-detecting camera uploading image files:
+Open **http://127.0.0.1:8000/**. With a fresh, empty `runtime/incoming` directory, the timeline starts empty. **Terminal 2 — from the same checkout**, copy hash-verified fictional JPEGs into that directory:
 
 ```sh
 python3 tools/seed_synthetic_watch.py
 ```
 
-The browser updates automatically: **10 JPEGs**, grouped into **7 visits**. For instance, the visitor's three frames form one episode, rather than three unrelated visits. There is no model download, inference, API token or camera connection involved. The sample frames and annotations are fictional and hash-checked. Stop the Python server with `Ctrl+C`.
+The browser polls the local API and should show **10 JPEGs** grouped into **7 visits**. A three-frame visitor sequence becomes one grouped episode. The object labels and descriptions are hand-reviewed **fictional fixture annotations**, not detector output. If you reuse a watched folder containing other files, the counts may differ. Stop the Python server with `Ctrl+C`.
+
+### What is actually implemented
+
+| Public preview | Current behavior |
+|---|---|
+| **Watched-folder activity** (`/`) | Scans two fixed fictional camera folders (`DemoFront`, `DemoBack`), serves new JPEGs and groups nearby timestamps using a 120-second rule. No inference. |
+| **Refined Current** (`/frontend/index.html`) | A read-only, more elaborate UI driven by its **own prerecorded fictional dataset**, not by the watched-folder activity API. |
+| **Gallery** (`/demo/index.html`) | Displays the bundled synthetic example stills without a live feed. |
+
+**Preview constraints:** the folder scanner caps its selection at 500 frames; unknown JPEG timestamps come from filesystem modification time; grouping is heuristic rather than a recognized real-world event. This preview has not undergone production authentication, camera-ingestion or resource-limit validation.
 
 <details>
 <summary><strong>Docker Compose</strong> — same Python API, same port</summary>
@@ -51,11 +65,13 @@ This serves the original static, fictional-data frontend with **no npm dependenc
 
 </details>
 
-## How it works
+## Target architecture (partly planned)
 
-![Funes Vision architecture diagram: a motion-detecting camera saves JPEGs to a folder, followed by indexing, YOLO object detection, optional multi-frame decision analysis, and searchable visits](docs/architecture-overview.svg)
+**Only the JPEG folder scan and basic visit timeline are implemented in the published Python preview.** The following diagram shows the intended product architecture, including future integrations; it is **not** a diagram of a working end-to-end inference pipeline.
 
-**The camera does the motion detection** and deposits JPEG snapshots into a watched folder (for example via FTP or SFTP). Funes does not require a continuous video stream. The architecture separates three levels of understanding:
+![Funes Vision intended architecture diagram: a motion-detecting camera saves JPEGs to a folder, followed by indexing, YOLO object detection, optional multi-frame decision analysis, and searchable visits](docs/architecture-overview.svg)
+
+**Intended live integration:** a camera performs motion detection and delivers JPEG snapshots to a folder (potentially using FTP/SFTP configured separately). This repository does **not** provide a production FTP/SFTP receiver or a validated live-camera setup. The design separates three levels of understanding:
 
 | Level | What it means | Example |
 |---|---|---|
@@ -65,7 +81,7 @@ This serves the original static, fictional-data frontend with **no npm dependenc
 
 An optional **System1 decision model or vision LLM** can evaluate selected individual images *or a sequence of frames from a visit*, adding structured interpretations such as *approaching the entrance* or *leaving*. This is deeper scene/temporal interpretation, not the same task as object detection. It must not silently overwrite the original detector labels. Models are optional; the archive can function without one.
 
-**What runs today:** the published proof scans a local watched folder, displays the JPEGs and groups them into visits. Its illustrative object labels come from reviewed synthetic metadata, **not actual YOLO/System1/LLM execution**. The live object-detector and decision-model integrations are still future MVP gates.
+**Release boundary:** the published preview performs local indexing and heuristic grouping, not object recognition or vision-based decisions. YOLO/System1/LLM adapters, configurable cameras, safe production ingestion, authentication, resource benchmarks and installation hardening require separate implementation and testing. Track those release gates in [MVP release tracker #2](https://github.com/matthewhand/funes-vision/issues/2).
 
 ## Visual proof: watched-folder activity
 
@@ -77,7 +93,7 @@ An optional **System1 decision model or vision LLM** can evaluate selected indiv
 
 </details>
 
-The dashboard also works at phone widths. For the existing Refined Current interface with fixture catalogs, open **http://127.0.0.1:8000/frontend/index.html**. For the compact synthetic stills gallery, use `/demo/index.html`. Both are served by the **same Python API process**.
+The activity timeline has a phone-width browser capture above. For the visually richer, **fixture-only** Refined Current interface, open **http://127.0.0.1:8000/frontend/index.html**; for the compact fictional stills gallery, open `/demo/index.html`. All are served by the **same Python process**, but the refined interface's mock API is **not** populated from `/api/activity`.
 
 ## Small-hardware design target
 
@@ -88,15 +104,18 @@ The intended reference deployment is **a two-core ARM CPU with 12 GB of RAM**. T
 - The object detector is intended to be a comparatively cheap first pass. Expensive decision/vision inference is **optional and selective**, ideally processing a relevant frame or limited visit sequence at a time.
 - On small ARM systems, model startup, concurrent inferences, large context windows and full backfills can exhaust CPU or RAM. Inference performance and limits must be measured on the target hardware before we publish resource or throughput claims.
 
-## Verify from a clean checkout
+## Verify locally, without hosted CI
+
+Run these commands from the checkout on a development machine; the Python checks use synthetic files and a localhost test server. They do not load inference models or access cameras.
 
 ```sh
+python3 tests/acceptance_from_readme.py
 python3 -m unittest discover -s tests -p test_watched_folder.py
 python3 tests/check_synthetic_assets.py
 python3 tests/check_refined_frontend.py
 node --test tests/preview-server.test.mjs  # optional Node.js static preview checks
 ```
 
-See the repository's [CI](.github/workflows/synthetic-fixtures.yml) for automated fixture, Docker and single-origin backend smoke tests. The offline gallery and activity view are safe synthetic proofs; they are **not** a deployed production camera-analysis system.
+Optional Node.js tests exercise the **static** preview, not Python folder ingestion. These are local verification instructions: GitHub-hosted CI is not required or requested. Passing synthetic tests does **not** establish production release readiness. Before tagging a stable release, independently verify the live integration, installation, security, licensing, accessibility and small-hardware performance gates tracked in [issue #2](https://github.com/matthewhand/funes-vision/issues/2).
 
 MIT license. Bundled Lucide icons are ISC; see [third-party notices](THIRD_PARTY_NOTICES.md). All supplied image examples are fictional and AI-generated.
