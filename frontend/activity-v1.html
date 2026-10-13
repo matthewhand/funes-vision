@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0c1627">
+<title>Funes Vision — Read-only activity v1</title>
+<link rel="stylesheet" href="static/activity-v1.css">
+<script defer src="static/activity-v1.js"></script>
+</head>
+<body>
+<main class="app">
+  <header class="topbar">
+    <div class="brand">◈ Funes <strong>Vision</strong></div>
+    <nav aria-label="Preview sources">
+      <a href="index.html">Fictional fixture dashboard</a>
+      <span aria-current="page">Watched-folder activity v1</span>
+    </nav>
+  </header>
+  <section class="hero">
+    <p class="eyebrow">Explicitly selected data source · Python API</p>
+    <h1>Local activity, without invented analysis.</h1>
+    <p>This isolated read-only view uses only the local Python <code>GET /api/activity</code> contract. Images may be fictional fixtures or unclassified files from its watched folder. No camera receiving, object detection, vision model, cloud inference or writes are performed.</p>
+    <p class="warning"><strong>Review mode:</strong> only stage fictional images in the watched folder. The Refined Current <a href="index.html">fictional fixture dashboard</a> remains a separate, independent demonstration.</p>
+  </section>
+  <section class="connection" aria-label="Connection health">
+    <div id="source-status" role="status" aria-live="polite" aria-atomic="true" data-state="loading">Checking local activity API…</div>
+    <button id="refresh" type="button">Refresh snapshot</button>
+  </section>
+  <p id="stale-notice" class="warning" hidden>Showing the last valid activity snapshot. These records are stale and must not be treated as live.</p>
+  <p id="truncation" class="warning" hidden>Partial activity snapshot: the local scanner reached a configured limit. Displayed counts are not archive totals.</p>
+  <section class="controls" aria-label="Camera filter">
+    <button type="button" data-camera="all" aria-pressed="true">All cameras</button>
+    <button type="button" data-camera="DemoFront" aria-pressed="false">Front entrance</button>
+    <button type="button" data-camera="DemoBack" aria-pressed="false">Back garden</button>
+  </section>
+  <section class="summary" aria-label="Selected results">
+    <p><strong id="frame-count">0</strong> selected JPEGs</p>
+    <p><strong id="visit-count">0</strong> heuristic visits</p>
+    <p>Models launched: <strong>0</strong></p>
+  </section>
+  <div class="columns">
+    <section aria-label="Observed images">
+      <h2>Captured frames</h2>
+      <p class="subheading">Each file is an observation. A fictional label is never represented as actual detector output.</p>
+      <div id="activity-frames" class="image-grid"><p class="empty-state">No validated activity loaded.</p></div>
+    </section>
+    <section aria-label="Grouped visits">
+      <h2>Visits</h2>
+      <p class="subheading">Frames are grouped by camera and a 120-second window, not inferred intent.</p>
+      <div id="activity-visits" class="visit-list"><p class="empty-state">No validated visits loaded.</p></div>
+    </section>
+  </div>
+  <footer><a href="/activity/index.html">Simple activity timeline</a> · <a href="index.html">Fictional fixture dashboard</a> · Read-only preview · Models not run</footer>
+</main>
+</body>
+</html>

@@ -16,7 +16,9 @@ source = (APP / 'index.html').read_text()
 bridge = (APP / 'static/fixture-api.js').read_text()
 fixture = json.loads((APP / 'static/fixture-data.json').read_text())
 manifest = json.loads((APP / 'static/fixture-image-manifest.json').read_text())
-expected = {'frontend/index.html', 'frontend/manifest.json', 'frontend/icon.svg',
+expected = {'frontend/activity-v1.html', 'frontend/static/activity-v1.js',
+            'frontend/static/activity-v1.css',
+            'frontend/index.html', 'frontend/manifest.json', 'frontend/icon.svg',
             'frontend/favicon.ico', 'frontend/lucide.min.js',
             'frontend/images.json', 'frontend/analysis.json',
             'frontend/bursts.json', 'frontend/pins.json',
@@ -33,10 +35,16 @@ for forbidden in ('10.0.0.', '/mnt/models', 'Webcam21', 'Webcam22',
                   'teamstinky', 'ubuntu-max', 'funes-vision-private',
                   'dogcam', 'github.com/matthewhand/funes-vision-private'):
     for path in (APP / 'index.html', APP / 'static/fixture-api.js',
-                 APP / 'static/fixture-data.json', APP / 'analysis.json'):
+                 APP / 'static/fixture-data.json', APP / 'analysis.json',
+                 APP / 'activity-v1.html', APP / 'static/activity-v1.js',
+                 APP / 'static/activity-v1.css'):
         assert forbidden.lower() not in path.read_text().lower(), f'Restricted pattern in {path.name}: {forbidden}'
 
 assert 'SYNTHETIC DEMO' in source and 'No cameras, models, live analysis, or server writes' in source
+assert 'href="activity-v1.html"' in source and (APP / 'activity-v1.html').is_file()
+assert 'GET /api/activity' in (APP / 'activity-v1.html').read_text()
+assert "fetchActivity('/api/activity'" in (APP / 'static/activity-v1.js').read_text()
+assert 'window.__FUNES_FIXTURE_ONLY__ = true' not in (APP / 'static/activity-v1.js').read_text()
 assert 'window.__FUNES_FIXTURE_ONLY__ = true' in bridge
 assert "method !== 'GET'" in bridge and ', 403' in bridge
 assert 'new EventSource(' not in bridge
