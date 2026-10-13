@@ -9,6 +9,8 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timezone
 from functools import partial
+from collections import deque
+from itertools import islice
 import hashlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
@@ -22,6 +24,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CAMERAS = ('DemoFront', 'DemoBack')
 MAX_IMAGE_BYTES = 12 * 1024 * 1024
 MAX_FRAMES = 500
+MAX_CANDIDATES_PER_CAMERA = 2000
 ALLOWED = {'.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
            '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8',
            '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
@@ -48,7 +51,7 @@ def safe_relative(path: str) -> str | None:
 class SnapshotCatalog:
     def __init__(self, incoming: Path):
         self.incoming = incoming.resolve()
-        self._fingerprints: dict[tuple[str, int, int], str] = {}
+        self._fingerprints: dict[tuple[str, int, int, int, int, int], str] = {}
         self._lock = threading.Lock()
         self._manifest = {}
         for item in FIXTURE:
@@ -57,20 +60,45 @@ class SnapshotCatalog:
             self._manifest[(item['source'], digest)] = item
 
     def _scan(self):
+        """Return a bounded, deterministic read-only snapshot of candidate JPEGs.
+
+        Folder entries are sampled up to a per-camera cap, then accepted in
+        round-robin order. This is a preview, not a complete archival index.
+        """
         frames = []
+        candidate_lists = []
         for camera in CAMERAS:
             folder = self.incoming / camera
             if not folder.is_dir() or folder.is_symlink():
                 continue
-            for file in sorted(folder.iterdir()):
-                if len(frames) >= MAX_FRAMES:
-                    break
-                if file.is_symlink() or file.suffix.lower() not in ('.jpg', '.jpeg') or not file.is_file():
+            try:
+                files = sorted(islice(folder.iterdir(), MAX_CANDIDATES_PER_CAMERA))
+            except OSError:
+                continue
+            candidate_lists.append((camera, files))
+        potentially_truncated = any(
+            len(files) == MAX_CANDIDATES_PER_CAMERA for _, files in candidate_lists
+        )
+        pending = deque((camera, iter(files)) for camera, files in candidate_lists)
+        active_fingerprints = {}
+        while pending and len(frames) < MAX_FRAMES:
+            camera, files = pending.popleft()
+            try:
+                file = next(files)
+            except StopIteration:
+                continue
+            pending.append((camera, files))
+            try:
+                if (file.is_symlink() or file.suffix.lower() not in ('.jpg', '.jpeg')
+                        or not file.is_file()):
                     continue
                 st = file.stat()
                 if not 3 <= st.st_size <= MAX_IMAGE_BYTES:
                     continue
-                key = (str(file), st.st_size, st.st_mtime_ns)
+                # Device/inode/ctime distinguish a rewritten same-name, same-size
+                # and restored-mtime file from the previously hashed content.
+                key = (str(file), st.st_size, st.st_mtime_ns,
+                       st.st_ctime_ns, st.st_dev, st.st_ino)
                 digest = self._fingerprints.get(key)
                 if digest is None:
                     with file.open('rb') as f:
@@ -79,9 +107,9 @@ class SnapshotCatalog:
                             continue
                         rest = f.read()
                         if not rest.endswith(b'\xff\xd9'):
-                            continue  # Partially uploaded JPEG: wait for a complete frame.
+                            continue
                         digest = hashlib.sha256(header + rest).hexdigest()
-                    self._fingerprints[key] = digest
+                active_fingerprints[key] = digest
                 fixture = self._manifest.get((file.name, digest))
                 captured = (fixture['timestamp'] if fixture else
                             datetime.fromtimestamp(st.st_mtime, tz=timezone.utc).isoformat())
@@ -91,6 +119,7 @@ class SnapshotCatalog:
                     'filename': file.name,
                     'image_url': f'/captures/{camera}/{file.name}',
                     'captured_at': captured,
+                    'capture_time_source': 'synthetic-fixture' if fixture else 'filesystem-mtime',
                     'objects': fixture['objects'] if fixture else [],
                     'description': fixture['description'] if fixture else 'New image awaiting object detection',
                     'annotation_source': 'synthetic fixture annotation' if fixture else 'unclassified image',
@@ -98,13 +127,23 @@ class SnapshotCatalog:
                     'decision_model_status': 'not run',
                     'synthetic_fixture': bool(fixture),
                 })
-        frames.sort(key=lambda e: (e['camera'], e['captured_at']))
+            except OSError:
+                # A file can disappear or change while its uploading peer writes.
+                # Skip this snapshot; do not fabricate detector evidence.
+                continue
+        # Retain fingerprints only for files in the most recent bounded snapshot.
+        self._fingerprints = active_fingerprints
+        potentially_truncated = potentially_truncated or len(frames) >= MAX_FRAMES
+        frames.sort(key=lambda e: (e['camera'], e['captured_at'], e['filename']))
         visits = []
         for frame in frames:
             when = datetime.fromisoformat(frame['captured_at'].replace('Z', '+00:00'))
             last = visits[-1] if visits else None
-            if (last and last['camera'] == frame['camera'] and
-                    (when - datetime.fromisoformat(last['end'])).total_seconds() <= 120):
+            if last and last['camera'] == frame['camera']:
+                gap = (when - datetime.fromisoformat(last['end'].replace('Z', '+00:00'))).total_seconds()
+            else:
+                gap = None
+            if gap is not None and 0 <= gap <= 120:
                 last['frames'].append(frame['id'])
                 last['end'] = frame['captured_at']
                 last['objects'] = sorted(set(last['objects']) | set(frame['objects']))
@@ -115,7 +154,12 @@ class SnapshotCatalog:
         for i, visit in enumerate(visits):
             visit['id'] = 'visit-'+str(i+1)
             visit['frame_count'] = len(visit['frames'])
-        return {'frames': sorted(frames, key=lambda e: e['captured_at'], reverse=True),
+        return {'schema_version': 1, 'data_source': 'watched-folder-preview',
+                'read_only': True,
+                'scan': {'max_frames': MAX_FRAMES,
+                         'max_candidates_per_camera': MAX_CANDIDATES_PER_CAMERA,
+                         'possibly_truncated': potentially_truncated},
+                'frames': sorted(frames, key=lambda e: e['captured_at'], reverse=True),
                 'visits': sorted(visits, key=lambda e: e['end'], reverse=True),
                 'count': len(frames), 'visit_count': len(visits),
                 'mode': 'watched-folder-demo',
