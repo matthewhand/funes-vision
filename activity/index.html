@@ -16,7 +16,7 @@
 <footer>All demonstration images are synthetic. No camera, cloud call or model inference is required. <a href="/frontend/index.html">Explore the Refined Current frontend</a> · <a href="/docs/architecture-overview.svg">See the full design</a></footer>
 </main><script>
 'use strict';
-let selected='all',lastValue='',lastData=null,lastGoodAt=null,requestInFlight=false,stale=false;
+let selected='all',lastValue='',lastData=null,lastGoodAt=null,requestInFlight=false,stale=null;
 const $=id=>document.getElementById(id);
 const label=id=>id==='DemoFront'?'Front entrance':'Back garden';
 const escapeHtml=str=>String(str).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
