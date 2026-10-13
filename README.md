@@ -65,6 +65,16 @@ This serves the original static, fictional-data frontend with **no npm dependenc
 
 </details>
 
+## Camera-ingestion and shared-data contract (next MVP gate)
+
+**Input boundary today:** the Python preview scans finalized `.jpg`/`.jpeg` files already present in two predefined folders, `runtime/incoming/DemoFront` and `runtime/incoming/DemoBack`. It does **not** receive FTP/SFTP uploads, authenticate cameras, watch arbitrary configured cameras, enforce upload atomics, or process video. Use fictional files only; a mounted real camera directory is outside the approved preview scope.
+
+**Required before live ingestion:** an explicit camera allowlist and configurable local inboxes; atomic handoff of finished JPEGs from a separately secured receiver; limits on file size, scan work, retained metadata and memory; documented timestamp provenance and UTC normalization; safe handling of partial uploads, malformed files, symlinks, deletions and duplicate filenames; and an independently reviewed authorization and privacy policy. Do not treat directory access as proof an upstream camera connection is secure.
+
+**Shared activity API contract — intended version 1:** `GET /api/activity` remains read-only, local and camera-independent. It returns a bounded `frames` list and grouped `visits` with `count`, `visit_count` and `inference` states. Each frame must retain its camera identifier, image URL, timestamp and its origin, object labels and their provenance, and detector/decision-model status. Visit grouping must not erase per-frame evidence. The refined dashboard currently uses a separate fixture bridge and **does not consume this API**; adapting it requires a later, independently tested integration. New optional contract fields must preserve the existing frontend and synthetic gallery.
+
+**Maturity gate:** a consistent schema is necessary but not sufficient for beta. Camera enrollment, safe receiver integration, non-synthetic backend behavior, frontend contract adoption, security and performance evidence remain unimplemented or unverified.
+
 ## Target architecture (partly planned)
 
 **Only the JPEG folder scan and basic visit timeline are implemented in the published Python preview.** The following diagram shows the intended product architecture, including future integrations; it is **not** a diagram of a working end-to-end inference pipeline.
