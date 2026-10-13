@@ -41,8 +41,10 @@ function setConnectionStale(isStale){
 async function refresh(){
  if(requestInFlight)return;
  requestInFlight=true;
+ const controller=new AbortController();
+ const deadline=setTimeout(()=>controller.abort(),5000);
  try{
-  const res=await fetch('/api/activity',{cache:'no-store'});
+  const res=await fetch('/api/activity',{cache:'no-store',signal:controller.signal});
   if(!res.ok)throw Error('API '+res.status);
   const data=await res.json();
   if(!Array.isArray(data.frames)||!Array.isArray(data.visits)||!Number.isInteger(data.count)||!Number.isInteger(data.visit_count))throw Error('Invalid activity payload');
@@ -51,7 +53,7 @@ async function refresh(){
   lastData=data;lastGoodAt=Date.now();
   setConnectionStale(false);
  }catch(e){setConnectionStale(true);}
- finally{requestInFlight=false;}
+ finally{clearTimeout(deadline);requestInFlight=false;}
 }
 document.querySelectorAll('[data-camera]').forEach(b=>b.addEventListener('click',()=>{
  selected=b.dataset.camera;
