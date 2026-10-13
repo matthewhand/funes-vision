@@ -1,6 +1,12 @@
 """Synthetic-only, temporary-directory contract regressions; no cameras or models."""
 import hashlib
+import json
 import os
+from functools import partial
+from http.server import ThreadingHTTPServer
+from threading import Thread
+from urllib.error import HTTPError
+from urllib.request import Request, urlopen
 from pathlib import Path
 import tempfile
 import time
@@ -92,6 +98,27 @@ class ActivityContract(unittest.TestCase):
         self.assertFalse(next_frame["synthetic_fixture"])
         self.assertEqual(next_frame["objects"], [])
         self.assertEqual(next_frame["capture_time_source"], "filesystem-mtime")
+
+    def test_http_api_contract_and_write_rejection(self):
+        from funes.server import Handler
+        self.put("DemoFront", "offline.jpg", timestamp=1700000000)
+        http = ThreadingHTTPServer(("127.0.0.1", 0), partial(Handler, catalog=self.catalog))
+        worker = Thread(target=http.serve_forever, daemon=True)
+        worker.start()
+        try:
+            origin = "http://127.0.0.1:" + str(http.server_address[1])
+            with urlopen(origin + "/api/activity", timeout=2) as response:
+                payload = json.load(response)
+            self.assertEqual(payload["schema_version"], 1)
+            self.assertTrue(payload["read_only"])
+            self.assertEqual(payload["frames"][0]["capture_time_source"], "filesystem-mtime")
+            with self.assertRaises(HTTPError) as denied:
+                urlopen(Request(origin + "/api/activity", data=b"{}", method="POST"), timeout=2)
+            self.assertEqual(denied.exception.code, 405)
+        finally:
+            http.shutdown()
+            http.server_close()
+            worker.join(timeout=2)
 
     def test_partial_jpeg_and_symlink_not_indexed(self):
         self.put("DemoFront", "partial.jpg", b'\xff\xd8\xffincomplete')
