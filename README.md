@@ -75,6 +75,12 @@ This serves the original static, fictional-data frontend with **no npm dependenc
 
 **Maturity gate:** a consistent schema is necessary but not sufficient for beta. Camera enrollment, safe receiver integration, non-synthetic backend behavior, frontend contract adoption, security and performance evidence remain unimplemented or unverified.
 
+### Cycle 3: safe read-only browser adapter (design requirements)
+
+The public `/frontend/index.html` remains a **fictional-fixture-only** demonstration with a mocked API. The new watched-folder browser adapter is a **separately selected page**, not a hidden switch that mixes data sources. It must read only same-origin `GET /api/activity` served by the Python preview, validate `schema_version: 1`, `data_source: watched-folder-preview`, `read_only: true`, and the `not run` inference states before rendering. Reject unsupported schemas, unexpected capture URLs, missing provenance, malformed timestamps and impossible visit/frame relationships rather than treating them as harmless fixtures.
+
+The adapter must remain read-only, never request external origins, never offer controls that imply saved edits or model inference, preserve unknown images as unclassified, show camera-specific visits and a bounded image gallery, and present disconnected/stale/truncated states. A failed activity read must **not** silently fall back to the fixture dataset. The fixture-only interface must continue working independently, including with the optional Node static preview server. This browser adapter is **not** a production camera receiver, configurable enrollment system, inference integration, or an authenticated release.
+
 ## Target architecture (partly planned)
 
 **Only the JPEG folder scan and basic visit timeline are implemented in the published Python preview.** The following diagram shows the intended product architecture, including future integrations; it is **not** a diagram of a working end-to-end inference pipeline.
