@@ -35,6 +35,19 @@ const os=require('os');
    if(w===1366){await page.getByRole('button',{name:'Front entrance'}).click();await page.waitForTimeout(160);await page.screenshot({path:path.join(screenshots,'folder-activity-visitor-filter.png')});await page.getByRole('button',{name:'All cameras'}).click();}
    const r=await page.evaluate(async()=>{const response=await fetch('/api/activity');return response.json()});
    if(r.frames.length!==10||r.visits.length!==7||r.inference.object_detector!=='not run')throw Error('Server API result');
+   // Synthetic-only failure/recovery: stale results are never presented as live.
+   for(const broken of [{status:503,body:'{"error":"offline"}'},{status:200,body:'{"unexpected":"payload"}'}]){
+    await page.route('**/api/activity',route=>route.fulfill({status:broken.status,contentType:'application/json',body:broken.body}));
+    await page.locator('#refresh').click();
+    await page.waitForFunction(()=>document.querySelector('#activity-data')?.classList.contains('data-stale'),null,{timeout:7000});
+    if(!(await page.locator('#stale-notice').isVisible()))throw Error('Offline warning hidden');
+    if(!(await page.locator('#sync').innerText()).includes('last successful update'))throw Error('Missing last-known update time');
+    if((await page.locator('.frame').count())!==10)throw Error('Stale frames disappeared');
+    await page.unroute('**/api/activity');
+    await page.locator('#refresh').click();
+    await page.waitForFunction(()=>document.querySelector('#sync')?.textContent==='Watched folder connected',null,{timeout:7000});
+    if(await page.locator('#stale-notice').isVisible())throw Error('Recovered page still stale');
+   }
    if(errors.length||external.length)throw Error(JSON.stringify({errors,external}));
    console.log(`PASS ${w}x${h}: empty → 10 JPEGs → 7 visits; no external requests`);
    await page.close();
