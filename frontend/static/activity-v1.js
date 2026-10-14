@@ -4,7 +4,11 @@
   'use strict';
   const MAX_FRAMES = 500;
   const CAMERAS = ['DemoFront', 'DemoBack'];
-  const IMAGE_NAME = /^[A-Za-z0-9_-][A-Za-z0-9_.-]*\.jpe?g$/i;
+  // Identical eligibility rule to the Python scanner and capture endpoint:
+  // ASCII only, percent-encoding free, at most 99 characters, no `..`.
+  const IMAGE_NAME = /^[A-Za-z0-9_-][A-Za-z0-9_.-]{0,93}\.jpe?g$/i;
+  const MAX_FILENAME_LENGTH = 99;
+  const MAX_SKIP_REASONS = 32;
   const UTC_TIME = /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?(?:Z|[+-]\d\d:\d\d)$/;
   const allowedKeys = new Set(CAMERAS);
 
@@ -20,6 +24,13 @@
     if (!Array.isArray(value) || value.length > limit || value.some(x => typeof x !== 'string' || x.length > 100)) fail('annotation list');
     return [...value];
   }
+  // A filename the shared rule rejects is an unsupported local file, not a
+  // trust violation: it is dropped with a visible count instead of discarding
+  // every other frame the server legitimately observed.
+  function renderable(filename) {
+    return typeof filename === 'string' && filename.length <= MAX_FILENAME_LENGTH &&
+      !filename.includes('..') && IMAGE_NAME.test(filename);
+  }
   function normalizeActivity(payload) {
     if (!plainObject(payload) || payload.schema_version !== 1 ||
         payload.data_source !== 'watched-folder-preview' ||
@@ -31,15 +42,21 @@
         !Number.isInteger(payload.scan.max_candidates_per_camera) ||
         payload.scan.max_candidates_per_camera < 1 ||
         typeof payload.scan.possibly_truncated !== 'boolean') fail('scan bounds');
+    if (typeof payload.scan.unsupported_filename_rule !== 'string' ||
+        payload.scan.unsupported_filename_rule.length > 200) fail('filename rule');
+    const reasons = payload.scan.skipped;
+    if (!plainObject(reasons) || Object.keys(reasons).length > MAX_SKIP_REASONS ||
+        Object.entries(reasons).some(([key, value]) => typeof key !== 'string' || key.length > 60 ||
+          !Number.isInteger(value) || value < 0 || value > 1e7)) fail('skip accounting');
     if (!Array.isArray(payload.frames) || payload.frames.length > MAX_FRAMES ||
         !Array.isArray(payload.visits) || payload.visits.length > MAX_FRAMES ||
         payload.count !== payload.frames.length || payload.visit_count !== payload.visits.length) fail('counts');
     const ids = new Map();
-    const frames = payload.frames.map(frame => {
+    const observed = payload.frames.map(frame => {
       if (!plainObject(frame) || typeof frame.id !== 'string' ||
           !/^[a-f0-9]{16}$/.test(frame.id) || ids.has(frame.id) ||
           !allowedKeys.has(frame.camera) || typeof frame.filename !== 'string' ||
-          !IMAGE_NAME.test(frame.filename) || frame.filename.includes('..') ||
+          typeof frame.image_url !== 'string' ||
           frame.image_url !== '/captures/' + frame.camera + '/' + frame.filename ||
           typeof frame.description !== 'string' || frame.description.length > 300 ||
           typeof frame.synthetic_fixture !== 'boolean' ||
@@ -55,12 +72,13 @@
         image_url: frame.image_url, captured_at: capturedAt,
         capture_time_source: expectedSource, description: frame.description,
         synthetic_fixture: frame.synthetic_fixture, objects,
-        annotation_source: expectedAnnotation
+        annotation_source: expectedAnnotation, renderable: renderable(frame.filename)
       };
       ids.set(frame.id, normalized);
       return normalized;
     });
     const assigned = new Set(), visitIds = new Set();
+    let droppedVisits = 0;
     const visits = payload.visits.map(visit => {
       if (!plainObject(visit) || !allowedKeys.has(visit.camera) ||
           !Array.isArray(visit.frames) || !visit.frames.length ||
@@ -71,21 +89,28 @@
       const start = time(visit.start), end = time(visit.end);
       if (Date.parse(start) > Date.parse(end)) fail('visit time order');
       const objects = strings(visit.objects, 32);
-      for (const id of visit.frames) {
+      if (visit.frames.some(id => !ids.has(id))) fail('visit/frame relationship');
+      const members = visit.frames.filter(id => ids.get(id).renderable);
+      if (!members.length) { droppedVisits++; return null; }
+      for (const id of members) {
         const source = ids.get(id);
-        if (!source || source.camera !== visit.camera || assigned.has(id) ||
+        if (source.camera !== visit.camera || assigned.has(id) ||
             Date.parse(source.captured_at) < Date.parse(start) ||
             Date.parse(source.captured_at) > Date.parse(end)) fail('visit/frame relationship');
         assigned.add(id);
       }
-      const derived = new Set(visit.frames.flatMap(id => ids.get(id).objects));
+      const derived = new Set(members.flatMap(id => ids.get(id).objects));
       if (objects.length !== derived.size || objects.some(x => !derived.has(x))) fail('visit annotation provenance');
       return { id: visit.id, camera: visit.camera, start, end,
-        frame_ids: [...visit.frames], objects, frame_count: visit.frame_count };
-    });
+        frame_ids: members, objects, frame_count: members.length };
+    }).filter(Boolean);
+    const frames = observed.filter(frame => frame.renderable);
     if (assigned.size !== frames.length) fail('unassigned frame');
-    return {frames, visits, count:frames.length, visit_count:visits.length,
-      possibly_truncated:payload.scan.possibly_truncated, max_frames:payload.scan.max_frames};
+    const serverSkipped = Object.values(reasons).reduce((sum, n) => sum + n, 0);
+    return {frames, visits, count: frames.length, visit_count: visits.length,
+      possibly_truncated: payload.scan.possibly_truncated, max_frames: payload.scan.max_frames,
+      unrenderable_filenames: observed.length - frames.length,
+      server_skipped: serverSkipped, dropped_visits: droppedVisits, skipped: reasons};
   }
 
   function mount({document, fetchActivity, timeoutMs=5000}) {
@@ -133,6 +158,14 @@
       });
       episodes.replaceChildren(...(visitNodes.length ? visitNodes : [make('p','empty-state','No visits in this view.')]));
       el('truncation').hidden = !current.possibly_truncated;
+      const skipped = current.server_skipped + current.unrenderable_filenames;
+      const notice = el('skipped-notice');
+      notice.hidden = skipped === 0;
+      notice.textContent = skipped
+        ? skipped + ' watched-folder file' + (skipped === 1 ? ' was' : 's were') +
+          ' skipped as unsupported or still incomplete (server reasons: ' +
+          (Object.keys(current.skipped).join(', ') || 'none') + ').'
+        : '';
     }
     function status(state, detail) {
       const node = el('source-status'), warning=el('stale-notice');
@@ -180,7 +213,11 @@
   if (typeof module !== 'undefined' && module.exports) module.exports = exported;
   if (root && root.document) {
     root.FunesActivityV1 = exported;
+    // A host page that supplies its own markup (the original activity timeline)
+    // reuses only the contract validator, so this adapter never mounts twice or
+    // competes for the same element ids.
     root.addEventListener('DOMContentLoaded', () => {
+      if (!root.document.getElementById('activity-frames')) return;
       mount({document:root.document, fetchActivity:root.fetch.bind(root)});
     });
   }
