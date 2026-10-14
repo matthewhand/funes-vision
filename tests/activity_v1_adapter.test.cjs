@@ -2,10 +2,10 @@
 /* Offline synthetic regression: uses only bundled fictional JPEGs in a temp dir. */
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const cp = require('node:child_process');
 const path = require('node:path');
 const fs = require('node:fs');
 const vm = require('node:vm');
+const { runPython } = require('./harness.cjs');
 const ROOT = path.resolve(__dirname, '..');
 // The project uses ESM package mode, but this browser script must also be
 // exercisable without a test-only bundle or dependency installation.
@@ -17,7 +17,7 @@ const {normalizeActivity, mount} = moduleShim.exports;
 
 function publishedSyntheticPayload() {
   const code = [
-    'import contextlib, io, json, tempfile',
+    'import contextlib, io, json, os, tempfile',
     'from pathlib import Path',
     'from tools.seed_synthetic_watch import seed',
     'from funes.server import SnapshotCatalog',
@@ -25,10 +25,7 @@ function publishedSyntheticPayload() {
     '    with contextlib.redirect_stdout(io.StringIO()): seed(Path(tmp))',
     '    print(json.dumps(SnapshotCatalog(Path(tmp)).snapshot()))'
   ].join('\n');
-  const run = cp.spawnSync('python3', ['-B', '-c', code], {
-    cwd: ROOT, encoding: 'utf8', timeout: 15000,
-    env: {...process.env, PYTHONDONTWRITEBYTECODE:'1'}
-  });
+  const run = runPython(['-B', '-c', code], { cwd: ROOT });
   assert.equal(run.status, 0, run.stderr);
   return JSON.parse(run.stdout.trim());
 }
@@ -138,4 +135,73 @@ test('separate default fixture bridge remains present and isolated',()=>{
   assert.match(index,/<script src="static\/fixture-api\.js"><\/script>/);
   assert.match(index,/href="activity-v1\.html"/);
   assert.doesNotMatch(index,/<script src="static\/activity-v1\.js"><\/script>/);
+});
+test('the original activity page reuses this strict validator, not a weak copy',()=>{
+  const timeline=fs.readFileSync(path.join(ROOT,'activity/index.html'),'utf8');
+  assert.match(timeline,/src="\/frontend\/static\/activity-v1\.js"/);
+  assert.match(timeline,/FunesActivityV1\.normalizeActivity/);
+  assert.doesNotMatch(timeline,/Array\.isArray\(data\.frames\)/);
+});
+
+/** Give one frame a name the shared eligibility rule rejects. */
+function withUnsupportedName(name){
+  const altered=clone();
+  const frame=altered.frames[0];
+  frame.filename=name;
+  frame.image_url='/captures/'+frame.camera+'/'+name;
+  for(const visit of altered.visits) visit.frames=visit.frames.filter(id=>id!==frame.id);
+  altered.visits=altered.visits.filter(v=>v.frames.length);
+  altered.visits.forEach((v,i)=>{v.id='visit-'+(i+1);v.frame_count=v.frames.length;});
+  altered.visit_count=altered.visits.length;
+  return altered;
+}
+for(const name of ['front door 01.jpg','porte-Ünterwegs-01.jpg','.hidden.jpg','a..b.jpg','x'.repeat(120)+'.jpg']){
+  test('one unsupported filename never fails the whole response: '+name,()=>{
+    const altered=withUnsupportedName(name);
+    const result=normalizeActivity(altered);
+    assert.equal(result.unrenderable_filenames,1);
+    assert.equal(result.count,9,'the other nine frames stay visible');
+    assert.equal(result.visit_count,altered.visits.length);
+    assert.ok(result.frames.every(f=>!f.filename.includes(name)));
+    assert.ok(result.visits.every(v=>v.frame_count===v.frame_ids.length));
+  });
+}
+test('server-reported skip accounting is surfaced and bounded',()=>{
+  const altered=clone();
+  altered.scan.skipped={'unsupported-filename':3,'incomplete-or-unstable-jpeg':1};
+  assert.equal(normalizeActivity(altered).server_skipped,4);
+  assert.equal(normalizeActivity(clone()).server_skipped,0);
+});
+bad('skip accounting must be present', p => { delete p.scan.skipped; });
+bad('skip accounting must not be invented', p => { p.scan.skipped={'x':-1}; });
+bad('skip accounting must stay a plain object', p => { p.scan.skipped=[1]; });
+bad('the shared filename rule must be published', p => { delete p.scan.unsupported_filename_rule; });
+
+test('the view reports skipped files and still renders the rest', async()=>{
+  const doc=fakeDocument();
+  const altered=clone();
+  altered.scan.skipped={'unsupported-filename':2};
+  mount({document:doc,fetchActivity:async()=>({ok:true,json:async()=>altered})});
+  await settle();
+  assert.equal(doc.getElementById('source-status').dataset.state,'ready');
+  assert.equal(doc.getElementById('frame-count').textContent,'10');
+  assert.equal(doc.getElementById('skipped-notice').hidden,false);
+  assert.match(doc.getElementById('skipped-notice').textContent,/2 watched-folder files were skipped/);
+});
+
+test('the adapter only mounts on a page that provides its own layout',()=>{
+  const browserSandbox={
+    document:{getElementById:()=>null,querySelectorAll:()=>[]},
+    fetch:async()=>({ok:true,json:async()=>({})}),
+    AbortController,setTimeout,clearTimeout,Date,
+    addEventListener:(event,handler)=>{browserSandbox.handlers[event]=handler;}
+  };
+  browserSandbox.handlers={};
+  browserSandbox.window=browserSandbox;
+  vm.runInNewContext(fs.readFileSync(path.join(ROOT,'frontend/static/activity-v1.js'),'utf8'),
+    browserSandbox,{filename:'activity-v1.js'});
+  assert.equal(typeof browserSandbox.FunesActivityV1.normalizeActivity,'function');
+  browserSandbox.handlers.DOMContentLoaded();
+  assert.deepEqual(browserSandbox.lastStatus,undefined,
+    'a host page with its own markup must not be taken over by the companion');
 });

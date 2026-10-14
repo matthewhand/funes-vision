@@ -12,14 +12,21 @@
 <section class="explainer" aria-label="Processing stages"><div class="explain"><b>01 · Captured frame</b><p>Each saved motion JPEG is one observation. Images arrive independently from the camera.</p></div><div class="explain"><b>02 · Candidate objects</b><p>A production YOLO pass would detect objects in individual images. Here, fictional labels demonstrate the presentation only.</p></div><div class="explain"><b>03 · Visit narrative</b><p>Frames from the same camera within 2 minutes form a visit. Optional System1 / vision-LLM context would consider selected frames or visit sequences.</p></div></section>
 <div class="toolbar" aria-label="Filter by camera"><button type="button" data-camera="all" aria-pressed="true">All cameras</button><button type="button" data-camera="DemoFront" aria-pressed="false">Front entrance</button><button type="button" data-camera="DemoBack" aria-pressed="false">Back garden</button><button type="button" id="refresh">Refresh now ↻</button></div>
 <div class="stale-notice" id="stale-notice" hidden>Connection lost. Displayed images and visits are the last known results, not live activity.</div>
+<div class="stale-notice" id="skipped-notice" hidden>Some watched-folder files were skipped as unsupported or still incomplete.</div>
 <div class="layout" id="activity-data"><section aria-label="Observed frames"><h2>Captured frames</h2><p class="sub">New watched-folder images appear automatically. Each object label is illustrative, not inference.</p><div class="grid" id="frame-list"><div class="placeholder">Waiting for synthetic images to be copied into the watched folder.</div></div></section><section aria-label="Grouped visits"><h2>Visits / timeline</h2><p class="sub">Grouping multiple frames into an episode is different from detecting an object in one image.</p><div id="visit-list"><div class="placeholder">Visits appear when JPEG files arrive.</div></div></section></div>
 <footer>All demonstration images are synthetic. No camera, cloud call or model inference is required. <a href="/frontend/index.html">Explore the Refined Current frontend</a> · <a href="/docs/architecture-overview.svg">See the full design</a></footer>
-</main><script>
+</main>
+<script src="/frontend/static/activity-v1.js"></script>
+<script>
 'use strict';
 let selected='all',lastValue='',lastData=null,lastGoodAt=null,requestInFlight=false,stale=null;
 const $=id=>document.getElementById(id);
 const label=id=>id==='DemoFront'?'Front entrance':'Back garden';
 const escapeHtml=str=>String(str).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+// Reuse the Activity v1 companion's strict contract validator instead of a
+// second, weaker copy. If it is unavailable the page fails closed: nothing is
+// rendered and the connection is reported as not compatible.
+const validate=()=>window.FunesActivityV1&&window.FunesActivityV1.normalizeActivity;
 function render(data){
  const allFrames=data.frames||[],shown=allFrames.filter(f=>selected==='all'||f.camera===selected);
  $('frames').textContent=data.count; $('visits').textContent=data.visit_count;
@@ -27,6 +34,8 @@ function render(data){
  $('frame-list').innerHTML=shown.length?shown.map(f=>`<article class="frame"><img loading="lazy" src="${encodeURI(f.image_url)}" alt="${escapeHtml(f.description)}"><div class="info"><h3>${escapeHtml(f.description)}</h3><div class="meta">${label(f.camera)} · ${escapeHtml(f.captured_at.replace('T',' ').slice(0,19))} UTC</div><div class="tags">${f.objects.length?f.objects.map(x=>`<span class="tag">${escapeHtml(x)}</span>`).join(''):'<span class="tag none">No fixture label</span>'}</div><div class="state">Object detector: not run · Decision model: not run</div></div></article>`).join(''):'<div class="placeholder">No frames yet. Copy verified synthetic JPEGs into the watched folder.</div>';
  const visits=(data.visits||[]).filter(v=>selected==='all'||v.camera===selected);
  $('visit-list').innerHTML=visits.length?visits.map(v=>`<article class="visit"><span class="count">${v.frame_count} frame${v.frame_count===1?'':'s'}</span><strong>${label(v.camera)}</strong><p>${escapeHtml(v.start.replace('T',' ').slice(0,19))} – ${escapeHtml(v.end.slice(11,19))} UTC</p><div>${v.objects.length?v.objects.map(x=>`<span class="tag">${escapeHtml(x)}</span>`).join(''):'<span class="tag none">No illustrative objects</span>'}</div></article>`).join(''):'<div class="placeholder">No grouped visits yet.</div>';
+ $('skipped-notice').hidden=!(data.server_skipped+data.unrenderable_filenames);
+ $('skipped-notice').textContent=data.server_skipped+data.unrenderable_filenames+' watched-folder file(s) skipped as unsupported or still incomplete.';
 }
 function setConnectionStale(isStale){
  if(stale===isStale)return;
@@ -43,16 +52,17 @@ async function refresh(){
  requestInFlight=true;
  const controller=new AbortController();
  const deadline=setTimeout(()=>controller.abort(),5000);
- try{
-  const res=await fetch('/api/activity',{cache:'no-store',signal:controller.signal});
-  if(!res.ok)throw Error('API '+res.status);
-  const data=await res.json();
-  if(!Array.isArray(data.frames)||!Array.isArray(data.visits)||!Number.isInteger(data.count)||!Number.isInteger(data.visit_count))throw Error('Invalid activity payload');
-  const value=JSON.stringify(data);
-  if(value!==lastValue){render(data);lastValue=value;}
-  lastData=data;lastGoodAt=Date.now();
-  setConnectionStale(false);
- }catch(e){setConnectionStale(true);}
+try{
+   const res=await fetch('/api/activity',{cache:'no-store',signal:controller.signal});
+   if(!res.ok)throw Error('API '+res.status);
+   const normalize=validate();
+   if(!normalize)throw Error('Activity v1 contract validator unavailable');
+   const data=normalize(await res.json());
+   const value=JSON.stringify(data);
+   if(value!==lastValue){render(data);lastValue=value;}
+   lastData=data;lastGoodAt=Date.now();
+   setConnectionStale(false);
+  }catch(e){setConnectionStale(true);}
  finally{clearTimeout(deadline);requestInFlight=false;}
 }
 document.querySelectorAll('[data-camera]').forEach(b=>b.addEventListener('click',()=>{
