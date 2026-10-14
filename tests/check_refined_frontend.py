@@ -9,13 +9,17 @@ import json
 from pathlib import Path
 import re
 import subprocess
+import sys
+
+# Text guards must not depend on the host locale encoding.
+sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 
 ROOT = Path(__file__).resolve().parents[1]
 APP = ROOT / 'frontend'
-source = (APP / 'index.html').read_text()
-bridge = (APP / 'static/fixture-api.js').read_text()
-fixture = json.loads((APP / 'static/fixture-data.json').read_text())
-manifest = json.loads((APP / 'static/fixture-image-manifest.json').read_text())
+source = (APP / 'index.html').read_text(encoding='utf-8')
+bridge = (APP / 'static/fixture-api.js').read_text(encoding='utf-8')
+fixture = json.loads((APP / 'static/fixture-data.json').read_text(encoding='utf-8'))
+manifest = json.loads((APP / 'static/fixture-image-manifest.json').read_text(encoding='utf-8'))
 expected = {'frontend/activity-v1.html', 'frontend/static/activity-v1.js',
             'frontend/static/activity-v1.css',
             'frontend/index.html', 'frontend/manifest.json', 'frontend/icon.svg',
@@ -38,13 +42,13 @@ for forbidden in ('10.0.0.', '/mnt/models', 'Webcam21', 'Webcam22',
                  APP / 'static/fixture-data.json', APP / 'analysis.json',
                  APP / 'activity-v1.html', APP / 'static/activity-v1.js',
                  APP / 'static/activity-v1.css'):
-        assert forbidden.lower() not in path.read_text().lower(), f'Restricted pattern in {path.name}: {forbidden}'
+        assert forbidden.lower() not in path.read_text(encoding='utf-8').lower(), f'Restricted pattern in {path.name}: {forbidden}'
 
 assert 'SYNTHETIC DEMO' in source and 'No cameras, models, live analysis, or server writes' in source
 assert 'href="activity-v1.html"' in source and (APP / 'activity-v1.html').is_file()
-assert 'GET /api/activity' in (APP / 'activity-v1.html').read_text()
-assert "fetchActivity('/api/activity'" in (APP / 'static/activity-v1.js').read_text()
-assert 'window.__FUNES_FIXTURE_ONLY__ = true' not in (APP / 'static/activity-v1.js').read_text()
+assert 'GET /api/activity' in (APP / 'activity-v1.html').read_text(encoding='utf-8')
+assert "fetchActivity('/api/activity'" in (APP / 'static/activity-v1.js').read_text(encoding='utf-8')
+assert 'window.__FUNES_FIXTURE_ONLY__ = true' not in (APP / 'static/activity-v1.js').read_text(encoding='utf-8')
 assert 'window.__FUNES_FIXTURE_ONLY__ = true' in bridge
 assert "method !== 'GET'" in bridge and ', 403' in bridge
 assert 'new EventSource(' not in bridge
@@ -69,8 +73,8 @@ for entry in manifest:
     assert digest == entry['sha256'] == hashlib.sha256(trusted.read_bytes()).hexdigest(), path
     assert path.read_bytes()[:3] == b'\xff\xd8\xff'
 
-images = json.loads((APP / 'images.json').read_text())
-analysis = json.loads((APP / 'analysis.json').read_text())
+images = json.loads((APP / 'images.json').read_text(encoding='utf-8'))
+analysis = json.loads((APP / 'analysis.json').read_text(encoding='utf-8'))
 assert len(images) == len(set(images)) == 10
 assert set(images) == set(analysis)
 assert all(x.startswith(('demo-front_', 'demo-back_')) for x in images)
