@@ -4,6 +4,8 @@
 
 **Release status: Alpha — local synthetic preview, not a production camera-analysis release.** The public app can scan a watched folder, show JPEGs, and group them into visits. Its separate Refined Current dashboard uses prerecorded fictional fixtures. No live camera connection, YOLO object detection, System1/vision-LLM inference, or production deployment is demonstrated.
 
+**Three different things, kept separate:** the **running folder preview** shown above observes a real local directory and makes no analysis claims at all; the **Refined Current dashboard** replays prerecorded *fictional* fixtures through its own mock API and is never fed by the folder scanner; and **object detection / visit narration / a System1 or vision LLM** are the *future* integrations drawn in the architecture diagram below. Nothing in this repository runs a model.
+
 Inspired by *Funes the Memorious*, the short story by Jorge Luis Borges about remembering too much. Funes Vision aims to turn motion-triggered stills into a useful, browsable history.
 
 ![Actual synthetic end-to-end proof: watched folder starts empty, ten fake camera JPEGs appear, and the visit timeline groups them](docs/evidence/watched-folder-proof.gif)
@@ -41,6 +43,20 @@ The browser polls the local API and should show **10 JPEGs** grouped into **7 vi
 
 **Preview constraints:** the folder scanner selects at most 500 frames with round-robin selection across the two fictional cameras and considers at most 2,000 directory entries per camera per scan. The in-memory digest cache retains only the latest selected frames. Results may be incomplete when a limit is reached; unknown JPEG timestamps come from filesystem modification time; grouping is heuristic rather than a recognized real-world event. On API failure or malformed activity data, the timeline marks existing results **stale** and shows the last successful update rather than presenting them as live; requests time out after 5 seconds. This preview has not undergone production authentication, camera-ingestion or resource-limit validation.
 
+### Which files the preview will accept, and why
+
+The scanner, the `/captures/...` endpoint and the browser adapter apply **one identical rule**, published in the API as `scan.unsupported_filename_rule`:
+
+```
+^[A-Za-z0-9_-][A-Za-z0-9_.-]{0,93}\.jpe?g$     (case-insensitive, and no ".." component)
+```
+
+Anything else — an ordinary space, a non-ASCII name, a leading dot, a `..` component, a name longer than 99 characters, or a non-JPEG extension — is **not indexed at all**, and the reason is counted in `scan.skipped`. That means one badly named file can never blank a whole activity response, and every `image_url` the API advertises is guaranteed to be servable. An empty watched folder reports `scan.skipped: {}`: a camera folder that does not exist yet is not a skipped file.
+
+Files are read through a single opened handle, bounded to 12 MiB, and are only accepted when the JPEG start-of-image and end-of-image markers are both present and the file did not grow or change during the read. Oversize, partial, still-being-written, deleted and unreadable files are counted skips, never index entries and never server errors.
+
+Both servers contain every served file inside **the directory the URL selected** — the chosen camera folder for captures, the chosen static folder for assets — and refuse symbolic links, Windows junctions and other reparse points on that boundary and on every component below it.
+
 <details>
 <summary><strong>Docker Compose</strong> — same Python API, same port</summary>
 
@@ -52,6 +68,8 @@ docker compose up --build
 Open **http://127.0.0.1:8000/**; in another terminal run `python3 tools/seed_synthetic_watch.py` to populate the locally mounted synthetic folder. To stop: `Ctrl+C` followed by `docker compose down` if necessary.
 
 `compose.yml` publishes **loopback only** and mounts just `./runtime/incoming` as read-only inside a restricted non-root container. No live cameras are mounted. Docker runs the **Python** server, not Node.js. Images and host settings under `runtime/` are gitignored.
+
+Both compose files were built and run locally on the revision that introduced these changes. The Python container reported `count: 10`, `visit_count: 7`, `object_detector: "not run"` and `scan.skipped: {}` from the read-only synthetic mount, served `/activity/index.html`, `/frontend/activity-v1.html`, `/frontend/index.html` and `/captures/...` on one port, answered `405` to `POST`/`PUT`/`DELETE` and `404` to `/.git/config`, `/funes/server.py` and `/README.md`, and ran as UID 65532 with a read-only root filesystem, all capabilities dropped and `no-new-privileges`. The Node static container ran as `node`, also read-only and capability-dropped, served the same static pages and answered `404` for `/api/*` and for private repository files.
 
 </details>
 
@@ -72,7 +90,7 @@ This serves the original static, fictional-data frontend with **no npm dependenc
 
 **Required before live ingestion:** an explicit camera allowlist and configurable local inboxes; atomic handoff of finished JPEGs from a separately secured receiver; limits on file size, scan work, retained metadata and memory; documented timestamp provenance and UTC normalization; safe handling of partial uploads, malformed files, symlinks, deletions and duplicate filenames; and an independently reviewed authorization and privacy policy. Do not treat directory access as proof an upstream camera connection is secure.
 
-**Published read-only activity contract (schema version 1, preview-only):** `GET /api/activity` retains existing `frames`, `visits`, `count`, `visit_count`, `mode` and `inference` fields. It now also returns `schema_version: 1`, `data_source: "watched-folder-preview"`, `read_only: true` and `scan` limits (`max_frames`, `max_candidates_per_camera`, `possibly_truncated`). Each frame retains its camera, safe capture URL, `captured_at`, fixture-annotation provenance and `detector_status`/`decision_model_status`, plus `capture_time_source` (`synthetic-fixture` or `filesystem-mtime`). The current scanner reads candidate files only; `count` is the selected number, **not a total archive count**. No image is assigned detector labels from its filename alone. The new **Activity v1 companion** consumes this contract in its own read-only page. The original Refined Current dashboard retains its separate fictional fixture bridge; integrating the contract into the full Refined Current gallery is **not yet implemented**.
+**Published read-only activity contract (schema version 1, preview-only):** `GET /api/activity` retains existing `frames`, `visits`, `count`, `visit_count`, `mode` and `inference` fields. It now also returns `schema_version: 1`, `data_source: "watched-folder-preview"`, `read_only: true` and `scan` limits (`max_frames`, `max_candidates_per_camera`, `possibly_truncated`, `unsupported_filename_rule`, `skipped`). Each frame retains its camera, safe capture URL, `captured_at`, fixture-annotation provenance and `detector_status`/`decision_model_status`, plus `capture_time_source` (`synthetic-fixture` or `filesystem-mtime`). The current scanner reads candidate files only; `count` is the selected number, **not a total archive count**. No image is assigned detector labels from its filename alone. The **Activity v1 companion** consumes this contract in its own read-only page, and the original timeline now validates through the same code. The original Refined Current dashboard retains its separate fictional fixture bridge; integrating the contract into the full Refined Current gallery is **not yet implemented**.
 
 **Maturity gate:** the companion adapter exercises the v1 data contract, but this alone does not establish beta. Camera enrollment, safe receiver integration, non-synthetic backend integration, full Refined Current gallery adoption, security and target-hardware performance evidence remain unimplemented or unverified.
 
@@ -80,9 +98,25 @@ This serves the original static, fictional-data frontend with **no npm dependenc
 
 From the **Python** preview server, open **http://127.0.0.1:8000/frontend/activity-v1.html** or follow the link in the fictional Refined Current dashboard. This is a **separate mode**, not a replacement for `/frontend/index.html`: the original UI still uses prerecorded fictional fixtures and its existing mock API. The new activity companion fetches only same-origin `GET /api/activity`, with an on-demand **Refresh snapshot** button (no automatic polling, external requests or writes).
 
-The activity adapter validates `schema_version: 1`, `data_source: watched-folder-preview`, `read_only: true`, the disabled-inference states, frame identity, camera allowlist, safe same-origin capture paths, timestamps and their provenance, exact counts and visit/frame relationships. Invalid or unreachable API responses show an unavailable/stale warning, **not** a silent fall back to fixture data. The view offers camera filters, fictional annotation labels, unclassified images, heuristic visits and a partial-scan warning when the backend marks a limit reached. It does **not** claim inferred object recognition or actual intent.
+The activity adapter validates `schema_version: 1`, `data_source: watched-folder-preview`, `read_only: true`, the disabled-inference states, frame identity, camera allowlist, safe same-origin capture paths, timestamps and their provenance, exact counts, visit/frame relationships and the skip accounting. Invalid or unreachable API responses show an unavailable/stale warning, **not** a silent fall back to fixture data. A frame whose filename the shared rule rejects is an unsupported local file rather than a trust violation: it is dropped with a visible skip count instead of discarding every other observed frame. The view offers camera filters, fictional annotation labels, unclassified images, heuristic visits and a partial-scan warning when the backend marks a limit reached. It does **not** claim inferred object recognition or actual intent.
 
-**Scope and test evidence:** local dependency-free Node tests use the actual 10-image/7-visit synthetic Python API payload and invalid/offline mocks. The Python same-origin server checks serve the new page. No real Chromium/device screenshots, visual/touch accessibility certification, real cameras, model inference, installs or deployment have been performed for this new view. If opened through the optional **Node-only static server**, `/api/activity` does not exist; the page must display **unavailable**, not fictional content. Full Refined Current data-source unification, configurable camera ingestion, authentication and deployment are future work.
+The original timeline at `/activity/index.html` no longer keeps its own weaker copy of these checks. It loads the same `frontend/static/activity-v1.js` validator and fails closed if that script is unavailable, so both views accept exactly the same responses.
+
+### Browser evidence actually observed on this branch
+
+`tests/activity_browser.cjs` drives a **real headless Chromium** against a **real Python preview server** on a temporary synthetic folder. On the revision that introduced these checks it observed, with exit code 0:
+
+- an **empty** watched folder showing zero frames in both views;
+- 10 verified synthetic JPEGs seeded into the folder **while the server was running**, then 10 frames / 7 visits in both views;
+- **no horizontal overflow** in either view at **320, 360, 390, 768, 1366 and 1440 px**;
+- the camera filter reachable and activatable by **keyboard alone** (Enter and Space);
+- `HTTP 503`, a malformed body, a payload that falsely claims a model ran, and a **real response slower than the 5 s client timeout** all leaving the last known good frames on screen behind a stale warning, and all recovering afterwards;
+- the **Node-only static preview** (which has no `/api/activity`) showing the companion as **unavailable**, with zero frames and zero visits and **no fictional fixture fallback**;
+- **no request to any origin other than the test's own loopback server**.
+
+These are fixture-folder and temporary-directory results from a local developer machine. They are **not** live-camera evidence, not a device or assistive-technology audit, and not a performance measurement.
+
+**Scope and test evidence:** local dependency-free Node tests use the actual 10-image/7-visit synthetic Python API payload and invalid/offline mocks. The Python same-origin server checks serve the new page. The Python interpreter used by the Node tests is **probed, not hardcoded** (`python3` does not exist on Windows); set `FUNES_PYTHON` to override. No real cameras, model inference, installs or deployment have been performed for this view. Full Refined Current data-source unification, configurable camera ingestion, authentication and deployment are future work.
 
 ## Target architecture (partly planned)
 
@@ -104,15 +138,57 @@ An optional **System1 decision model or vision LLM** can evaluate selected indiv
 
 ## Visual proof: watched-folder activity
 
-![Actual browser view of synthetic camera frames and grouped visit timeline after inserting 10 JPEGs into a watched folder](docs/evidence/folder-activity-desktop.png)
+All screenshots below were produced by `tests/activity_browser.cjs` from a **running Python preview
+server observing a temporary folder of the bundled fictional JPEGs**. They are not real surveillance
+footage, not detector output, and not a claim about a deployed system.
 
-<details><summary>Mobile capture from the same Python server</summary>
+![Actual browser view of the running watched folder: 10 synthetic JPEGs and their grouped visit timeline](docs/evidence/folder-activity-desktop.png)
 
-![390px mobile preview of synthetic watched-folder visit grouping](docs/evidence/folder-activity-mobile.png)
+<details><summary>Mobile capture (390 px) from the same Python server</summary>
+
+![390 px mobile capture of the running watched folder preview](docs/evidence/folder-activity-mobile.png)
 
 </details>
 
-The **original** activity timeline has a phone-width browser capture above. The **separate activity-v1 companion** is available at `/frontend/activity-v1.html` and has local synthetic API regression coverage but no independent browser capture yet. The visually richer, **fixture-only** Refined Current interface remains `/frontend/index.html`; the compact fictional gallery is `/demo/index.html`. All can be served by the **same Python process**, but the original refined interface's mock API is **not** populated from `/api/activity`.
+<details><summary>The same page with an empty watched folder, before anything is seeded</summary>
+
+![The watched-folder preview showing 0 JPEGs, 0 visits and 0 models launched before seeding](docs/evidence/folder-activity-00-empty.png)
+
+</details>
+
+### Activity v1 companion, same server, same data
+
+The separate **Activity v1 companion** is served by the same Python process at
+`/frontend/activity-v1.html` and consumes the same `GET /api/activity` contract:
+
+<details><summary>Companion at 1440 px</summary>
+
+![Activity v1 companion at 1440 px showing 10 selected JPEGs and 7 heuristic visits, models launched 0](docs/evidence/activity-companion-1440.png)
+
+</details>
+
+<details><summary>Companion at 768 px</summary>
+
+![Activity v1 companion at 768 px showing the same 10 JPEGs and 7 visits](docs/evidence/activity-companion-768.png)
+
+</details>
+
+<details><summary>Companion at 320 px</summary>
+
+![Activity v1 companion at 320 px with a single-column frame and visit list](docs/evidence/activity-companion-320.png)
+
+</details>
+
+<details><summary>Companion served by the Node-only static preview, which has no activity API</summary>
+
+![Activity v1 companion served by the Node-only static preview reporting the activity API unavailable with no data loaded](docs/evidence/activity-node-only-1366.png)
+
+</details>
+
+The **original** activity timeline is at `/activity/index.html`. The visually richer,
+**fixture-only** Refined Current interface remains `/frontend/index.html`, and the compact fictional
+gallery is `/demo/index.html`. All three are served by the **same Python process**, but the Refined
+Current interface's mock API is **not** populated from `/api/activity`.
 
 ## Small-hardware design target
 
@@ -125,19 +201,24 @@ The intended reference deployment is **a two-core ARM CPU with 12 GB of RAM**. T
 
 ## Verify locally, without hosted CI
 
-Run these commands from the checkout on a development machine; the Python checks use synthetic files and a localhost test server. They do not load inference models or access cameras.
+Run these commands from the checkout on a development machine; the Python checks use synthetic files and a localhost test server. They do not load inference models or access cameras. On Windows use `python` where these say `python3`, or set `FUNES_PYTHON="py -3"` for the Node suites.
 
 ```sh
 python3 tests/acceptance_from_readme.py
 python3 -m unittest discover -s tests -p test_watched_folder.py
 python3 -m unittest discover -s tests -p test_activity_contract.py
+python3 -m unittest discover -s tests -p test_capture_hardening.py
 python3 tests/check_synthetic_assets.py
 python3 tests/check_refined_frontend.py
-node --test tests/activity_status.test.cjs  # optional Node.js synthetic status regression
-node --test tests/activity_v1_adapter.test.cjs  # adapter + actual synthetic Python API payload
-node --test tests/preview-server.test.mjs  # optional Node.js static preview checks
+npm run test:preview     # Node static preview + static-directory containment
+npm run test:activity    # activity page status + strict activity-v1 adapter regressions
+npm run test:browser     # real Chromium; add --evidence to refresh docs/evidence screenshots
 ```
 
-Optional Node.js tests exercise the **static** preview, not Python folder ingestion. The Python `test_activity_contract.py` suite checks bounded synthetic input selection, fair camera sampling, provenance, rewrite invalidation, symlink rejection and timestamp grouping without real cameras or inference. The dependency-free Node.js activity-status check uses a simulated DOM and mocked API responses. The new activity-v1 test reads only bundled fictional JPEGs into a temporary folder, validates the real Python v1 JSON shape, and checks isolated source selection, rejected unsafe inputs and stale/recovery behavior without a browser installation. A separate Playwright script, `tests/activity_browser.cjs`, contains synthetic-only browser checks for connection loss, malformed responses and recovery; running it requires locally available Playwright/Chromium, and it is not implied to pass unless executed. These are local verification instructions: GitHub-hosted CI is not required or requested. Passing synthetic tests does **not** establish production release readiness. Before tagging a stable release, independently verify the live integration, installation, security, licensing, accessibility and small-hardware performance gates tracked in [issue #2](https://github.com/matthewhand/funes-vision/issues/2).
+`test_capture_hardening.py` covers unsupported filenames, partial/oversized/growing/deleted files, traversal, and symlink and Windows-junction escapes, all inside temporary directories with hand-written JPEG bytes. The containment suites create their own symlink or junction and skip themselves when the host refuses one.
+
+`npm run test:browser` needs a locally available Playwright and Chromium. It resolves Playwright from `playwright`/`playwright-core` or from `PLAYWRIGHT_MODULE`, and uses `CHROMIUM_EXECUTABLE` for a specific browser binary; add `-- --evidence` to refresh the committed screenshots. The repository itself stays dependency-free — Playwright is never a package dependency.
+
+Optional Node.js tests exercise the **static** preview, not Python folder ingestion. The Python `test_activity_contract.py` suite checks bounded synthetic input selection, fair camera sampling, provenance, rewrite invalidation, symlink rejection and timestamp grouping without real cameras or inference. The dependency-free Node.js activity-status check uses a simulated DOM and mocked API responses, and loads the real `activity-v1.js` so the page is proven to validate through the same strict code. The activity-v1 adapter test reads only bundled fictional JPEGs into a temporary folder, validates the real Python v1 JSON shape, and checks isolated source selection, rejected unsafe inputs and stale/recovery behavior. These are local verification instructions: GitHub-hosted CI is not required or requested. Passing synthetic tests does **not** establish production release readiness. Before tagging a stable release, independently verify the live integration, installation, security, licensing, accessibility and small-hardware performance gates tracked in [issue #2](https://github.com/matthewhand/funes-vision/issues/2).
 
 MIT license. Bundled Lucide icons are ISC; see [third-party notices](THIRD_PARTY_NOTICES.md). All supplied image examples are fictional and AI-generated.
