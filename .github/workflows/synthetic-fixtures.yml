@@ -14,6 +14,8 @@ jobs:
         run: |
           python3 tests/check_synthetic_assets.py
           python3 tests/check_refined_frontend.py
+      - name: Verify this workflow file has no duplicate keys
+        run: python3 tests/check_workflow.py
       - name: Verify standalone frontend and Node preview syntax
         run: |
           node --check frontend/static/fixture-api.js
@@ -61,8 +63,9 @@ jobs:
       - name: Verify watched-folder ingestion and single-origin API
         run: python3 -m unittest discover -s tests -p test_watched_folder.py
       - name: Verify activity v1 contract, eligibility and containment
-        run: python3 -m unittest discover -s tests -p test_activity_contract.py
-        run: python3 -m unittest discover -s tests -p test_capture_hardening.py
+        run: |
+          python3 -m unittest discover -s tests -p test_activity_contract.py
+          python3 -m unittest discover -s tests -p test_capture_hardening.py
       - name: Run the documented launch and seed commands end to end
         run: python3 tests/acceptance_from_readme.py
       - name: Verify all synthetic sample images
