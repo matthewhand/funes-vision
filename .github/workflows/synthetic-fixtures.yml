@@ -14,13 +14,19 @@ jobs:
         run: |
           python3 tests/check_synthetic_assets.py
           python3 tests/check_refined_frontend.py
+      - name: Verify this workflow file has no duplicate keys
+        run: python3 tests/check_workflow.py
       - name: Verify standalone frontend and Node preview syntax
         run: |
           node --check frontend/static/fixture-api.js
+          node --check frontend/static/activity-v1.js
           node --check server.mjs
+          node --check tests/activity_browser.cjs
           node tests/check_refined_frontend_inline.cjs
-      - name: Smoke-test dependency-free Node preview
+      - name: Smoke-test dependency-free Node preview and static containment
         run: npm run test:preview
+      - name: Node activity contract and strict adapter regressions
+        run: npm run test:activity
       - name: Validate Docker preview configuration without starting it
         run: docker compose -f compose.preview.yml config --quiet
   docker-preview:
@@ -39,11 +45,13 @@ jobs:
             sleep 1
           done
           grep -q 'SYNTHETIC DEMO' /tmp/funes-preview.html
+          curl --fail --silent http://127.0.0.1:8000/frontend/activity-v1.html -o /tmp/funes-companion.html
+          grep -q 'Watched-folder activity v1' /tmp/funes-companion.html
           test "$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:8000/.git/config)" = 404
           test "$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:8000/api/status)" = 404
   python-single-origin:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     strategy:
       matrix:
         python-version: ['3.10', '3.12']
@@ -54,8 +62,33 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Verify watched-folder ingestion and single-origin API
         run: python3 -m unittest discover -s tests -p test_watched_folder.py
+      - name: Verify activity v1 contract, eligibility and containment
+        run: |
+          python3 -m unittest discover -s tests -p test_activity_contract.py
+          python3 -m unittest discover -s tests -p test_capture_hardening.py
+      - name: Run the documented launch and seed commands end to end
+        run: python3 tests/acceptance_from_readme.py
       - name: Verify all synthetic sample images
         run: python3 tests/check_synthetic_assets.py
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install a throwaway Playwright (not a runtime dependency)
+        run: |
+          npm install --no-save --no-package-lock playwright@1.56.0
+          npx playwright install --with-deps chromium
+      - name: Real Chromium checks for both activity views at 320-1440 px
+        env:
+          FUNES_PYTHON: python3
+        run: node tests/activity_browser.cjs
   python-single-origin-docker:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -76,15 +109,20 @@ jobs:
           python3 - <<'PY'
           import json
           from pathlib import Path
-          data=json.loads(Path('/tmp/funes-activity.json').read_text())
-          assert (data['count'],data['visit_count']) == (10,7), data
-          assert data['inference']['object_detector']=='not run'
-          assert any(v['frame_count']==3 and v['objects']==['person'] for v in data['visits'])
+          data = json.loads(Path('/tmp/funes-activity.json').read_text())
+          assert (data['count'], data['visit_count']) == (10, 7), data
+          assert data['inference']['object_detector'] == 'not run'
+          assert data['scan']['skipped'] == {}, data['scan']
+          assert any(v['frame_count'] == 3 and v['objects'] == ['person'] for v in data['visits'])
           print('PASS: 10 camera JPEGs in watch folder → 7 grouped visits, no inference')
           PY
           curl --fail --silent http://127.0.0.1:8000/activity/index.html -o /tmp/funes-activity.html
           grep -q 'SYNTHETIC PROOF MODE' /tmp/funes-activity.html
+          grep -q 'static/activity-v1.js' /tmp/funes-activity.html
+          curl --fail --silent http://127.0.0.1:8000/frontend/activity-v1.html -o /tmp/funes-companion.html
+          grep -q 'Watched-folder activity v1' /tmp/funes-companion.html
           curl --fail --silent http://127.0.0.1:8000/frontend/index.html -o /tmp/funes-frontend.html
           grep -q 'SYNTHETIC DEMO' /tmp/funes-frontend.html
           test "$(curl --silent -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/.git/config)" = 404
           test "$(curl --silent -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/funes/server.py)" = 404
+          test "$(curl --silent -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/README.md)" = 404

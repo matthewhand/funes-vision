@@ -47,6 +47,8 @@ class WatchTests(unittest.TestCase):
     def test_same_port_serves_frontend_and_api(self):
         self.assertIn(b'SYNTHETIC DEMO',self.get('/frontend/index.html').read())
         self.assertIn(b'Every frame has a place',self.get('/activity/index.html').read())
+        self.assertIn(b'Local activity, without invented analysis.',self.get('/frontend/activity-v1.html').read())
+        self.assertIn(b'normalizeActivity',self.get('/frontend/static/activity-v1.js').read())
         self.assertIn(b'<svg',self.get('/docs/architecture-overview.svg').read())
         self.assertIn(b'fixture-only',self.get('/api/status').read())
 

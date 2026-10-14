@@ -3,9 +3,13 @@
 import hashlib
 import json
 from pathlib import Path
+import sys
+
+# Text guards must not depend on the host locale encoding.
+sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 
 ROOT = Path(__file__).resolve().parents[1]
-manifest = json.loads((ROOT / 'manifest.json').read_text())
+manifest = json.loads((ROOT / 'manifest.json').read_text(encoding='utf-8'))
 assert manifest.get('status') == 'review_candidate_synthetic_ai_generated'
 assets = manifest['assets']
 expected = {f'{folder}/demo-{camera}-{i:02d}.jpg'

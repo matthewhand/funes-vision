@@ -6,7 +6,9 @@
   "description": "Dependency-free synthetic-only Funes Vision frontend preview",
   "scripts": {
     "start": "node server.mjs",
-    "test:preview": "node --test tests/preview-server.test.mjs"
+    "test:preview": "node --test tests/preview-server.test.mjs tests/static-containment.test.mjs",
+    "test:activity": "node --test tests/activity_status.test.cjs tests/activity_v1_adapter.test.cjs",
+    "test:browser": "node tests/activity_browser.cjs"
   },
   "engines": {
     "node": ">=20"
